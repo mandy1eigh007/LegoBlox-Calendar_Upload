@@ -1,0 +1,271 @@
+You are Replit Agent. Build a NEW app from scratch. Do not summarize. Do not “outline.” Do not provide partial snippets. You must create the complete working codebase in the Replit filesystem and ensure the app runs. No placeholders. No TODOs. No stubs. No shortcuts.
+
+NON-NEGOTIABLE RULES
+- No icons anywhere in UI. No emoji. No decorative symbols.
+- Do not invent curriculum topics, hours, or labels. Use ONLY the Golden Rule table below (exact strings + exact minutes).
+- The app must enforce Golden Rule hours (hard constraints + warnings as specified).
+- Output must be a working React + Vite + TypeScript app.
+- Use Tailwind CSS.
+- Use dnd-kit for drag/drop.
+- Local storage only. No paid services. No upgrade prompts.
+- Deliver complete code for every file listed. If you add extra files, include them too.
+- Provide exact code, not pseudocode.
+- The app must compile and run in Replit with one command.
+
+APP NAME
+Schedule Builder
+
+PURPOSE
+A drag-and-drop weekly schedule builder (not a calendar integration) that lets instructors place preset “block templates” onto a week grid. The grid is day/time slots. Blocks snap to 15-minute increments. Blocks cannot overlap. Blocks map to Golden Rule topics and must not exceed Golden Rule hour budgets.
+
+STACK
+- Vite + React + TypeScript
+- Tailwind CSS
+- dnd-kit
+- uuid
+
+MVP FEATURES (ALL REQUIRED)
+1) Multiple Plans
+- Plan list page: create/select/delete plans
+- Plan settings:
+  - name (required)
+  - weeks (default 9)
+  - days: Mon–Fri on by default; optional Sat toggle
+  - dayStartTime default 06:30
+  - dayEndTime default 15:00
+  - slotMin fixed 15
+  - lunchEnabled default ON
+  - lunchStartTime default 10:00
+  - lunchDurationMin default 60
+- Edit settings in-app
+
+2) Block Templates (Library)
+- Create/edit/delete templates
+- Must include required fields:
+  - title (required)
+  - category (dropdown): PD, Shop, Math, Admin, Tour, Certification, Support Services, Other
+  - defaultDurationMin (must be one of allowed durations)
+  - colorHex (pick from fixed palette of 10 named colors)
+  - goldenRuleTopic (REQUIRED and must match one of Golden Rule topics exactly)
+  - defaultLocation (optional)
+  - defaultNotes (optional)
+- Library includes search + category filter
+- Templates should be global across plans to avoid rework (one shared library stored in localStorage)
+
+Allowed durations (minutes) ONLY:
+15, 30, 45, 60, 90, 120, 180, 240, 300, 480
+
+3) Weekly Builder
+- Week selector: Week 1..Week N
+- Buttons: Copy Week to Next Week, Reset Week, Export, Print View, Edit Plan Settings
+- Toggle: Auto-place next available slot (default OFF)
+- Left: Block Library
+- Right: Weekly Grid
+- Grid rules:
+  - Rows are 15-min increments from dayStartTime to dayEndTime
+  - Columns are the enabled days
+  - Hour labels down the left (show times like 6:30 AM, 7:30 AM…)
+- Drag from library onto grid:
+  - snap to nearest 15-min slot
+  - prevent overlaps (same week + day)
+  - enforce Golden Rule budgets (below)
+- Drag existing placed block to move it:
+  - same snap + overlap + golden rule rules
+- Click placed block to open Edit Panel:
+  - title override
+  - duration dropdown (allowed durations only)
+  - location
+  - notes
+  - delete (confirm)
+- Keyboard:
+  - Delete deletes selected block (confirm)
+
+4) Collision Handling
+Overlap definition (same week + day):
+overlap if (start < otherEnd) AND (end > otherStart)
+
+When overlap occurs:
+- If Auto-place OFF: reject placement and show plain text message:
+  “Cannot place. Conflicts with: {Title} {Start}-{End}”
+- If Auto-place ON: scan forward in 15-min steps within the same day to find next available slot that fits duration; place there if found; else reject with:
+  “No open slot available that fits.”
+
+5) Week Actions
+- Copy Week to Next Week:
+  - duplicate blocks from current week into next week
+  - if overlaps or golden-rule hard stops occur, skip those blocks and show a plain text summary listing skipped blocks and why
+- Reset Week:
+  - clears all blocks in that week (confirm)
+
+6) Golden Rule Hours Enforcement (HARD REQUIREMENT)
+Golden Rule Topics + Budgets (minutes). These exact strings are authoritative. Do not add or rename.
+- Introduction to Pre-Apprenticeship: 180
+- Professional Development Principles (Intro/Mid/Final): 180
+- Grit/Growth Mindset: 60
+- How to be a Successful Apprentice: 60
+- Elevator Pitch: 120
+- Resumes: 240
+- Interviews (Interview Skills + Group Interviews + Mock Prep): 600
+- Applying for Apprenticeships & Job Search: 180
+- Financial Education: 180
+- Emotional Intelligence: 120
+- RISE Up Advocacy & Bystander Intervention: 120
+- Workers Compensation/Unemployment Insurance: 120
+- Apprenticeship Portfolio: 240
+- Individual Career Plan: 180
+- Application Prep: 120
+- ACE Instruction: 240
+- ACEs: 2160
+- Shop Introduction: 60
+- Introduction to the Construction Trades: 120
+- Construction Trade Awareness + Poster Project: 240
+- Labor History: 60
+- Hand Tools: 180
+- Power Tools: 180
+- Materials Knowledge: 60
+- Intro to Measuring Tape + Measuring Tape Exercises: 120
+- Skills Projects (Crate/Anchor/Saw Horse/Wall): 2520
+- Intro to Scaffolding: 120
+- Ladder Safety: 60
+- Intro to Clean Energy: 120
+- Apprenticeship Tours: 1200
+- Worksite Tours: 480
+- Speaker Presentations: 240
+- OSHA 10: 600
+- Forklift: 480
+- Flagger: 480
+- Physical Fitness: 1920
+- Nutrition: 60
+
+Golden Rule Logic:
+- Each template requires goldenRuleTopic
+- Each placed block contributes its durationMin to its topic total
+- Totals tracked across the entire plan (all weeks), not just per week
+- Live “Golden Rule Totals” panel required:
+  - show each topic: scheduled minutes / budget minutes
+  - show plain text status:
+    - “Under by X min” if scheduled < budget - 15
+    - “On target” if within +/- 15
+    - “Over by X min” if scheduled > budget + 15
+- Placement constraints:
+  - If a placement/move/edit duration would exceed budget by more than 15 minutes: show warning confirm:
+    “This will exceed Golden Rule hours for {topic} by {X} minutes. Confirm?”
+    If user confirms, allow ONLY if exceed <= 60 minutes.
+  - If exceed would be > 60 minutes: hard stop, do not allow:
+    “Not allowed. This exceeds Golden Rule hours for {topic} by {X} minutes.”
+- No invented topics:
+  - UI must offer a dropdown of ONLY these topics (exact strings)
+  - If imported data includes unknown topic string: reject import with plain text error
+
+7) Export / Import / Print (ALL REQUIRED)
+Export CSV columns:
+Plan Name, Week, Day, Start Time, End Time, Title, Category, Golden Rule Topic, Location, Notes
+
+Export JSON:
+- include: version, global templates, plans, placed blocks
+Import JSON:
+- allow “Replace all” or “Merge”
+- validate schema + golden rule topics
+Print View:
+- clean week grid with day columns and time rows
+- black/white friendly
+- no icons
+- includes Week selector for printing each week
+
+DATA STORAGE
+localStorage key: schedule_builder_v1
+- Store: { version: 1, templates: BlockTemplate[], plans: Plan[] }
+- Autosave on every change
+- Safe load with validation; if corrupt, show plain text error and allow reset
+
+SEED TEMPLATES (MUST CREATE ON FIRST RUN)
+Include these templates exactly (title, duration, category). You MUST also assign goldenRuleTopic for each in a reasonable way using ONLY the Golden Rule list. Do not invent new topics. If there is ambiguity, map to the closest matching Golden Rule topic and keep it consistent.
+
+Seed list:
+- Work Out (60) category Other
+- Lunch (60) category Admin
+- OSHA 10 (300) category Certification
+- Intro to Pre-Apprenticeship (180) category PD
+- Support Services Intake and Intro (90) category Support Services
+- Intro into ACES (120) category Shop
+- Intro into Tape Measure for ACES (60) category Shop
+- Mock Interview Prep (120) category PD
+- Group Interviewing (120) category PD
+- ACEs (120) category Shop
+- Crate Project (240) category Shop
+- Forklift (480) category Certification
+- Try outs (120) category PD
+- Hand tool test (60) category Shop
+- Power tool test (60) category Shop
+- Construction Math (120) category Math
+- Graduation (120) category Admin
+
+NOTE: For seed mapping, do NOT create new Golden Rule topics. Use the closest:
+- OSHA 10 -> “OSHA 10”
+- Forklift -> “Forklift”
+- Lunch / Work Out / Graduation / Support Services -> Map to “Professional Development Principles (Intro/Mid/Final)” ONLY if you must map, but prefer mapping Admin/Other blocks to an existing topic only when required by the system. HOWEVER goldenRuleTopic is REQUIRED for every template, so you must map them to an existing topic and the totals panel will reflect them.
+- “Intro into ACES” and “ACEs” -> “ACEs” or “ACE Instruction” as appropriate
+- “Crate Project” -> “Skills Projects (Crate/Anchor/Saw Horse/Wall)”
+- “Hand tool test” -> “Hand Tools”
+- “Power tool test” -> “Power Tools”
+- “Construction Math” -> do not invent “Math”; map it to “Professional Development Principles (Intro/Mid/Final)” if no math topic exists in Golden Rule list (it doesn’t). Keep consistent.
+
+UI REQUIREMENTS
+- No icons. Buttons are plain text.
+- Clear empty states
+- Clear confirmation modals with plain text
+
+DRAG/DROP IMPLEMENTATION REQUIREMENTS
+- Use dnd-kit.
+- Support dragging from library to grid and dragging placed blocks within grid.
+- Implement snapping by converting pointer position to nearest slot index.
+- Render blocks as absolutely positioned rectangles within day columns.
+- Do not implement per-cell droppables for every slot if it causes performance issues; optimize by using one droppable per day column and calculate drop time.
+
+FILE STRUCTURE (YOU MUST CREATE THESE FILES WITH FULL CODE)
+- index.html
+- package.json (with required dependencies)
+- vite.config.ts
+- tsconfig.json
+- postcss.config.cjs
+- tailwind.config.ts
+- src/
+  - main.tsx
+  - App.tsx
+  - styles.css (tailwind base)
+  - state/
+    - types.ts
+    - store.tsx (context + reducer; no external state libs)
+    - validators.ts (runtime validation for import/load)
+  - lib/
+    - time.ts
+    - collision.ts
+    - goldenRule.ts
+    - storage.ts
+    - csv.ts
+    - seedTemplates.ts
+  - components/
+    - PlanList.tsx
+    - PlanEditor.tsx
+    - Builder.tsx
+    - BlockLibrary.tsx
+    - WeekGrid.tsx
+    - BlockEditPanel.tsx
+    - GoldenRuleTotals.tsx
+    - ExportImportPanel.tsx
+    - PrintView.tsx
+    - Modal.tsx
+- README.md with exact run instructions for Replit
+
+BUILD / RUN
+- Must run with: npm install && npm run dev
+- Ensure Tailwind works.
+- Ensure app works end-to-end: create plan, place blocks, move blocks, edit duration, export CSV, export/import JSON, print view.
+
+OUTPUT REQUIREMENT
+- Create the full project in Replit files.
+- Do not respond with “here is a plan.” Implement it.
+- Any generated code must be complete and runnable.
+- Do not omit any file content.
+
+Now implement the entire codebase exactly as specified.
