@@ -15,6 +15,12 @@ export interface BucketTotal {
   met: boolean;
 }
 
+export interface GoldenRuleSummary {
+  buckets: BucketTotal[];
+  unassignedMinutes: number;
+  unassignedCount: number;
+}
+
 export function calculateGoldenRuleTotals(
   plan: Plan,
   templates: BlockTemplate[]
@@ -26,6 +32,7 @@ export function calculateGoldenRuleTotals(
   }
   
   for (const block of plan.blocks) {
+    if (block.templateId === null) continue;
     if (!block.countsTowardGoldenRule) continue;
     
     const bucketId = block.goldenRuleBucketId;
@@ -63,6 +70,22 @@ export function calculateGoldenRuleTotals(
       met: scheduled >= bucket.budgetMinutes,
     };
   });
+}
+
+export function calculateGoldenRuleSummary(
+  plan: Plan,
+  templates: BlockTemplate[]
+): GoldenRuleSummary {
+  const buckets = calculateGoldenRuleTotals(plan, templates);
+  
+  const unassignedBlocks = plan.blocks.filter(b => b.templateId === null);
+  const unassignedMinutes = unassignedBlocks.reduce((sum, b) => sum + b.durationMinutes, 0);
+  
+  return {
+    buckets,
+    unassignedMinutes,
+    unassignedCount: unassignedBlocks.length,
+  };
 }
 
 export function getBucketById(id: GoldenRuleBucketId) {

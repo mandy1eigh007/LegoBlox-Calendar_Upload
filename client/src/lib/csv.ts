@@ -1,6 +1,7 @@
 import { Plan, BlockTemplate, DAYS, GOLDEN_RULE_BUCKETS, PlacedBlock, Day } from '@/state/types';
 import { minutesToTimeDisplay, getEndMinutes } from './time';
 import { v4 as uuidv4 } from 'uuid';
+import { resolveTemplateForImportedTitle } from './templateMatcher';
 
 export function exportToCSV(plan: Plan, templates: BlockTemplate[]): string {
   const headers = [
@@ -363,11 +364,6 @@ export function convertICSEventsToBlocks(
   const mondayRef = new Date(start);
   mondayRef.setDate(start.getDate() - (startDay === 0 ? 6 : startDay - 1));
   
-  const defaultTemplate = templates[0];
-  if (!defaultTemplate) {
-    return { blocks: [], skipped: events.length, included: 0 };
-  }
-  
   let minWeek = Infinity;
   const tempBlocks: Array<{event: ICSEventWithDate; week: number; dayIndex: number; diffDays: number}> = [];
   
@@ -425,15 +421,12 @@ export function convertICSEventsToBlocks(
       if (durationMinutes < 15) durationMinutes = 15;
     }
     
-    const matchingTemplate = templates.find(t => 
-      t.title.toLowerCase() === event.summary.toLowerCase()
-    );
-    const templateToUse = matchingTemplate || defaultTemplate;
-    const isUnmatched = !matchingTemplate;
+    const matchResult = resolveTemplateForImportedTitle(event.summary, templates);
+    const matchedTemplate = matchResult.templateId ? templates.find(t => t.id === matchResult.templateId) : null;
     
     blocks.push({
       id: uuidv4(),
-      templateId: templateToUse.id,
+      templateId: matchResult.templateId,
       week: normalizedWeek,
       day,
       startMinutes,
@@ -441,8 +434,8 @@ export function convertICSEventsToBlocks(
       titleOverride: event.summary,
       location: event.location || '',
       notes: event.description || '',
-      countsTowardGoldenRule: isUnmatched ? false : templateToUse.countsTowardGoldenRule,
-      goldenRuleBucketId: isUnmatched ? null : (event.goldenRuleBucketId || templateToUse.goldenRuleBucketId),
+      countsTowardGoldenRule: matchedTemplate ? matchedTemplate.countsTowardGoldenRule : false,
+      goldenRuleBucketId: matchedTemplate ? (event.goldenRuleBucketId || matchedTemplate.goldenRuleBucketId) : null,
       recurrenceSeriesId: null,
       isRecurrenceException: false,
       resource: event.resource,
@@ -467,11 +460,6 @@ export function importICSToBlocks(
   const refDay = refDate.getDay();
   const mondayRef = new Date(refDate);
   mondayRef.setDate(refDate.getDate() - (refDay === 0 ? 6 : refDay - 1));
-  
-  const defaultTemplate = templates[0];
-  if (!defaultTemplate) {
-    return { blocks: [], skipped: events.length };
-  }
   
   for (const event of events) {
     const eventDate = new Date(event.dtstart);
@@ -505,22 +493,21 @@ export function importICSToBlocks(
       continue;
     }
     
-    const matchingTemplate = templates.find(t => 
-      t.title.toLowerCase() === event.summary.toLowerCase()
-    ) || defaultTemplate;
+    const matchResult = resolveTemplateForImportedTitle(event.summary, templates);
+    const matchedTemplate = matchResult.templateId ? templates.find(t => t.id === matchResult.templateId) : null;
     
     blocks.push({
       id: uuidv4(),
-      templateId: matchingTemplate.id,
+      templateId: matchResult.templateId,
       week,
       day,
       startMinutes,
       durationMinutes,
-      titleOverride: matchingTemplate.title === event.summary ? '' : event.summary,
+      titleOverride: event.summary,
       location: event.location || '',
       notes: event.description || '',
-      countsTowardGoldenRule: matchingTemplate.countsTowardGoldenRule,
-      goldenRuleBucketId: matchingTemplate.goldenRuleBucketId,
+      countsTowardGoldenRule: matchedTemplate ? matchedTemplate.countsTowardGoldenRule : false,
+      goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
       recurrenceSeriesId: null,
       isRecurrenceException: false,
     });

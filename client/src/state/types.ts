@@ -125,7 +125,7 @@ export interface BlockTemplate {
 
 export interface PlacedBlock {
   id: string;
-  templateId: string;
+  templateId: string | null;
   week: number;
   day: Day;
   startMinutes: number;
@@ -173,6 +173,10 @@ export interface Plan {
   settings: PlanSettings;
   blocks: PlacedBlock[];
   recurrenceSeries: RecurrenceSeries[];
+  isPublished?: boolean;
+  publishedAt?: string | null;
+  publicId?: string | null;
+  updatedAt?: string;
 }
 
 export interface PartnersData {
