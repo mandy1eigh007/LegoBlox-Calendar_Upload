@@ -17,6 +17,7 @@ import { ScheduleSuggestionPanel } from './ScheduleSuggestionPanel';
 import { SuggestedBlock } from '@/lib/predictiveScheduler';
 import { UnassignedReviewPanel } from './UnassignedReviewPanel';
 import { TemplateReassignDialog } from './TemplateReassignDialog';
+import { ComparePlans } from './ComparePlans';
 import { generatePublicId, getStudentUrl } from '@/lib/publish';
 import { findTimeConflicts, wouldFitInDay } from '@/lib/collision';
 import { findAlternativeResource } from '@/lib/calendarCompare';
@@ -617,6 +618,16 @@ export function Builder() {
             onBlockResize={handleBlockResize}
             selectedBlockId={selectedBlockId}
           />
+
+          <div className="absolute top-4 right-4 z-50 flex gap-2">
+            <button
+              className="px-3 py-1 bg-white border rounded"
+              onClick={() => setShowCompare(true)}
+              data-testid="open-compare"
+            >
+              Compare Plans
+            </button>
+          </div>
           
           {selectedBlock ? (
             <BlockEditPanel
@@ -722,6 +733,27 @@ export function Builder() {
           allBlocks={plan.blocks}
           onAssign={handleAssignBlockWithFlags}
           onAssignMultiple={handleAssignMultiple}
+        />
+      )}
+
+      {showCompare && (
+        <ComparePlans
+          open={showCompare}
+          onClose={() => setShowCompare(false)}
+          plans={state.plans}
+          onOpenConflictInBuilder={(planId, blockId) => {
+            // navigate to plan and open the block in builder
+            if (planId !== plan.id) {
+              navigate(`/plan/${planId}`);
+            }
+            // find the plan and block and set selected
+            const p = state.plans.find(pl => pl.id === planId);
+            if (!p) return;
+            const b = p.blocks.find(bl => bl.id === blockId);
+            if (!b) return;
+            setSelectedBlockId(b.id);
+            setShowCompare(false);
+          }}
         />
       )}
       
