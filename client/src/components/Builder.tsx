@@ -81,12 +81,15 @@ export function Builder() {
     const rect = gridElement.getBoundingClientRect();
     const headerHeight = 41;
     const slotHeight = 24;
-    const relativeY = clientY - rect.top - headerHeight;
+    const scrollTop = gridElement.scrollTop;
+    const relativeY = clientY - rect.top - headerHeight + scrollTop;
     const slotIndex = Math.floor(relativeY / slotHeight);
     const dayStartMinutes = timeToMinutes(settings.dayStartTime);
+    const dayEndMinutes = timeToMinutes(settings.dayEndTime);
     const rawMinutes = dayStartMinutes + (slotIndex * 15);
     const snappedMinutes = snapToSlot(rawMinutes, 15);
-    return minutesToTime(Math.max(snappedMinutes, dayStartMinutes));
+    const clampedMinutes = Math.min(Math.max(snappedMinutes, dayStartMinutes), dayEndMinutes - 15);
+    return minutesToTime(clampedMinutes);
   };
 
   const handleDragStart = (event: DragStartEvent) => {
