@@ -20,97 +20,101 @@ export const COLOR_PALETTE = [
   { name: 'Gray', hex: '#6B7280' },
 ] as const;
 
-export const GOLDEN_RULE_TOPICS = [
-  'Introduction to Pre-Apprenticeship',
-  'Professional Development Principles (Intro/Mid/Final)',
-  'Grit/Growth Mindset',
-  'How to be a Successful Apprentice',
-  'Elevator Pitch',
-  'Resumes',
-  'Interviews (Interview Skills + Group Interviews + Mock Prep)',
-  'Applying for Apprenticeships & Job Search',
-  'Financial Education',
-  'Emotional Intelligence',
-  'RISE Up Advocacy & Bystander Intervention',
-  'Workers Compensation/Unemployment Insurance',
-  'Apprenticeship Portfolio',
-  'Individual Career Plan',
-  'Application Prep',
-  'ACE Instruction',
-  'ACEs',
-  'Shop Introduction',
-  'Introduction to the Construction Trades',
-  'Construction Trade Awareness + Poster Project',
-  'Labor History',
-  'Hand Tools',
-  'Power Tools',
-  'Materials Knowledge',
-  'Intro to Measuring Tape + Measuring Tape Exercises',
-  'Skills Projects (Crate/Anchor/Saw Horse/Wall)',
-  'Intro to Scaffolding',
-  'Ladder Safety',
-  'Intro to Clean Energy',
-  'Apprenticeship Tours',
-  'Worksite Tours',
-  'Speaker Presentations',
-  'OSHA 10',
-  'Forklift',
-  'Flagger',
-  'Physical Fitness',
-  'Nutrition',
+export const GOLDEN_RULE_KEYS = [
+  'INTRO_PREAPP',
+  'PD_PRINCIPLES',
+  'GRIT_GROWTH',
+  'SUCCESSFUL_APPRENTICE',
+  'ELEVATOR_PITCH',
+  'RESUMES',
+  'INTERVIEWS',
+  'APPLY_APPRENTICESHIPS',
+  'FINANCIAL_ED',
+  'EMOTIONAL_INTEL',
+  'RISE_UP',
+  'WORKERS_COMP',
+  'PORTFOLIO',
+  'CAREER_PLAN',
+  'APP_PREP',
+  'ACE_INSTRUCTION',
+  'ACES',
+  'SHOP_INTRO',
+  'CONSTRUCTION_TRADES',
+  'TRADE_AWARENESS',
+  'LABOR_HISTORY',
+  'HAND_TOOLS',
+  'POWER_TOOLS',
+  'MATERIALS',
+  'MEASURING_TAPE',
+  'SKILLS_PROJECTS',
+  'SCAFFOLDING',
+  'LADDER_SAFETY',
+  'CLEAN_ENERGY',
+  'APPRENTICE_TOURS',
+  'WORKSITE_TOURS',
+  'SPEAKER_PRESENTATIONS',
+  'OSHA_10',
+  'FORKLIFT',
+  'FLAGGER',
+  'PHYSICAL_FITNESS',
+  'NUTRITION',
 ] as const;
 
-export type GoldenRuleTopic = typeof GOLDEN_RULE_TOPICS[number];
+export type GoldenRuleKey = typeof GOLDEN_RULE_KEYS[number];
 
-export const GOLDEN_RULE_BUDGETS: Record<GoldenRuleTopic, number> = {
-  'Introduction to Pre-Apprenticeship': 180,
-  'Professional Development Principles (Intro/Mid/Final)': 180,
-  'Grit/Growth Mindset': 60,
-  'How to be a Successful Apprentice': 60,
-  'Elevator Pitch': 120,
-  'Resumes': 240,
-  'Interviews (Interview Skills + Group Interviews + Mock Prep)': 600,
-  'Applying for Apprenticeships & Job Search': 180,
-  'Financial Education': 180,
-  'Emotional Intelligence': 120,
-  'RISE Up Advocacy & Bystander Intervention': 120,
-  'Workers Compensation/Unemployment Insurance': 120,
-  'Apprenticeship Portfolio': 240,
-  'Individual Career Plan': 180,
-  'Application Prep': 120,
-  'ACE Instruction': 240,
-  'ACEs': 2160,
-  'Shop Introduction': 60,
-  'Introduction to the Construction Trades': 120,
-  'Construction Trade Awareness + Poster Project': 240,
-  'Labor History': 60,
-  'Hand Tools': 180,
-  'Power Tools': 180,
-  'Materials Knowledge': 60,
-  'Intro to Measuring Tape + Measuring Tape Exercises': 120,
-  'Skills Projects (Crate/Anchor/Saw Horse/Wall)': 2520,
-  'Intro to Scaffolding': 120,
-  'Ladder Safety': 60,
-  'Intro to Clean Energy': 120,
-  'Apprenticeship Tours': 1200,
-  'Worksite Tours': 480,
-  'Speaker Presentations': 240,
-  'OSHA 10': 600,
-  'Forklift': 480,
-  'Flagger': 480,
-  'Physical Fitness': 1920,
-  'Nutrition': 60,
-};
+export interface GoldenRuleBudgetItem {
+  key: GoldenRuleKey;
+  label: string;
+  budgetMinutes: number;
+}
+
+export const GOLDEN_RULE_BUDGETS: GoldenRuleBudgetItem[] = [
+  { key: 'INTRO_PREAPP', label: 'Introduction to Pre-Apprenticeship', budgetMinutes: 180 },
+  { key: 'PD_PRINCIPLES', label: 'Professional Development Principles (Intro/Mid/Final)', budgetMinutes: 180 },
+  { key: 'GRIT_GROWTH', label: 'Grit/Growth Mindset', budgetMinutes: 60 },
+  { key: 'SUCCESSFUL_APPRENTICE', label: 'How to be a Successful Apprentice', budgetMinutes: 60 },
+  { key: 'ELEVATOR_PITCH', label: 'Elevator Pitch', budgetMinutes: 120 },
+  { key: 'RESUMES', label: 'Resumes', budgetMinutes: 240 },
+  { key: 'INTERVIEWS', label: 'Interviews (Interview Skills + Group Interviews + Mock Prep)', budgetMinutes: 600 },
+  { key: 'APPLY_APPRENTICESHIPS', label: 'Applying for Apprenticeships & Job Search', budgetMinutes: 180 },
+  { key: 'FINANCIAL_ED', label: 'Financial Education', budgetMinutes: 180 },
+  { key: 'EMOTIONAL_INTEL', label: 'Emotional Intelligence', budgetMinutes: 120 },
+  { key: 'RISE_UP', label: 'RISE Up Advocacy & Bystander Intervention', budgetMinutes: 120 },
+  { key: 'WORKERS_COMP', label: 'Workers Compensation/Unemployment Insurance', budgetMinutes: 120 },
+  { key: 'PORTFOLIO', label: 'Apprenticeship Portfolio', budgetMinutes: 240 },
+  { key: 'CAREER_PLAN', label: 'Individual Career Plan', budgetMinutes: 180 },
+  { key: 'APP_PREP', label: 'Application Prep', budgetMinutes: 120 },
+  { key: 'ACE_INSTRUCTION', label: 'ACE Instruction', budgetMinutes: 240 },
+  { key: 'ACES', label: 'ACEs', budgetMinutes: 2160 },
+  { key: 'SHOP_INTRO', label: 'Shop Introduction', budgetMinutes: 60 },
+  { key: 'CONSTRUCTION_TRADES', label: 'Introduction to the Construction Trades', budgetMinutes: 120 },
+  { key: 'TRADE_AWARENESS', label: 'Construction Trade Awareness + Poster Project', budgetMinutes: 240 },
+  { key: 'LABOR_HISTORY', label: 'Labor History', budgetMinutes: 60 },
+  { key: 'HAND_TOOLS', label: 'Hand Tools', budgetMinutes: 180 },
+  { key: 'POWER_TOOLS', label: 'Power Tools', budgetMinutes: 180 },
+  { key: 'MATERIALS', label: 'Materials Knowledge', budgetMinutes: 60 },
+  { key: 'MEASURING_TAPE', label: 'Intro to Measuring Tape + Measuring Tape Exercises', budgetMinutes: 120 },
+  { key: 'SKILLS_PROJECTS', label: 'Skills Projects (Crate/Anchor/Saw Horse/Wall)', budgetMinutes: 2520 },
+  { key: 'SCAFFOLDING', label: 'Intro to Scaffolding', budgetMinutes: 120 },
+  { key: 'LADDER_SAFETY', label: 'Ladder Safety', budgetMinutes: 60 },
+  { key: 'CLEAN_ENERGY', label: 'Intro to Clean Energy', budgetMinutes: 120 },
+  { key: 'APPRENTICE_TOURS', label: 'Apprenticeship Tours', budgetMinutes: 1200 },
+  { key: 'WORKSITE_TOURS', label: 'Worksite Tours', budgetMinutes: 480 },
+  { key: 'SPEAKER_PRESENTATIONS', label: 'Speaker Presentations', budgetMinutes: 240 },
+  { key: 'OSHA_10', label: 'OSHA 10', budgetMinutes: 600 },
+  { key: 'FORKLIFT', label: 'Forklift', budgetMinutes: 480 },
+  { key: 'FLAGGER', label: 'Flagger', budgetMinutes: 480 },
+  { key: 'PHYSICAL_FITNESS', label: 'Physical Fitness', budgetMinutes: 1920 },
+  { key: 'NUTRITION', label: 'Nutrition', budgetMinutes: 60 },
+];
 
 export interface BlockTemplate {
   id: string;
   title: string;
   category: Category;
-  defaultDurationMin: AllowedDuration;
+  defaultDurationMin: number;
   colorHex: string;
-  goldenRuleTopic: GoldenRuleTopic;
-  defaultLocation?: string;
-  defaultNotes?: string;
+  goldenRuleKey?: GoldenRuleKey | null;
 }
 
 export interface PlacedBlock {
@@ -119,7 +123,7 @@ export interface PlacedBlock {
   week: number;
   day: Day;
   startTime: string;
-  durationMin: AllowedDuration;
+  durationMin: number;
   titleOverride?: string;
   location?: string;
   notes?: string;

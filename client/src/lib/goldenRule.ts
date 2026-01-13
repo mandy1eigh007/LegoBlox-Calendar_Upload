@@ -1,13 +1,13 @@
 import { 
   Plan, 
   BlockTemplate, 
-  GoldenRuleTopic, 
+  GoldenRuleKey,
   GOLDEN_RULE_BUDGETS,
-  GOLDEN_RULE_TOPICS 
 } from '@/state/types';
 
 export interface TopicTotal {
-  topic: GoldenRuleTopic;
+  key: GoldenRuleKey;
+  label: string;
   scheduled: number;
   budget: number;
   difference: number;
@@ -18,23 +18,22 @@ export function calculateTopicTotals(
   plan: Plan,
   templates: BlockTemplate[]
 ): TopicTotal[] {
-  const totals: Record<GoldenRuleTopic, number> = {} as Record<GoldenRuleTopic, number>;
+  const totals: Record<GoldenRuleKey, number> = {} as Record<GoldenRuleKey, number>;
   
-  for (const topic of GOLDEN_RULE_TOPICS) {
-    totals[topic] = 0;
+  for (const budget of GOLDEN_RULE_BUDGETS) {
+    totals[budget.key] = 0;
   }
   
   for (const block of plan.blocks) {
     const template = templates.find(t => t.id === block.templateId);
-    if (template) {
-      totals[template.goldenRuleTopic] += block.durationMin;
+    if (template && template.goldenRuleKey) {
+      totals[template.goldenRuleKey] += block.durationMin;
     }
   }
   
-  return GOLDEN_RULE_TOPICS.map(topic => {
-    const scheduled = totals[topic];
-    const budget = GOLDEN_RULE_BUDGETS[topic];
-    const difference = scheduled - budget;
+  return GOLDEN_RULE_BUDGETS.map(budget => {
+    const scheduled = totals[budget.key];
+    const difference = scheduled - budget.budgetMinutes;
     
     let status: 'under' | 'on-target' | 'over';
     if (difference < -15) {
@@ -45,7 +44,14 @@ export function calculateTopicTotals(
       status = 'on-target';
     }
     
-    return { topic, scheduled, budget, difference, status };
+    return { 
+      key: budget.key,
+      label: budget.label, 
+      scheduled, 
+      budget: budget.budgetMinutes, 
+      difference, 
+      status 
+    };
   });
 }
 
@@ -64,24 +70,26 @@ export function checkGoldenRuleLimit(
   existingBlockId?: string
 ): GoldenRuleCheck {
   const template = templates.find(t => t.id === templateId);
-  if (!template) {
-    return { allowed: false, warning: false, message: 'Template not found', exceedBy: 0 };
+  if (!template || !template.goldenRuleKey) {
+    return { allowed: true, warning: false, message: '', exceedBy: 0 };
   }
   
-  const topic = template.goldenRuleTopic;
-  const budget = GOLDEN_RULE_BUDGETS[topic];
+  const budgetItem = GOLDEN_RULE_BUDGETS.find(b => b.key === template.goldenRuleKey);
+  if (!budgetItem) {
+    return { allowed: true, warning: false, message: '', exceedBy: 0 };
+  }
   
   let currentTotal = 0;
   for (const block of plan.blocks) {
     if (existingBlockId && block.id === existingBlockId) continue;
     const blockTemplate = templates.find(t => t.id === block.templateId);
-    if (blockTemplate && blockTemplate.goldenRuleTopic === topic) {
+    if (blockTemplate && blockTemplate.goldenRuleKey === template.goldenRuleKey) {
       currentTotal += block.durationMin;
     }
   }
   
   const newTotal = currentTotal + newDuration;
-  const exceedBy = newTotal - budget;
+  const exceedBy = newTotal - budgetItem.budgetMinutes;
   
   if (exceedBy <= 15) {
     return { allowed: true, warning: false, message: '', exceedBy: 0 };
@@ -91,7 +99,7 @@ export function checkGoldenRuleLimit(
     return {
       allowed: true,
       warning: true,
-      message: `This will exceed Golden Rule hours for "${topic}" by ${exceedBy} minutes. Confirm?`,
+      message: `This will exceed Golden Rule hours for "${budgetItem.label}" by ${exceedBy} minutes. Confirm?`,
       exceedBy,
     };
   }
@@ -99,7 +107,7 @@ export function checkGoldenRuleLimit(
   return {
     allowed: false,
     warning: false,
-    message: `Not allowed. This exceeds Golden Rule hours for "${topic}" by ${exceedBy} minutes.`,
+    message: `Not allowed. This exceeds Golden Rule hours for "${budgetItem.label}" by ${exceedBy} minutes.`,
     exceedBy,
   };
 }

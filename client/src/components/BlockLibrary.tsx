@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { useStore } from '@/state/store';
-import { BlockTemplate, CATEGORIES, GOLDEN_RULE_TOPICS, ALLOWED_DURATIONS, COLOR_PALETTE, Category, GoldenRuleTopic, AllowedDuration } from '@/state/types';
+import { BlockTemplate, CATEGORIES, GOLDEN_RULE_BUDGETS, GoldenRuleKey, COLOR_PALETTE, Category } from '@/state/types';
 import { Modal, ConfirmModal } from './Modal';
 import { formatDuration } from '@/lib/time';
 import { v4 as uuidv4 } from 'uuid';
@@ -32,7 +32,8 @@ function DraggableTemplate({ template, onEdit }: DraggableTemplateProps) {
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <p className="font-medium text-sm truncate">{template.title}</p>
-          <p className="text-xs text-gray-500">{template.category} | {formatDuration(template.defaultDurationMin)}</p>
+          <p className="text-xs text-gray-500">{template.category}</p>
+          <p className="text-xs text-gray-400 mt-1">{formatDuration(template.defaultDurationMin)}</p>
         </div>
         <button
           onClick={(e) => {
@@ -53,9 +54,9 @@ function DraggableTemplate({ template, onEdit }: DraggableTemplateProps) {
 interface TemplateFormData {
   title: string;
   category: Category;
-  defaultDurationMin: AllowedDuration;
+  defaultDurationMin: number;
   colorHex: string;
-  goldenRuleTopic: GoldenRuleTopic;
+  goldenRuleKey: GoldenRuleKey | '';
   defaultLocation: string;
   defaultNotes: string;
 }
@@ -65,10 +66,12 @@ const DEFAULT_FORM: TemplateFormData = {
   category: 'PD',
   defaultDurationMin: 60,
   colorHex: COLOR_PALETTE[0].hex,
-  goldenRuleTopic: 'Professional Development Principles (Intro/Mid/Final)',
+  goldenRuleKey: '',
   defaultLocation: '',
   defaultNotes: '',
 };
+
+const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180, 240, 300, 480];
 
 export function BlockLibrary() {
   const { state, dispatch } = useStore();
@@ -87,6 +90,10 @@ export function BlockLibrary() {
 
   const handleCreate = () => {
     if (!formData.title.trim()) return;
+    if (formData.defaultDurationMin % 15 !== 0) {
+      alert('Duration must be a multiple of 15 minutes');
+      return;
+    }
     
     const template: BlockTemplate = {
       id: uuidv4(),
@@ -94,9 +101,7 @@ export function BlockLibrary() {
       category: formData.category,
       defaultDurationMin: formData.defaultDurationMin,
       colorHex: formData.colorHex,
-      goldenRuleTopic: formData.goldenRuleTopic,
-      defaultLocation: formData.defaultLocation || undefined,
-      defaultNotes: formData.defaultNotes || undefined,
+      goldenRuleKey: formData.goldenRuleKey || null,
     };
     
     dispatch({ type: 'ADD_TEMPLATE', payload: template });
@@ -106,6 +111,10 @@ export function BlockLibrary() {
 
   const handleEdit = () => {
     if (!editingId || !formData.title.trim()) return;
+    if (formData.defaultDurationMin % 15 !== 0) {
+      alert('Duration must be a multiple of 15 minutes');
+      return;
+    }
     
     const template: BlockTemplate = {
       id: editingId,
@@ -113,9 +122,7 @@ export function BlockLibrary() {
       category: formData.category,
       defaultDurationMin: formData.defaultDurationMin,
       colorHex: formData.colorHex,
-      goldenRuleTopic: formData.goldenRuleTopic,
-      defaultLocation: formData.defaultLocation || undefined,
-      defaultNotes: formData.defaultNotes || undefined,
+      goldenRuleKey: formData.goldenRuleKey || null,
     };
     
     dispatch({ type: 'UPDATE_TEMPLATE', payload: template });
@@ -136,9 +143,9 @@ export function BlockLibrary() {
       category: template.category,
       defaultDurationMin: template.defaultDurationMin,
       colorHex: template.colorHex,
-      goldenRuleTopic: template.goldenRuleTopic,
-      defaultLocation: template.defaultLocation || '',
-      defaultNotes: template.defaultNotes || '',
+      goldenRuleKey: template.goldenRuleKey || '',
+      defaultLocation: '',
+      defaultNotes: '',
     });
     setEditingId(template.id);
   };
@@ -171,14 +178,14 @@ export function BlockLibrary() {
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Duration *</label>
+          <label className="block text-sm font-medium mb-1">Default Duration *</label>
           <select
             value={formData.defaultDurationMin}
-            onChange={e => setFormData({ ...formData, defaultDurationMin: parseInt(e.target.value) as AllowedDuration })}
+            onChange={e => setFormData({ ...formData, defaultDurationMin: parseInt(e.target.value) })}
             className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             data-testid="template-duration-select"
           >
-            {ALLOWED_DURATIONS.map(dur => (
+            {DURATION_OPTIONS.map(dur => (
               <option key={dur} value={dur}>{formatDuration(dur)}</option>
             ))}
           </select>
@@ -186,17 +193,21 @@ export function BlockLibrary() {
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-1">Golden Rule Topic *</label>
+        <label className="block text-sm font-medium mb-1">Golden Rule Mapping</label>
         <select
-          value={formData.goldenRuleTopic}
-          onChange={e => setFormData({ ...formData, goldenRuleTopic: e.target.value as GoldenRuleTopic })}
+          value={formData.goldenRuleKey}
+          onChange={e => setFormData({ ...formData, goldenRuleKey: e.target.value as GoldenRuleKey | '' })}
           className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-          data-testid="template-topic-select"
+          data-testid="template-golden-rule-select"
         >
-          {GOLDEN_RULE_TOPICS.map(topic => (
-            <option key={topic} value={topic}>{topic}</option>
+          <option value="">No mapping (does not count toward totals)</option>
+          {GOLDEN_RULE_BUDGETS.map(budget => (
+            <option key={budget.key} value={budget.key}>{budget.label}</option>
           ))}
         </select>
+        <p className="text-xs text-gray-500 mt-1">
+          Maps this template to a Golden Rule budget for tracking
+        </p>
       </div>
 
       <div>
@@ -214,28 +225,6 @@ export function BlockLibrary() {
             />
           ))}
         </div>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium mb-1">Default Location</label>
-        <input
-          type="text"
-          value={formData.defaultLocation}
-          onChange={e => setFormData({ ...formData, defaultLocation: e.target.value })}
-          className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-          data-testid="template-location-input"
-        />
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium mb-1">Default Notes</label>
-        <textarea
-          value={formData.defaultNotes}
-          onChange={e => setFormData({ ...formData, defaultNotes: e.target.value })}
-          className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-          rows={2}
-          data-testid="template-notes-input"
-        />
       </div>
 
       <div className="flex justify-between pt-4">
@@ -307,9 +296,13 @@ export function BlockLibrary() {
             <option key={cat} value={cat}>{cat}</option>
           ))}
         </select>
+        
+        <p className="text-xs text-gray-500 mt-2">
+          Drag to place 15-min blocks. Resize after placing.
+        </p>
       </div>
 
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 overflow-auto p-4 scrollbar-thin">
         {filteredTemplates.length === 0 ? (
           <p className="text-sm text-gray-500 text-center py-8">No templates found</p>
         ) : (

@@ -1,13 +1,15 @@
+import { useState, useRef, useEffect } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { useDraggable } from '@dnd-kit/core';
 import { Plan, PlacedBlock, BlockTemplate, Day, DAYS } from '@/state/types';
-import { generateTimeSlots, formatTimeDisplay, timeToMinutes, getEndTime } from '@/lib/time';
+import { generateTimeSlots, formatTimeDisplay, timeToMinutes, getEndTime, minutesToTime } from '@/lib/time';
 
 interface WeekGridProps {
   plan: Plan;
   currentWeek: number;
   templates: BlockTemplate[];
   onBlockClick: (block: PlacedBlock) => void;
+  onBlockResize: (blockId: string, newDuration: number) => void;
   selectedBlockId: string | null;
 }
 
@@ -20,7 +22,9 @@ interface DayColumnProps {
   timeSlots: string[];
   slotHeight: number;
   dayStartMinutes: number;
+  dayEndMinutes: number;
   onBlockClick: (block: PlacedBlock) => void;
+  onBlockResize: (blockId: string, newDuration: number) => void;
   selectedBlockId: string | null;
 }
 
@@ -29,20 +33,29 @@ function DraggablePlacedBlock({
   template, 
   slotHeight, 
   dayStartMinutes,
+  dayEndMinutes,
   onClick,
+  onResize,
   isSelected
 }: { 
   block: PlacedBlock; 
   template: BlockTemplate | undefined;
   slotHeight: number;
   dayStartMinutes: number;
+  dayEndMinutes: number;
   onClick: () => void;
+  onResize: (newDuration: number) => void;
   isSelected: boolean;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `block-${block.id}`,
     data: { type: 'placed-block', block },
   });
+
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizeStartY, setResizeStartY] = useState(0);
+  const [initialDuration, setInitialDuration] = useState(0);
+  const resizeRef = useRef<HTMLDivElement>(null);
 
   const startMinutes = timeToMinutes(block.startTime);
   const topOffset = ((startMinutes - dayStartMinutes) / 15) * slotHeight;
@@ -51,16 +64,45 @@ function DraggablePlacedBlock({
   const title = block.titleOverride || template?.title || 'Unknown';
   const colorHex = template?.colorHex || '#6B7280';
 
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setIsResizing(true);
+    setResizeStartY(e.clientY);
+    setInitialDuration(block.durationMin);
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaY = e.clientY - resizeStartY;
+      const deltaSlots = Math.round(deltaY / slotHeight);
+      const newDuration = Math.max(15, initialDuration + deltaSlots * 15);
+      
+      const endMinutes = startMinutes + newDuration;
+      if (endMinutes <= dayEndMinutes) {
+        onResize(newDuration);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, resizeStartY, initialDuration, slotHeight, startMinutes, dayEndMinutes, onResize]);
+
   return (
     <div
       ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      className={`absolute left-1 right-1 rounded px-2 py-1 cursor-grab active:cursor-grabbing overflow-hidden transition-all ${isDragging ? 'opacity-50 z-50' : ''} ${isSelected ? 'ring-2 ring-blue-600 ring-offset-1' : ''}`}
+      className={`absolute left-1 right-1 rounded overflow-hidden transition-all ${isDragging ? 'opacity-50 z-50' : ''} ${isSelected ? 'ring-2 ring-blue-600 ring-offset-1' : ''}`}
       style={{
         top: `${topOffset}px`,
         height: `${blockHeight - 2}px`,
@@ -69,12 +111,32 @@ function DraggablePlacedBlock({
       }}
       data-testid={`placed-block-${block.id}`}
     >
-      <p className="text-xs font-medium truncate">{title}</p>
-      {blockHeight > 30 && (
-        <p className="text-xs opacity-80 truncate">
-          {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(getEndTime(block.startTime, block.durationMin))}
-        </p>
-      )}
+      <div
+        {...listeners}
+        {...attributes}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick();
+        }}
+        className="px-2 py-1 cursor-grab active:cursor-grabbing h-full"
+      >
+        <p className="text-xs font-medium truncate">{title}</p>
+        {blockHeight > 30 && (
+          <p className="text-xs opacity-80 truncate">
+            {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(getEndTime(block.startTime, block.durationMin))}
+          </p>
+        )}
+        {blockHeight > 45 && (
+          <p className="text-xs opacity-70">{block.durationMin}m</p>
+        )}
+      </div>
+      
+      <div
+        ref={resizeRef}
+        onMouseDown={handleResizeStart}
+        className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize bg-black/20 hover:bg-black/40 transition-colors"
+        title="Drag to resize"
+      />
     </div>
   );
 }
@@ -88,7 +150,9 @@ function DayColumn({
   timeSlots, 
   slotHeight,
   dayStartMinutes,
+  dayEndMinutes,
   onBlockClick,
+  onBlockResize,
   selectedBlockId
 }: DayColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
@@ -103,25 +167,26 @@ function DayColumn({
   return (
     <div 
       ref={setNodeRef}
-      className={`relative border-r last:border-r-0 ${isOver ? 'bg-blue-50' : ''}`}
+      className={`flex-1 relative border-r last:border-r-0 ${isOver ? 'bg-blue-50' : ''}`}
       style={{ minHeight: timeSlots.length * slotHeight }}
     >
-      {plan.settings.lunchEnabled && lunchStart !== null && lunchEnd !== null && (
+      {plan.settings.lunchEnabled && lunchStart !== null && lunchEnd !== null && 
+       lunchStart >= dayStartMinutes && lunchStart < dayEndMinutes && (
         <div
-          className="absolute left-0 right-0 bg-gray-100 border-y border-gray-200 pointer-events-none"
+          className="absolute left-0 right-0 bg-gray-100 border-y border-gray-200 pointer-events-none z-0"
           style={{
             top: ((lunchStart - dayStartMinutes) / 15) * slotHeight,
-            height: (plan.settings.lunchDurationMin / 15) * slotHeight,
+            height: (Math.min(lunchEnd, dayEndMinutes) - lunchStart) / 15 * slotHeight,
           }}
         >
           <span className="text-xs text-gray-400 px-1">Lunch</span>
         </div>
       )}
       
-      {timeSlots.map((_, idx) => (
+      {timeSlots.map((time, idx) => (
         <div
           key={idx}
-          className="border-b border-gray-100"
+          className={`border-b ${idx % 2 === 0 ? 'border-gray-200' : 'border-gray-100'}`}
           style={{ height: slotHeight }}
         />
       ))}
@@ -135,7 +200,9 @@ function DayColumn({
             template={template}
             slotHeight={slotHeight}
             dayStartMinutes={dayStartMinutes}
+            dayEndMinutes={dayEndMinutes}
             onClick={() => onBlockClick(block)}
+            onResize={(newDuration) => onBlockResize(block.id, newDuration)}
             isSelected={selectedBlockId === block.id}
           />
         );
@@ -144,23 +211,24 @@ function DayColumn({
   );
 }
 
-export function WeekGrid({ plan, currentWeek, templates, onBlockClick, selectedBlockId }: WeekGridProps) {
+export function WeekGrid({ plan, currentWeek, templates, onBlockClick, onBlockResize, selectedBlockId }: WeekGridProps) {
   const { settings } = plan;
   const timeSlots = generateTimeSlots(settings.dayStartTime, settings.dayEndTime, settings.slotMin);
   const slotHeight = 24;
   const dayStartMinutes = timeToMinutes(settings.dayStartTime);
+  const dayEndMinutes = timeToMinutes(settings.dayEndTime);
 
   const enabledDays = DAYS.filter(day => settings.enabledDays.includes(day));
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="flex-1 overflow-auto bg-white">
       <div className="sticky top-0 z-10 bg-white border-b">
         <div className="flex">
-          <div className="w-16 flex-shrink-0 border-r" />
+          <div className="w-20 flex-shrink-0 border-r bg-gray-50" />
           {enabledDays.map(day => (
             <div
               key={day}
-              className="flex-1 px-2 py-2 text-center text-sm font-medium border-r last:border-r-0"
+              className="flex-1 px-2 py-2 text-center text-sm font-medium border-r last:border-r-0 bg-gray-50"
             >
               {day}
             </div>
@@ -169,14 +237,14 @@ export function WeekGrid({ plan, currentWeek, templates, onBlockClick, selectedB
       </div>
 
       <div className="flex">
-        <div className="w-16 flex-shrink-0 border-r bg-gray-50">
+        <div className="w-20 flex-shrink-0 border-r bg-gray-50">
           {timeSlots.map((time, idx) => (
             <div
               key={time}
-              className="text-xs text-gray-500 text-right pr-2 border-b border-gray-100"
+              className={`text-xs text-gray-500 text-right pr-2 border-b ${idx % 2 === 0 ? 'border-gray-200' : 'border-gray-100'}`}
               style={{ height: slotHeight, lineHeight: `${slotHeight}px` }}
             >
-              {idx % 4 === 0 ? formatTimeDisplay(time) : ''}
+              {idx % 2 === 0 ? formatTimeDisplay(time) : ''}
             </div>
           ))}
         </div>
@@ -192,7 +260,9 @@ export function WeekGrid({ plan, currentWeek, templates, onBlockClick, selectedB
             timeSlots={timeSlots}
             slotHeight={slotHeight}
             dayStartMinutes={dayStartMinutes}
+            dayEndMinutes={dayEndMinutes}
             onBlockClick={onBlockClick}
+            onBlockResize={onBlockResize}
             selectedBlockId={selectedBlockId}
           />
         ))}

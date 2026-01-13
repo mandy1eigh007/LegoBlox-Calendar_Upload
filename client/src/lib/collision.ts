@@ -1,4 +1,4 @@
-import { PlacedBlock, Day, AllowedDuration } from '@/state/types';
+import { PlacedBlock, Day } from '@/state/types';
 import { timeToMinutes, minutesToTime, getEndTime } from './time';
 
 export interface Collision {
@@ -49,7 +49,7 @@ export function findNextAvailableSlot(
   week: number,
   day: Day,
   startTime: string,
-  durationMin: AllowedDuration,
+  durationMin: number,
   dayStartTime: string,
   dayEndTime: string,
   slotMin: number = 15,

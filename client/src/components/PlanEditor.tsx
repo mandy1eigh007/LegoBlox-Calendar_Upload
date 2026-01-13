@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '@/state/store';
 import { Plan, PlanSettings, DAYS, Day } from '@/state/types';
 import { Modal } from './Modal';
@@ -12,6 +12,10 @@ interface PlanEditorProps {
 export function PlanEditor({ plan, open, onClose }: PlanEditorProps) {
   const { dispatch } = useStore();
   const [formData, setFormData] = useState<PlanSettings>(plan.settings);
+
+  useEffect(() => {
+    setFormData(plan.settings);
+  }, [plan.settings, open]);
 
   const handleSave = () => {
     dispatch({
@@ -69,6 +73,17 @@ export function PlanEditor({ plan, open, onClose }: PlanEditorProps) {
               data-testid="edit-plan-end-time-input"
             />
           </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1">Slot Size</label>
+          <input
+            type="text"
+            value="15 minutes (fixed)"
+            disabled
+            className="w-full px-3 py-2 border rounded bg-gray-100 text-gray-500"
+          />
+          <p className="text-xs text-gray-500 mt-1">All scheduling uses 15-minute increments</p>
         </div>
 
         <div>

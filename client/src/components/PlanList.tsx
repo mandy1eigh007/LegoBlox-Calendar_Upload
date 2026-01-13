@@ -8,12 +8,12 @@ import { v4 as uuidv4 } from 'uuid';
 const DEFAULT_SETTINGS: PlanSettings = {
   name: '',
   weeks: 9,
-  enabledDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as Day[],
+  enabledDays: ['Tuesday', 'Wednesday', 'Thursday', 'Friday'] as Day[],
   dayStartTime: '06:30',
-  dayEndTime: '15:00',
+  dayEndTime: '15:30',
   slotMin: 15,
   lunchEnabled: true,
-  lunchStartTime: '10:00',
+  lunchStartTime: '11:00',
   lunchDurationMin: 60,
 };
 
@@ -82,7 +82,7 @@ export function PlanList() {
                 <div>
                   <h3 className="font-semibold text-gray-900">{plan.settings.name}</h3>
                   <p className="text-sm text-gray-500">
-                    {plan.settings.weeks} weeks | {plan.blocks.length} blocks
+                    {plan.settings.weeks} weeks | {plan.blocks.length} blocks | {plan.settings.enabledDays.length} days
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -155,6 +155,16 @@ export function PlanList() {
                 data-testid="plan-end-time-input"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Slot Size</label>
+            <input
+              type="text"
+              value="15 minutes (fixed)"
+              disabled
+              className="w-full px-3 py-2 border rounded bg-gray-100 text-gray-500"
+            />
           </div>
 
           <div>

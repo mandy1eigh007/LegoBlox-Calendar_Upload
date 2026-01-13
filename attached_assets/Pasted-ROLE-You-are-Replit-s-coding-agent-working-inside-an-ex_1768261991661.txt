@@ -1,0 +1,202 @@
+ROLE
+You are Replit’s coding agent working inside an existing web app repo. Your job is to implement the scheduling UI shown in the screenshot I provided, with the specific changes listed below. Do not invent curriculum topics, hours, or behaviors. If something is unclear, inspect the existing repo to find the current implementation and extend it—do not guess.
+
+NON-NEGOTIABLES
+1) Match the screenshot layout and behavior
+   - Top bar: Back, Plan title (“Test 1”), Week dropdown, Auto-place checkbox, Copy to Next Week, Reset Week, Export, Print View, Edit Settings
+   - Left panel: “Block Library” with Search, Category filter, and template cards with title, category label, and duration.
+   - Center: weekly grid with day columns (as shown), time labels on left, blocks placed in grid.
+   - Right panel: “Golden Rule Totals” with Scheduled / Budget and Over/Under status + legend.
+   - No icons added anywhere (no emojis, no icon buttons).
+
+2) Time granularity MUST be 15 minutes everywhere
+   - All scheduling, block durations, resizing, splitting, and totals calculations must be in 15-minute increments.
+   - Anything that’s not a multiple of 15 minutes must be rejected or automatically rounded with a clear warning (prefer reject).
+
+3) Calendar time range MUST be 6:30 AM to 3:30 PM
+   - Day start = 06:30
+   - Day end = 15:30
+   - Grid must render this full range.
+   - Time labels can be every 30 or 60 minutes, but the underlying rows must be 15-minute slots.
+
+4) “15-minute block” workflow MUST exist exactly like this:
+   - In the Block Library, every template must be placeable as a 15-minute “slice” by default.
+   - When I place a 15-minute slice onto the calendar, the Golden Rule Totals must immediately update, and the “Under by” number must shrink accordingly (or “Over by” grows if exceeded).
+   - I must also be able to make a block longer/shorter in 15-minute steps AFTER placing it (resize).
+   - I must also be able to split any placed block into two blocks at a 15-minute boundary (split).
+
+5) Over/Under logic (Golden Rule Totals)
+   - Each Golden Rule item has a budget (minutes).
+   - Scheduled minutes = sum of all placed blocks mapped to that Golden Rule item.
+   - Status rules:
+     - On target = within +/- 15 minutes of budget
+     - Under = below budget by more than 15 minutes
+     - Over = above budget by more than 15 minutes
+   - Display: “Scheduled / Budget” and “Under by X m” or “Over by X m” (or “On target”).
+
+6) IMPORTANT mapping rule (this is critical)
+   - A placed block can count toward a Golden Rule budget even if its category is different.
+   - Example: “Support Services Intake and Intro” (category: Support Services, duration: 1h30) must count toward the Golden Rule budget “Introduction to Pre-Apprenticeship” (budget: 3h).
+   - This is how adding 15 minutes from the left “takes time off” the right totals panel for that Golden Rule line item.
+
+WHAT TO BUILD / CHANGE
+A) Time Grid
+- Change the scheduler grid to 15-minute rows from 6:30 AM to 3:30 PM.
+- Ensure scrolling works cleanly if needed, but 6:30–3:30 should be visible reasonably (can be scrollable like screenshot).
+- No overlapping blocks allowed in the same day column:
+  - When dropping or resizing would cause overlap, revert the change and show a simple inline error (no modal).
+
+B) Block Library: 15-minute placement
+- Keep the existing template cards, but adjust behavior so dragging/placing creates a 15-minute block by default.
+- Keep the template’s “default duration” stored, but the initial placed instance should start at 15 minutes unless user explicitly chooses otherwise.
+- Provide a clear way to place more time quickly without dragging 20 times:
+  - After placing a 15-minute block, resizing must be easy (drag handle) and must snap by 15 minutes.
+  - Also allow “duplicate” (copy) a block, if it already exists in repo.
+
+C) Block Editing: Resize + Split
+- Resize:
+  - Add a resize handle on the bottom edge of a scheduled block (or both bottom and top if your grid supports it).
+  - Snap to 15-minute increments.
+  - Prevent resize outside 6:30–3:30.
+  - Prevent overlap.
+- Split:
+  - Provide a “Split” action in the block’s edit menu (or right-click context menu, whichever matches repo patterns).
+  - Split at a selected time boundary (15-minute boundary). Minimal UI approach:
+    - When user clicks “Split”, show a small inline selector: “Split after: [time dropdown in 15-min steps between start+15 and end-15]” + Confirm.
+  - Create two blocks with same template/category/mapping; durations must sum to original.
+
+D) Golden Rule Totals Panel
+- Implement/confirm a data structure for Golden Rule budgets (minutes).
+- For this screen, include at least the items shown in the screenshot:
+  - Introduction to Pre-Apprenticeship — 3h (180m)
+  - Professional Development Principles (Intro/Mid/Final combined) — 3h (180m)
+  - Grit/Growth Mindset — 1h (60m)
+  - How to be a Successful Apprentice — 1h (60m)
+  - Elevator Pitch — 2h (120m)
+  - Resumes — 4h (240m)
+  - Interviews (Interview Skills + Group Interviews + Mocks) — 10h (600m)
+  - Applying for Apprenticeships & Job Search — 3h (180m)
+- Calculations:
+  - Scheduled minutes must sum across ALL placed blocks whose goldenRuleKey matches that item.
+  - Example mapping must exist:
+    - Template “Intro to Pre-Apprenticeship” (category PD) -> goldenRuleKey: INTRO_PREAPP
+    - Template “Support Services Intake and Intro” (category Support Services) -> goldenRuleKey: INTRO_PREAPP
+- Display and status legend exactly like screenshot wording (no icons).
+
+E) Settings
+- “Edit Settings” should let me change:
+  - Day start time (default 6:30)
+  - Day end time (default 3:30)
+  - Slot size (locked to 15 minutes; show it but don’t let user change)
+  - Visible days (match screenshot default: Tuesday–Friday, but allow toggling days on/off)
+- Persist settings per plan (or at minimum in localStorage).
+
+F) Data Model (use TypeScript types if repo is TS)
+Define/confirm these types (or equivalent) and use them consistently:
+
+TemplateBlock:
+- id: string
+- title: string
+- category: string  (examples: Other, Admin, Certification, PD, Support Services, Shop)
+- defaultDurationMinutes: number (must be multiple of 15)
+- color: string (if repo uses styles)
+- goldenRuleKey?: string | null (for totals mapping)
+
+ScheduledBlock:
+- id: string
+- templateId: string
+- title: string
+- category: string
+- day: string (e.g., "Tuesday")
+- startMinutesFromDayStart: number (0 = 6:30 AM)
+- durationMinutes: number (multiple of 15)
+- goldenRuleKey?: string | null
+
+GoldenRuleBudgetItem:
+- key: string
+- label: string
+- budgetMinutes: number
+
+G) Persistence
+- Save plans, templates, scheduled blocks, and settings in localStorage (or existing storage mechanism in repo).
+- Must survive refresh.
+- Copy to Next Week must duplicate scheduled blocks to the next week selection.
+- Reset Week clears only that week’s scheduled blocks (not templates).
+
+H) Export + Print View
+- Export:
+  - Provide JSON export at minimum (download).
+  - If CSV exists already, keep it; otherwise add CSV export too.
+- Print View:
+  - Must render a clean schedule view for the selected week.
+  - Include Golden Rule Totals summary on print view.
+
+ACCEPTANCE TESTS (YOU MUST RUN THESE MANUALLY IN THE REPLIT PREVIEW)
+1) Time grid shows 6:30 AM through 3:30 PM with 15-minute resolution.
+2) Drag/Place behavior:
+   - Drag “Intro to Pre-Apprenticeship” into Tuesday at 6:30.
+   - It creates a 15-minute block.
+   - Golden Rule “Introduction to Pre-Apprenticeship” updates from 0m to 15m, and Under-by decreases from 180m to 165m.
+3) Mapping rule:
+   - Drag/Place “Support Services Intake and Intro” (Support Services) as a 15-minute block.
+   - It must ALSO reduce the “Introduction to Pre-Apprenticeship” Under-by number (because it shares goldenRuleKey).
+4) Resize:
+   - Resize a placed block from 15m to 45m.
+   - Totals reflect +30m change.
+   - Resize snaps by 15 minutes only.
+5) Split:
+   - Place a 60m block (resize it to 60).
+   - Split it into 15m + 45m (or 30 + 30).
+   - Totals remain the same as before split.
+6) Overlap prevention:
+   - Attempt to place a block overlapping an existing block.
+   - The action is rejected and the existing schedule remains unchanged.
+7) End boundary:
+   - Attempt to resize a block past 3:30 PM.
+   - It must stop at 3:30.
+8) Settings:
+   - Confirm day start is 6:30 and end is 3:30 by default.
+   - Toggle visible days and confirm grid updates.
+
+IMPLEMENTATION INSTRUCTIONS (DO THIS, DON’T TALK ABOUT IT)
+- First, inspect the existing repo to find where:
+  - Scheduler grid is rendered
+  - Templates are defined
+  - Drag/drop is implemented
+  - Golden Rule Totals is calculated
+- Then implement the changes above without rewriting the entire app.
+- Keep UI structure exactly like screenshot.
+- Write complete code changes (no placeholders).
+- If you add new files, list them.
+- If you modify existing files, list them.
+- Do not add new dependencies unless absolutely necessary. If you must add one for drag/resize/split, use the smallest reputable option and document exactly why in a brief comment in code (not in chat output).
+
+INITIAL DATA (SEED)
+Seed these templates if they don’t exist yet (durations are their “defaultDurationMinutes”, but placement still starts at 15m slices):
+- Work Out | category: Other | default: 60 | no goldenRuleKey
+- Lunch | category: Admin | default: 60 | no goldenRuleKey
+- OSHA 10 | category: Certification | default: 300 | no goldenRuleKey on this PD totals screen
+- Intro to Pre-Apprenticeship | category: PD | default: 180 | goldenRuleKey: INTRO_PREAPP
+- Support Services Intake and Intro | category: Support Services | default: 90 | goldenRuleKey: INTRO_PREAPP
+- Intro into ACES | category: Shop | default: 120 | no goldenRuleKey on this PD totals screen
+(Keep whatever else already exists; do not delete.)
+
+Golden Rule Budgets (minutes) for this screen:
+- INTRO_PREAPP: 180
+- PD_PRINCIPLES: 180
+- GRIT_GROWTH: 60
+- SUCCESSFUL_APPRENTICE: 60
+- ELEVATOR_PITCH: 120
+- RESUMES: 240
+- INTERVIEWS: 600
+- APPLY_APPRENTICESHIPS: 180
+
+DELIVERABLE
+When you finish, the running app must visually and functionally match the screenshot layout, with:
+- 15-minute block workflow
+- 6:30–3:30 grid
+- Golden Rule over/under updating correctly
+- Split + resize in 15-minute increments
+- No overlaps
+- Persisted data
+- Export + Print view working

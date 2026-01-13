@@ -1,5 +1,8 @@
+import { useState } from 'react';
 import { Plan, BlockTemplate, DAYS } from '@/state/types';
 import { generateTimeSlots, formatTimeDisplay, timeToMinutes, getEndTime } from '@/lib/time';
+import { calculateTopicTotals } from '@/lib/goldenRule';
+import { formatDuration } from '@/lib/time';
 
 interface PrintViewProps {
   plan: Plan;
@@ -8,12 +11,16 @@ interface PrintViewProps {
   onClose: () => void;
 }
 
-export function PrintView({ plan, currentWeek, templates, onClose }: PrintViewProps) {
+export function PrintView({ plan, currentWeek: initialWeek, templates, onClose }: PrintViewProps) {
+  const [currentWeek, setCurrentWeek] = useState(initialWeek);
   const { settings } = plan;
   const timeSlots = generateTimeSlots(settings.dayStartTime, settings.dayEndTime, settings.slotMin);
   const enabledDays = DAYS.filter(day => settings.enabledDays.includes(day));
   const dayStartMinutes = timeToMinutes(settings.dayStartTime);
   const slotHeight = 20;
+
+  const totals = calculateTopicTotals(plan, templates);
+  const activeTopics = totals.filter(t => t.scheduled > 0 || t.budget > 0);
 
   const handlePrint = () => {
     window.print();
@@ -27,12 +34,7 @@ export function PrintView({ plan, currentWeek, templates, onClose }: PrintViewPr
           <select
             className="px-3 py-1 border rounded text-sm"
             value={currentWeek}
-            onChange={(e) => {
-              const url = new URL(window.location.href);
-              url.searchParams.set('printWeek', e.target.value);
-              window.history.replaceState({}, '', url);
-              window.location.reload();
-            }}
+            onChange={(e) => setCurrentWeek(parseInt(e.target.value))}
             data-testid="print-week-select"
           >
             {Array.from({ length: settings.weeks }, (_, i) => i + 1).map(week => (
@@ -64,7 +66,7 @@ export function PrintView({ plan, currentWeek, templates, onClose }: PrintViewPr
           <p className="text-sm text-gray-600">Week {currentWeek}</p>
         </div>
 
-        <div className="border rounded overflow-hidden">
+        <div className="border rounded overflow-hidden mb-8">
           <div className="flex border-b bg-gray-100">
             <div className="w-20 flex-shrink-0 p-2 text-sm font-medium border-r">Time</div>
             {enabledDays.map(day => (
@@ -85,7 +87,7 @@ export function PrintView({ plan, currentWeek, templates, onClose }: PrintViewPr
                   className="text-xs text-gray-600 text-right pr-2 border-b"
                   style={{ height: slotHeight }}
                 >
-                  {idx % 4 === 0 ? formatTimeDisplay(time) : ''}
+                  {idx % 2 === 0 ? formatTimeDisplay(time) : ''}
                 </div>
               ))}
             </div>
@@ -135,6 +137,34 @@ export function PrintView({ plan, currentWeek, templates, onClose }: PrintViewPr
                 </div>
               );
             })}
+          </div>
+        </div>
+
+        <div className="border rounded p-4">
+          <h3 className="font-semibold mb-3">Golden Rule Totals Summary</h3>
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            {activeTopics.map(item => (
+              <div 
+                key={item.key}
+                className={`p-2 rounded ${
+                  item.status === 'over' ? 'bg-red-50' : 
+                  item.status === 'on-target' ? 'bg-green-50' : 
+                  'bg-gray-50'
+                }`}
+              >
+                <span className="font-medium">{item.label}:</span>{' '}
+                <span>{formatDuration(item.scheduled)} / {formatDuration(item.budget)}</span>
+                <span className={`ml-2 ${
+                  item.status === 'over' ? 'text-red-600' : 
+                  item.status === 'on-target' ? 'text-green-600' : 
+                  'text-gray-500'
+                }`}>
+                  ({item.status === 'over' ? `Over by ${item.difference}m` : 
+                    item.status === 'under' ? `Under by ${Math.abs(item.difference)}m` : 
+                    'On target'})
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       </div>

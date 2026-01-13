@@ -3,15 +3,14 @@ import {
   BlockTemplate, 
   Plan, 
   PlacedBlock, 
-  ALLOWED_DURATIONS, 
   CATEGORIES, 
   DAYS, 
-  GOLDEN_RULE_TOPICS,
-  GoldenRuleTopic
+  GOLDEN_RULE_KEYS,
+  GoldenRuleKey
 } from './types';
 
-export function isValidGoldenRuleTopic(topic: string): topic is GoldenRuleTopic {
-  return GOLDEN_RULE_TOPICS.includes(topic as GoldenRuleTopic);
+export function isValidGoldenRuleKey(key: string): key is GoldenRuleKey {
+  return GOLDEN_RULE_KEYS.includes(key as GoldenRuleKey);
 }
 
 export function validateTemplate(template: unknown): template is BlockTemplate {
@@ -21,9 +20,12 @@ export function validateTemplate(template: unknown): template is BlockTemplate {
   if (typeof t.id !== 'string' || !t.id) return false;
   if (typeof t.title !== 'string' || !t.title) return false;
   if (!CATEGORIES.includes(t.category as typeof CATEGORIES[number])) return false;
-  if (!ALLOWED_DURATIONS.includes(t.defaultDurationMin as typeof ALLOWED_DURATIONS[number])) return false;
+  if (typeof t.defaultDurationMin !== 'number' || t.defaultDurationMin < 15) return false;
   if (typeof t.colorHex !== 'string') return false;
-  if (!isValidGoldenRuleTopic(t.goldenRuleTopic as string)) return false;
+  
+  if (t.goldenRuleKey !== null && t.goldenRuleKey !== undefined) {
+    if (!isValidGoldenRuleKey(t.goldenRuleKey as string)) return false;
+  }
   
   return true;
 }
@@ -37,7 +39,7 @@ export function validatePlacedBlock(block: unknown): block is PlacedBlock {
   if (typeof b.week !== 'number' || b.week < 1) return false;
   if (!DAYS.includes(b.day as typeof DAYS[number])) return false;
   if (typeof b.startTime !== 'string') return false;
-  if (!ALLOWED_DURATIONS.includes(b.durationMin as typeof ALLOWED_DURATIONS[number])) return false;
+  if (typeof b.durationMin !== 'number' || b.durationMin < 15) return false;
   
   return true;
 }
@@ -80,9 +82,6 @@ export function validateAppState(state: unknown): { valid: boolean; error?: stri
   for (const template of s.templates) {
     if (!validateTemplate(template)) {
       return { valid: false, error: `Invalid template: ${JSON.stringify(template)}` };
-    }
-    if (!isValidGoldenRuleTopic((template as BlockTemplate).goldenRuleTopic)) {
-      return { valid: false, error: `Unknown Golden Rule topic: ${(template as BlockTemplate).goldenRuleTopic}` };
     }
   }
   

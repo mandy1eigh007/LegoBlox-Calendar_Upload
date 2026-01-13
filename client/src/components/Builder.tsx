@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useLocation, useParams } from 'wouter';
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import { useStore } from '@/state/store';
-import { BlockTemplate, PlacedBlock, Day, DAYS, AllowedDuration } from '@/state/types';
+import { BlockTemplate, PlacedBlock, Day, DAYS } from '@/state/types';
 import { BlockLibrary } from './BlockLibrary';
 import { WeekGrid } from './WeekGrid';
 import { BlockEditPanel } from './BlockEditPanel';
@@ -131,10 +131,10 @@ export function Builder() {
   };
 
   const placeNewBlock = (template: BlockTemplate, day: Day, startTime: string) => {
-    const duration = template.defaultDurationMin;
+    const duration = 15;
     
     if (!wouldFitInDay(startTime, duration, settings.dayEndTime)) {
-      setErrorMessage(`Block would extend beyond day end time.`);
+      setErrorMessage(`Block would extend beyond ${formatTimeDisplay(settings.dayEndTime)}.`);
       return;
     }
     
@@ -193,7 +193,7 @@ export function Builder() {
     const duration = block.durationMin;
     
     if (!wouldFitInDay(newStartTime, duration, settings.dayEndTime)) {
-      setErrorMessage(`Block would extend beyond day end time.`);
+      setErrorMessage(`Block would extend beyond ${formatTimeDisplay(settings.dayEndTime)}.`);
       return;
     }
     
@@ -231,6 +231,41 @@ export function Builder() {
     dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updatedBlock } });
   };
 
+  const handleBlockResize = (blockId: string, newDuration: number) => {
+    const block = plan.blocks.find(b => b.id === blockId);
+    if (!block) return;
+    
+    if (newDuration % 15 !== 0) {
+      setErrorMessage('Duration must be a multiple of 15 minutes.');
+      return;
+    }
+    
+    if (!wouldFitInDay(block.startTime, newDuration, settings.dayEndTime)) {
+      return;
+    }
+    
+    const collisions = findCollisions(
+      plan.blocks, block.week, block.day,
+      block.startTime, newDuration, block.id
+    );
+    
+    if (collisions.length > 0) {
+      return;
+    }
+    
+    const template = state.templates.find(t => t.id === block.templateId);
+    if (template) {
+      const goldenRuleCheck = checkGoldenRuleLimit(plan, state.templates, template.id, newDuration, block.id);
+      if (!goldenRuleCheck.allowed) {
+        setErrorMessage(goldenRuleCheck.message);
+        return;
+      }
+    }
+    
+    const updatedBlock: PlacedBlock = { ...block, durationMin: newDuration };
+    dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updatedBlock } });
+  };
+
   const handleBlockUpdate = (updatedBlock: PlacedBlock) => {
     const template = state.templates.find(t => t.id === updatedBlock.templateId);
     if (!template) return;
@@ -238,9 +273,14 @@ export function Builder() {
     const originalBlock = plan.blocks.find(b => b.id === updatedBlock.id);
     if (!originalBlock) return;
     
+    if (updatedBlock.durationMin % 15 !== 0) {
+      setErrorMessage('Duration must be a multiple of 15 minutes.');
+      return;
+    }
+    
     if (updatedBlock.durationMin !== originalBlock.durationMin) {
       if (!wouldFitInDay(updatedBlock.startTime, updatedBlock.durationMin, settings.dayEndTime)) {
-        setErrorMessage('New duration would extend beyond day end time.');
+        setErrorMessage(`Duration would extend past ${formatTimeDisplay(settings.dayEndTime)}.`);
         return;
       }
       
@@ -283,6 +323,97 @@ export function Builder() {
     if (selectedBlockId) {
       dispatch({ type: 'DELETE_BLOCK', payload: { planId: plan.id, blockId: selectedBlockId } });
       setSelectedBlockId(null);
+    }
+  };
+
+  const handleBlockSplit = (blockId: string, splitAfterMinutes: number) => {
+    const block = plan.blocks.find(b => b.id === blockId);
+    if (!block) return;
+    
+    if (splitAfterMinutes % 15 !== 0 || splitAfterMinutes < 15 || splitAfterMinutes >= block.durationMin) {
+      setErrorMessage('Invalid split point.');
+      return;
+    }
+    
+    const firstDuration = splitAfterMinutes;
+    const secondDuration = block.durationMin - splitAfterMinutes;
+    const secondStartTime = getEndTime(block.startTime, firstDuration);
+    
+    const firstBlock: PlacedBlock = {
+      ...block,
+      durationMin: firstDuration,
+    };
+    
+    const secondBlock: PlacedBlock = {
+      id: uuidv4(),
+      templateId: block.templateId,
+      week: block.week,
+      day: block.day,
+      startTime: secondStartTime,
+      durationMin: secondDuration,
+      titleOverride: block.titleOverride,
+      location: block.location,
+      notes: block.notes,
+    };
+    
+    dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: firstBlock } });
+    dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block: secondBlock } });
+    setSelectedBlockId(null);
+  };
+
+  const handleBlockDuplicate = () => {
+    if (!selectedBlockId) return;
+    
+    const block = plan.blocks.find(b => b.id === selectedBlockId);
+    if (!block) return;
+    
+    const endTime = getEndTime(block.startTime, block.durationMin);
+    
+    if (!wouldFitInDay(endTime, block.durationMin, settings.dayEndTime)) {
+      setErrorMessage('Not enough space to duplicate block.');
+      return;
+    }
+    
+    const collisions = findCollisions(plan.blocks, block.week, block.day, endTime, block.durationMin);
+    
+    if (collisions.length > 0) {
+      const nextSlot = findNextAvailableSlot(
+        plan.blocks, block.week, block.day, endTime, block.durationMin,
+        settings.dayStartTime, settings.dayEndTime, settings.slotMin
+      );
+      
+      if (!nextSlot) {
+        setErrorMessage('No space available to duplicate block.');
+        return;
+      }
+      
+      const newBlock: PlacedBlock = {
+        id: uuidv4(),
+        templateId: block.templateId,
+        week: block.week,
+        day: block.day,
+        startTime: nextSlot,
+        durationMin: block.durationMin,
+        titleOverride: block.titleOverride,
+        location: block.location,
+        notes: block.notes,
+      };
+      
+      dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block: newBlock } });
+    } else {
+      const newBlock: PlacedBlock = {
+        id: uuidv4(),
+        templateId: block.templateId,
+        week: block.week,
+        day: block.day,
+        startTime: endTime,
+        durationMin: block.durationMin,
+        titleOverride: block.titleOverride,
+        location: block.location,
+        notes: block.notes,
+      };
+      
+      dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block: newBlock } });
     }
   };
 
@@ -368,7 +499,7 @@ export function Builder() {
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="h-screen flex flex-col bg-gray-50">
-        <header className="bg-white border-b px-4 py-3 flex items-center justify-between">
+        <header className="bg-white border-b px-4 py-3 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-4">
             <button
               onClick={() => navigate('/')}
@@ -380,7 +511,7 @@ export function Builder() {
             <h1 className="font-semibold text-lg">{plan.settings.name}</h1>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <span className="text-sm">Week:</span>
               <select
@@ -395,7 +526,7 @@ export function Builder() {
               </select>
             </div>
             
-            <label className="flex items-center gap-2 text-sm">
+            <label className="flex items-center gap-1 text-sm">
               <input
                 type="checkbox"
                 checked={autoPlace}
@@ -456,7 +587,7 @@ export function Builder() {
         )}
 
         <div className="flex-1 flex overflow-hidden">
-          <div className="w-72 flex-shrink-0">
+          <div className="w-64 flex-shrink-0">
             <BlockLibrary />
           </div>
           
@@ -465,6 +596,7 @@ export function Builder() {
             currentWeek={currentWeek}
             templates={state.templates}
             onBlockClick={(block) => setSelectedBlockId(block.id)}
+            onBlockResize={handleBlockResize}
             selectedBlockId={selectedBlockId}
           />
           
@@ -472,8 +604,11 @@ export function Builder() {
             <BlockEditPanel
               block={selectedBlock}
               template={selectedTemplate}
+              dayEndTime={settings.dayEndTime}
               onUpdate={handleBlockUpdate}
               onDelete={handleBlockDelete}
+              onSplit={handleBlockSplit}
+              onDuplicate={handleBlockDuplicate}
               onClose={() => setSelectedBlockId(null)}
             />
           ) : (
@@ -493,6 +628,7 @@ export function Builder() {
               }}
             >
               <p className="text-sm font-medium">{(draggedItem.data as BlockTemplate).title}</p>
+              <p className="text-xs text-gray-500">15m block</p>
             </div>
           )}
           {draggedItem && draggedItem.type === 'placed-block' && (
