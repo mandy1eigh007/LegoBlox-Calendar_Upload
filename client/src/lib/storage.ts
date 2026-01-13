@@ -27,6 +27,7 @@ export function createDefaultPlanSettings() {
     resources: [...DEFAULT_RESOURCES],
     allowOverlaps: true,
     showNotesOnPrint: true,
+    schedulerMode: 'manual' as const,
   };
 }
 
@@ -111,6 +112,7 @@ function migrateV1ToV2(oldState: unknown): AppState | null {
           resources: [...DEFAULT_RESOURCES],
           allowOverlaps: true,
           showNotesOnPrint: true,
+          schedulerMode: 'manual' as const,
         },
         blocks: newBlocks,
         recurrenceSeries: [],
@@ -151,6 +153,12 @@ export function loadState(): { state: AppState; error?: string } {
         state: createInitialState(), 
         error: 'Data format changed. Starting fresh with templates.' 
       };
+    }
+    
+    for (const plan of parsed.plans) {
+      if (!plan.settings.schedulerMode) {
+        plan.settings.schedulerMode = 'manual';
+      }
     }
     
     return { state: parsed };

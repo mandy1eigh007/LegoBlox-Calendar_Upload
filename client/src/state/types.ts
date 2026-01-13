@@ -154,6 +154,8 @@ export interface RecurrenceSeries {
   goldenRuleBucketId: GoldenRuleBucketId | null;
 }
 
+export type SchedulerMode = 'manual' | 'predictive';
+
 export interface PlanSettings {
   name: string;
   weeks: number;
@@ -163,6 +165,7 @@ export interface PlanSettings {
   resources: string[];
   allowOverlaps: boolean;
   showNotesOnPrint: boolean;
+  schedulerMode: SchedulerMode;
 }
 
 export interface Plan {

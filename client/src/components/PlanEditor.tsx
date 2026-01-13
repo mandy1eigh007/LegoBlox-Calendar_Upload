@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '@/state/store';
-import { Plan, PlanSettings, DEFAULT_RESOURCES } from '@/state/types';
+import { Plan, PlanSettings, DEFAULT_RESOURCES, SchedulerMode } from '@/state/types';
 import { Modal } from './Modal';
 import { minutesToTimeDisplay, DAY_START_DEFAULT, DAY_END_DEFAULT, SLOT_HEIGHT_PX, SLOT_MINUTES } from '@/lib/time';
 
@@ -117,6 +117,24 @@ export function PlanEditor({ plan, open, onClose, onToggleDiagnostics, showDiagn
             disabled
             className="w-full px-3 py-2 border rounded bg-gray-100 text-gray-500"
           />
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium mb-1">Scheduler Mode</label>
+          <select
+            value={formData.schedulerMode || 'manual'}
+            onChange={e => setFormData({ ...formData, schedulerMode: e.target.value as SchedulerMode })}
+            className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            data-testid="edit-plan-scheduler-mode"
+          >
+            <option value="manual">Manual Builder</option>
+            <option value="predictive">Predictive Builder</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            {formData.schedulerMode === 'predictive' 
+              ? 'Enables AI-powered schedule suggestions based on training data'
+              : 'Traditional drag-and-drop scheduling with manual block placement'}
+          </p>
         </div>
 
         <div>
