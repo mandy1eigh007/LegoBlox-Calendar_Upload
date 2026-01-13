@@ -1,10 +1,9 @@
 import { PlacedBlock, Day } from '@/state/types';
-import { timeToMinutes, minutesToTime, getEndTime } from './time';
+import { getEndMinutes } from './time';
 
-export interface Collision {
+export interface Conflict {
   block: PlacedBlock;
-  startTime: string;
-  endTime: string;
+  reason: string;
 }
 
 export function checkOverlap(
@@ -16,73 +15,96 @@ export function checkOverlap(
   return start1 < end2 && end1 > start2;
 }
 
-export function findCollisions(
+export function findConflicts(
   blocks: PlacedBlock[],
   week: number,
   day: Day,
-  startTime: string,
-  durationMin: number,
+  startMinutes: number,
+  durationMinutes: number,
+  location: string,
   excludeBlockId?: string
-): Collision[] {
-  const startMin = timeToMinutes(startTime);
-  const endMin = startMin + durationMin;
+): Conflict[] {
+  const endMinutes = getEndMinutes(startMinutes, durationMinutes);
+  const conflicts: Conflict[] = [];
   
-  return blocks
-    .filter(block => {
-      if (excludeBlockId && block.id === excludeBlockId) return false;
-      if (block.week !== week || block.day !== day) return false;
-      
-      const blockStart = timeToMinutes(block.startTime);
-      const blockEnd = blockStart + block.durationMin;
-      
-      return checkOverlap(startMin, endMin, blockStart, blockEnd);
-    })
-    .map(block => ({
-      block,
-      startTime: block.startTime,
-      endTime: getEndTime(block.startTime, block.durationMin),
-    }));
+  for (const block of blocks) {
+    if (excludeBlockId && block.id === excludeBlockId) continue;
+    if (block.week !== week || block.day !== day) continue;
+    
+    const blockEnd = getEndMinutes(block.startMinutes, block.durationMinutes);
+    
+    if (!checkOverlap(startMinutes, endMinutes, block.startMinutes, blockEnd)) {
+      continue;
+    }
+    
+    if (location && block.location && location === block.location) {
+      conflicts.push({
+        block,
+        reason: `Conflicts with block at same location: ${location}`,
+      });
+    } else {
+      conflicts.push({
+        block,
+        reason: 'Time overlap',
+      });
+    }
+  }
+  
+  return conflicts;
 }
 
 export function findNextAvailableSlot(
   blocks: PlacedBlock[],
   week: number,
   day: Day,
-  startTime: string,
-  durationMin: number,
-  dayStartTime: string,
-  dayEndTime: string,
-  slotMin: number = 15,
+  startMinutes: number,
+  durationMinutes: number,
+  dayStartMinutes: number,
+  dayEndMinutes: number,
+  slotMinutes: number = 15,
   excludeBlockId?: string
-): string | null {
-  const dayStart = timeToMinutes(dayStartTime);
-  const dayEnd = timeToMinutes(dayEndTime);
-  const startMin = Math.max(timeToMinutes(startTime), dayStart);
-  
-  for (let currentMin = startMin; currentMin + durationMin <= dayEnd; currentMin += slotMin) {
-    const collisions = findCollisions(
+): number | null {
+  for (let currentMin = startMinutes; currentMin + durationMinutes <= dayEndMinutes; currentMin += slotMinutes) {
+    const conflicts = findTimeConflicts(
       blocks,
       week,
       day,
-      minutesToTime(currentMin),
-      durationMin,
+      currentMin,
+      durationMinutes,
       excludeBlockId
     );
     
-    if (collisions.length === 0) {
-      return minutesToTime(currentMin);
+    if (conflicts.length === 0) {
+      return currentMin;
     }
   }
   
   return null;
 }
 
+export function findTimeConflicts(
+  blocks: PlacedBlock[],
+  week: number,
+  day: Day,
+  startMinutes: number,
+  durationMinutes: number,
+  excludeBlockId?: string
+): PlacedBlock[] {
+  const endMinutes = getEndMinutes(startMinutes, durationMinutes);
+  
+  return blocks.filter(block => {
+    if (excludeBlockId && block.id === excludeBlockId) return false;
+    if (block.week !== week || block.day !== day) return false;
+    
+    const blockEnd = getEndMinutes(block.startMinutes, block.durationMinutes);
+    return checkOverlap(startMinutes, endMinutes, block.startMinutes, blockEnd);
+  });
+}
+
 export function wouldFitInDay(
-  startTime: string,
-  durationMin: number,
-  dayEndTime: string
+  startMinutes: number,
+  durationMinutes: number,
+  dayEndMinutes: number
 ): boolean {
-  const endMin = timeToMinutes(startTime) + durationMin;
-  const dayEnd = timeToMinutes(dayEndTime);
-  return endMin <= dayEnd;
+  return getEndMinutes(startMinutes, durationMinutes) <= dayEndMinutes;
 }

@@ -2,7 +2,14 @@ import { useState, useRef, useEffect } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { useDraggable } from '@dnd-kit/core';
 import { Plan, PlacedBlock, BlockTemplate, Day, DAYS } from '@/state/types';
-import { generateTimeSlots, formatTimeDisplay, timeToMinutes, getEndTime, minutesToTime } from '@/lib/time';
+import { 
+  SLOT_HEIGHT_PX, 
+  minutesToTimeDisplay, 
+  getEndMinutes,
+  durationToPixelHeight,
+  minutesToPixelOffset
+} from '@/lib/time';
+import { findTimeConflicts } from '@/lib/collision';
 
 interface WeekGridProps {
   plan: Plan;
@@ -15,12 +22,10 @@ interface WeekGridProps {
 
 interface DayColumnProps {
   day: Day;
-  dayIndex: number;
   plan: Plan;
   currentWeek: number;
   templates: BlockTemplate[];
-  timeSlots: string[];
-  slotHeight: number;
+  timeSlots: number[];
   dayStartMinutes: number;
   dayEndMinutes: number;
   onBlockClick: (block: PlacedBlock) => void;
@@ -31,21 +36,21 @@ interface DayColumnProps {
 function DraggablePlacedBlock({ 
   block, 
   template, 
-  slotHeight, 
   dayStartMinutes,
   dayEndMinutes,
   onClick,
   onResize,
-  isSelected
+  isSelected,
+  hasConflict
 }: { 
   block: PlacedBlock; 
   template: BlockTemplate | undefined;
-  slotHeight: number;
   dayStartMinutes: number;
   dayEndMinutes: number;
   onClick: () => void;
   onResize: (newDuration: number) => void;
   isSelected: boolean;
+  hasConflict: boolean;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `block-${block.id}`,
@@ -55,11 +60,9 @@ function DraggablePlacedBlock({
   const [isResizing, setIsResizing] = useState(false);
   const [resizeStartY, setResizeStartY] = useState(0);
   const [initialDuration, setInitialDuration] = useState(0);
-  const resizeRef = useRef<HTMLDivElement>(null);
 
-  const startMinutes = timeToMinutes(block.startTime);
-  const topOffset = ((startMinutes - dayStartMinutes) / 15) * slotHeight;
-  const blockHeight = (block.durationMin / 15) * slotHeight;
+  const topOffset = minutesToPixelOffset(block.startMinutes, dayStartMinutes);
+  const blockHeight = durationToPixelHeight(block.durationMinutes);
   
   const title = block.titleOverride || template?.title || 'Unknown';
   const colorHex = template?.colorHex || '#6B7280';
@@ -69,7 +72,7 @@ function DraggablePlacedBlock({
     e.preventDefault();
     setIsResizing(true);
     setResizeStartY(e.clientY);
-    setInitialDuration(block.durationMin);
+    setInitialDuration(block.durationMinutes);
   };
 
   useEffect(() => {
@@ -77,10 +80,10 @@ function DraggablePlacedBlock({
 
     const handleMouseMove = (e: MouseEvent) => {
       const deltaY = e.clientY - resizeStartY;
-      const deltaSlots = Math.round(deltaY / slotHeight);
+      const deltaSlots = Math.round(deltaY / SLOT_HEIGHT_PX);
       const newDuration = Math.max(15, initialDuration + deltaSlots * 15);
       
-      const endMinutes = startMinutes + newDuration;
+      const endMinutes = block.startMinutes + newDuration;
       if (endMinutes <= dayEndMinutes) {
         onResize(newDuration);
       }
@@ -97,12 +100,12 @@ function DraggablePlacedBlock({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isResizing, resizeStartY, initialDuration, slotHeight, startMinutes, dayEndMinutes, onResize]);
+  }, [isResizing, resizeStartY, initialDuration, block.startMinutes, dayEndMinutes, onResize]);
 
   return (
     <div
       ref={setNodeRef}
-      className={`absolute left-1 right-1 rounded overflow-hidden transition-all ${isDragging ? 'opacity-50 z-50' : ''} ${isSelected ? 'ring-2 ring-blue-600 ring-offset-1' : ''}`}
+      className={`absolute left-1 right-1 rounded overflow-hidden transition-all ${isDragging ? 'opacity-50 z-50' : ''} ${isSelected ? 'ring-2 ring-blue-600 ring-offset-1' : ''} ${hasConflict ? 'ring-2 ring-red-500' : ''}`}
       style={{
         top: `${topOffset}px`,
         height: `${blockHeight - 2}px`,
@@ -123,16 +126,15 @@ function DraggablePlacedBlock({
         <p className="text-xs font-medium truncate">{title}</p>
         {blockHeight > 30 && (
           <p className="text-xs opacity-80 truncate">
-            {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(getEndTime(block.startTime, block.durationMin))}
+            {minutesToTimeDisplay(block.startMinutes)} - {minutesToTimeDisplay(getEndMinutes(block.startMinutes, block.durationMinutes))}
           </p>
         )}
-        {blockHeight > 45 && (
-          <p className="text-xs opacity-70">{block.durationMin}m</p>
+        {blockHeight > 45 && block.location && (
+          <p className="text-xs opacity-70 truncate">{block.location}</p>
         )}
       </div>
       
       <div
-        ref={resizeRef}
         onMouseDown={handleResizeStart}
         className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize bg-black/20 hover:bg-black/40 transition-colors"
         title="Drag to resize"
@@ -143,12 +145,10 @@ function DraggablePlacedBlock({
 
 function DayColumn({ 
   day, 
-  dayIndex,
   plan, 
   currentWeek, 
   templates, 
-  timeSlots, 
-  slotHeight,
+  timeSlots,
   dayStartMinutes,
   dayEndMinutes,
   onBlockClick,
@@ -157,53 +157,49 @@ function DayColumn({
 }: DayColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: `day-${day}`,
-    data: { day, dayIndex },
+    data: { day },
   });
 
   const dayBlocks = plan.blocks.filter(b => b.week === currentWeek && b.day === day);
-  const lunchStart = plan.settings.lunchEnabled ? timeToMinutes(plan.settings.lunchStartTime) : null;
-  const lunchEnd = lunchStart ? lunchStart + plan.settings.lunchDurationMin : null;
 
   return (
     <div 
       ref={setNodeRef}
       className={`flex-1 relative border-r last:border-r-0 ${isOver ? 'bg-blue-50' : ''}`}
-      style={{ minHeight: timeSlots.length * slotHeight }}
+      style={{ minHeight: timeSlots.length * SLOT_HEIGHT_PX }}
     >
-      {plan.settings.lunchEnabled && lunchStart !== null && lunchEnd !== null && 
-       lunchStart >= dayStartMinutes && lunchStart < dayEndMinutes && (
-        <div
-          className="absolute left-0 right-0 bg-gray-100 border-y border-gray-200 pointer-events-none z-0"
-          style={{
-            top: ((lunchStart - dayStartMinutes) / 15) * slotHeight,
-            height: (Math.min(lunchEnd, dayEndMinutes) - lunchStart) / 15 * slotHeight,
-          }}
-        >
-          <span className="text-xs text-gray-400 px-1">Lunch</span>
-        </div>
-      )}
-      
-      {timeSlots.map((time, idx) => (
+      {timeSlots.map((_, idx) => (
         <div
           key={idx}
           className={`border-b ${idx % 2 === 0 ? 'border-gray-200' : 'border-gray-100'}`}
-          style={{ height: slotHeight }}
+          style={{ height: SLOT_HEIGHT_PX }}
         />
       ))}
       
       {dayBlocks.map(block => {
         const template = templates.find(t => t.id === block.templateId);
+        const conflicts = findTimeConflicts(
+          dayBlocks,
+          currentWeek,
+          day,
+          block.startMinutes,
+          block.durationMinutes,
+          block.id
+        );
+        const hasConflict = conflicts.length > 0 && !!block.location && 
+          conflicts.some(c => c.location === block.location);
+        
         return (
           <DraggablePlacedBlock
             key={block.id}
             block={block}
             template={template}
-            slotHeight={slotHeight}
             dayStartMinutes={dayStartMinutes}
             dayEndMinutes={dayEndMinutes}
             onClick={() => onBlockClick(block)}
             onResize={(newDuration) => onBlockResize(block.id, newDuration)}
             isSelected={selectedBlockId === block.id}
+            hasConflict={hasConflict}
           />
         );
       })}
@@ -213,15 +209,15 @@ function DayColumn({
 
 export function WeekGrid({ plan, currentWeek, templates, onBlockClick, onBlockResize, selectedBlockId }: WeekGridProps) {
   const { settings } = plan;
-  const timeSlots = generateTimeSlots(settings.dayStartTime, settings.dayEndTime, settings.slotMin);
-  const slotHeight = 24;
-  const dayStartMinutes = timeToMinutes(settings.dayStartTime);
-  const dayEndMinutes = timeToMinutes(settings.dayEndTime);
+  const timeSlots: number[] = [];
+  for (let m = settings.dayStartMinutes; m < settings.dayEndMinutes; m += 15) {
+    timeSlots.push(m);
+  }
 
-  const enabledDays = DAYS.filter(day => settings.enabledDays.includes(day));
+  const enabledDays = DAYS.filter(() => true);
 
   return (
-    <div className="flex-1 overflow-auto bg-white">
+    <div className="flex-1 overflow-auto bg-white" data-testid="week-grid">
       <div className="sticky top-0 z-10 bg-white border-b">
         <div className="flex">
           <div className="w-20 flex-shrink-0 border-r bg-gray-50" />
@@ -238,29 +234,27 @@ export function WeekGrid({ plan, currentWeek, templates, onBlockClick, onBlockRe
 
       <div className="flex">
         <div className="w-20 flex-shrink-0 border-r bg-gray-50">
-          {timeSlots.map((time, idx) => (
+          {timeSlots.map((minutes, idx) => (
             <div
-              key={time}
+              key={minutes}
               className={`text-xs text-gray-500 text-right pr-2 border-b ${idx % 2 === 0 ? 'border-gray-200' : 'border-gray-100'}`}
-              style={{ height: slotHeight, lineHeight: `${slotHeight}px` }}
+              style={{ height: SLOT_HEIGHT_PX, lineHeight: `${SLOT_HEIGHT_PX}px` }}
             >
-              {idx % 2 === 0 ? formatTimeDisplay(time) : ''}
+              {idx % 2 === 0 ? minutesToTimeDisplay(minutes) : ''}
             </div>
           ))}
         </div>
 
-        {enabledDays.map((day, dayIndex) => (
+        {enabledDays.map(day => (
           <DayColumn
             key={day}
             day={day}
-            dayIndex={dayIndex}
             plan={plan}
             currentWeek={currentWeek}
             templates={templates}
             timeSlots={timeSlots}
-            slotHeight={slotHeight}
-            dayStartMinutes={dayStartMinutes}
-            dayEndMinutes={dayEndMinutes}
+            dayStartMinutes={settings.dayStartMinutes}
+            dayEndMinutes={settings.dayEndMinutes}
             onBlockClick={onBlockClick}
             onBlockResize={onBlockResize}
             selectedBlockId={selectedBlockId}

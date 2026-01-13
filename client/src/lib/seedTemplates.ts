@@ -1,36 +1,38 @@
-import { BlockTemplate, GoldenRuleKey, Category, COLOR_PALETTE } from '@/state/types';
+import { BlockTemplate, Category, COLOR_PALETTE, GoldenRuleBucketId } from '@/state/types';
 import { v4 as uuidv4 } from 'uuid';
 
 interface SeedTemplate {
   title: string;
-  duration: number;
   category: Category;
-  goldenRuleKey?: GoldenRuleKey | null;
+  defaultDurationMinutes: number;
+  countsTowardGoldenRule: boolean;
+  goldenRuleBucketId: GoldenRuleBucketId | null;
+  defaultLocation?: string;
+  defaultNotes?: string;
 }
 
 const SEED_TEMPLATES: SeedTemplate[] = [
-  { title: 'Work Out', duration: 60, category: 'Other', goldenRuleKey: 'PHYSICAL_FITNESS' },
-  { title: 'Lunch', duration: 60, category: 'Admin', goldenRuleKey: null },
-  { title: 'OSHA 10', duration: 300, category: 'Certification', goldenRuleKey: 'OSHA_10' },
-  { title: 'Intro to Pre-Apprenticeship', duration: 180, category: 'PD', goldenRuleKey: 'INTRO_PREAPP' },
-  { title: 'Support Services Intake and Intro', duration: 90, category: 'Support Services', goldenRuleKey: 'INTRO_PREAPP' },
-  { title: 'Intro into ACES', duration: 120, category: 'Shop', goldenRuleKey: 'ACE_INSTRUCTION' },
-  { title: 'Intro into Tape Measure for ACES', duration: 60, category: 'Shop', goldenRuleKey: 'MEASURING_TAPE' },
-  { title: 'Mock Interview Prep', duration: 120, category: 'PD', goldenRuleKey: 'INTERVIEWS' },
-  { title: 'Group Interviewing', duration: 120, category: 'PD', goldenRuleKey: 'INTERVIEWS' },
-  { title: 'ACEs', duration: 120, category: 'Shop', goldenRuleKey: 'ACES' },
-  { title: 'Crate Project', duration: 240, category: 'Shop', goldenRuleKey: 'SKILLS_PROJECTS' },
-  { title: 'Forklift', duration: 480, category: 'Certification', goldenRuleKey: 'FORKLIFT' },
-  { title: 'Try outs', duration: 120, category: 'PD', goldenRuleKey: 'PD_PRINCIPLES' },
-  { title: 'Hand tool test', duration: 60, category: 'Shop', goldenRuleKey: 'HAND_TOOLS' },
-  { title: 'Power tool test', duration: 60, category: 'Shop', goldenRuleKey: 'POWER_TOOLS' },
-  { title: 'Construction Math', duration: 120, category: 'Math', goldenRuleKey: 'PD_PRINCIPLES' },
-  { title: 'Graduation', duration: 120, category: 'Admin', goldenRuleKey: null },
-  { title: 'Grit/Growth Mindset', duration: 60, category: 'PD', goldenRuleKey: 'GRIT_GROWTH' },
-  { title: 'Successful Apprentice', duration: 60, category: 'PD', goldenRuleKey: 'SUCCESSFUL_APPRENTICE' },
-  { title: 'Elevator Pitch', duration: 120, category: 'PD', goldenRuleKey: 'ELEVATOR_PITCH' },
-  { title: 'Resume Workshop', duration: 240, category: 'PD', goldenRuleKey: 'RESUMES' },
-  { title: 'Job Search Strategies', duration: 180, category: 'PD', goldenRuleKey: 'APPLY_APPRENTICESHIPS' },
+  { title: 'Work Out', category: 'Other', defaultDurationMinutes: 60, countsTowardGoldenRule: true, goldenRuleBucketId: 'PHYSICAL_FITNESS', defaultLocation: 'Shop' },
+  { title: 'Lunch', category: 'Admin', defaultDurationMinutes: 60, countsTowardGoldenRule: false, goldenRuleBucketId: null },
+  { title: 'OSHA 10', category: 'Certification', defaultDurationMinutes: 300, countsTowardGoldenRule: true, goldenRuleBucketId: 'OSHA_10', defaultLocation: 'Classroom 1' },
+  { title: 'Intro to Pre-Apprenticeship', category: 'PD', defaultDurationMinutes: 180, countsTowardGoldenRule: true, goldenRuleBucketId: 'INTRO_PREAPP', defaultLocation: 'Classroom 1' },
+  { title: 'Support Services Intake and Intro', category: 'Support Services', defaultDurationMinutes: 90, countsTowardGoldenRule: true, goldenRuleBucketId: 'INTRO_PREAPP', defaultLocation: 'Administration' },
+  { title: 'Intro into ACES', category: 'Shop', defaultDurationMinutes: 120, countsTowardGoldenRule: true, goldenRuleBucketId: 'ACE_INSTRUCTION', defaultLocation: 'Shop' },
+  { title: 'Intro into Tape Measure for ACES', category: 'Shop', defaultDurationMinutes: 60, countsTowardGoldenRule: true, goldenRuleBucketId: 'MEASURING_TAPE', defaultLocation: 'Shop' },
+  { title: 'ACEs', category: 'Shop', defaultDurationMinutes: 120, countsTowardGoldenRule: true, goldenRuleBucketId: 'ACES', defaultLocation: 'Shop' },
+  { title: 'Grit/Growth Mindset', category: 'PD', defaultDurationMinutes: 60, countsTowardGoldenRule: true, goldenRuleBucketId: 'GRIT_GROWTH', defaultLocation: 'Classroom 1' },
+  { title: 'Successful Apprentice', category: 'PD', defaultDurationMinutes: 60, countsTowardGoldenRule: true, goldenRuleBucketId: 'SUCCESSFUL_APPRENTICE', defaultLocation: 'Classroom 1' },
+  { title: 'Elevator Pitch', category: 'PD', defaultDurationMinutes: 120, countsTowardGoldenRule: true, goldenRuleBucketId: 'ELEVATOR_PITCH', defaultLocation: 'Classroom 1' },
+  { title: 'Resume Workshop', category: 'PD', defaultDurationMinutes: 240, countsTowardGoldenRule: true, goldenRuleBucketId: 'RESUMES', defaultLocation: 'Classroom 1' },
+  { title: 'Interview Skills', category: 'PD', defaultDurationMinutes: 120, countsTowardGoldenRule: true, goldenRuleBucketId: 'INTERVIEWS', defaultLocation: 'Classroom 1' },
+  { title: 'Group Interviews', category: 'PD', defaultDurationMinutes: 120, countsTowardGoldenRule: true, goldenRuleBucketId: 'INTERVIEWS', defaultLocation: 'Classroom 1' },
+  { title: 'Mock Interview Prep', category: 'PD', defaultDurationMinutes: 120, countsTowardGoldenRule: true, goldenRuleBucketId: 'INTERVIEWS', defaultLocation: 'Classroom 1' },
+  { title: 'Job Search Strategies', category: 'PD', defaultDurationMinutes: 180, countsTowardGoldenRule: true, goldenRuleBucketId: 'APPLY_APPRENTICESHIPS', defaultLocation: 'Classroom 1' },
+  { title: 'Hand Tools', category: 'Shop', defaultDurationMinutes: 180, countsTowardGoldenRule: true, goldenRuleBucketId: 'HAND_TOOLS', defaultLocation: 'Shop' },
+  { title: 'Power Tools', category: 'Shop', defaultDurationMinutes: 180, countsTowardGoldenRule: true, goldenRuleBucketId: 'POWER_TOOLS', defaultLocation: 'Shop' },
+  { title: 'Skills Project', category: 'Shop', defaultDurationMinutes: 240, countsTowardGoldenRule: true, goldenRuleBucketId: 'SKILLS_PROJECT', defaultLocation: 'Shop' },
+  { title: 'Apprenticeship Tour', category: 'Other', defaultDurationMinutes: 240, countsTowardGoldenRule: true, goldenRuleBucketId: 'APPRENTICE_TOURS', defaultLocation: 'Offsite' },
+  { title: 'Forklift', category: 'Certification', defaultDurationMinutes: 480, countsTowardGoldenRule: true, goldenRuleBucketId: 'FORKLIFT', defaultLocation: 'Shop' },
 ];
 
 const CATEGORY_COLORS: Record<Category, string> = {
@@ -38,10 +40,9 @@ const CATEGORY_COLORS: Record<Category, string> = {
   'Shop': COLOR_PALETTE[1].hex,
   'Math': COLOR_PALETTE[4].hex,
   'Admin': COLOR_PALETTE[9].hex,
-  'Tour': COLOR_PALETTE[7].hex,
   'Certification': COLOR_PALETTE[5].hex,
   'Support Services': COLOR_PALETTE[6].hex,
-  'Other': COLOR_PALETTE[8].hex,
+  'Other': COLOR_PALETTE[7].hex,
 };
 
 export function createSeedTemplates(): BlockTemplate[] {
@@ -49,8 +50,11 @@ export function createSeedTemplates(): BlockTemplate[] {
     id: uuidv4(),
     title: seed.title,
     category: seed.category,
-    defaultDurationMin: seed.duration,
     colorHex: CATEGORY_COLORS[seed.category],
-    goldenRuleKey: seed.goldenRuleKey,
+    defaultDurationMinutes: seed.defaultDurationMinutes,
+    countsTowardGoldenRule: seed.countsTowardGoldenRule,
+    goldenRuleBucketId: seed.goldenRuleBucketId,
+    defaultLocation: seed.defaultLocation || '',
+    defaultNotes: seed.defaultNotes || '',
   }));
 }

@@ -1,42 +1,59 @@
 import { useState, useEffect } from 'react';
-import { PlacedBlock, BlockTemplate } from '@/state/types';
-import { formatDuration, formatTimeDisplay, getEndTime, timeToMinutes, minutesToTime } from '@/lib/time';
+import { PlacedBlock, BlockTemplate, Plan, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId, ApplyScope, DAYS, Day, RecurrenceType } from '@/state/types';
+import { formatDuration, minutesToTimeDisplay, getEndMinutes } from '@/lib/time';
 import { ConfirmModal, Modal } from './Modal';
 
 interface BlockEditPanelProps {
   block: PlacedBlock;
   template: BlockTemplate | undefined;
-  dayEndTime: string;
-  onUpdate: (block: PlacedBlock) => void;
-  onDelete: () => void;
-  onSplit: (blockId: string, splitAfterMinutes: number) => void;
+  plan: Plan;
+  onUpdate: (block: PlacedBlock, scope?: ApplyScope) => void;
+  onDelete: (scope?: ApplyScope) => void;
   onDuplicate: () => void;
   onClose: () => void;
 }
 
-const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180, 240, 300, 480];
+const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180, 240, 300, 360, 420, 480, 540];
 
-export function BlockEditPanel({ block, template, dayEndTime, onUpdate, onDelete, onSplit, onDuplicate, onClose }: BlockEditPanelProps) {
-  const [titleOverride, setTitleOverride] = useState(block.titleOverride || '');
-  const [durationMin, setDurationMin] = useState<number>(block.durationMin);
-  const [location, setLocation] = useState(block.location || '');
-  const [notes, setNotes] = useState(block.notes || '');
+function generateTimeOptions(startMinutes: number, endMinutes: number): number[] {
+  const options: number[] = [];
+  for (let m = startMinutes; m < endMinutes; m += 15) {
+    options.push(m);
+  }
+  return options;
+}
+
+export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDuplicate, onClose }: BlockEditPanelProps) {
+  const [titleOverride, setTitleOverride] = useState(block.titleOverride);
+  const [startMinutes, setStartMinutes] = useState(block.startMinutes);
+  const [durationMinutes, setDurationMinutes] = useState(block.durationMinutes);
+  const [location, setLocation] = useState(block.location);
+  const [notes, setNotes] = useState(block.notes);
+  const [countsTowardGoldenRule, setCountsTowardGoldenRule] = useState(block.countsTowardGoldenRule);
+  const [goldenRuleBucketId, setGoldenRuleBucketId] = useState<GoldenRuleBucketId | ''>(block.goldenRuleBucketId || '');
+  
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showSplitModal, setShowSplitModal] = useState(false);
-  const [splitAfter, setSplitAfter] = useState(15);
+  const [showRecurrence, setShowRecurrence] = useState(false);
+  const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>('none');
+  const [recurrenceDays, setRecurrenceDays] = useState<Day[]>([block.day]);
+  const [recurrenceStartWeek, setRecurrenceStartWeek] = useState(block.week);
+  const [recurrenceEndWeek, setRecurrenceEndWeek] = useState(plan.settings.weeks);
+  const [applyScopeAction, setApplyScopeAction] = useState<'save' | 'delete' | null>(null);
 
   useEffect(() => {
-    setTitleOverride(block.titleOverride || '');
-    setDurationMin(block.durationMin);
-    setLocation(block.location || '');
-    setNotes(block.notes || '');
-    setSplitAfter(15);
+    setTitleOverride(block.titleOverride);
+    setStartMinutes(block.startMinutes);
+    setDurationMinutes(block.durationMinutes);
+    setLocation(block.location);
+    setNotes(block.notes);
+    setCountsTowardGoldenRule(block.countsTowardGoldenRule);
+    setGoldenRuleBucketId(block.goldenRuleBucketId || '');
   }, [block]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+        if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA' && document.activeElement?.tagName !== 'SELECT') {
           setShowDeleteConfirm(true);
         }
       }
@@ -49,37 +66,27 @@ export function BlockEditPanel({ block, template, dayEndTime, onUpdate, onDelete
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  const handleSave = () => {
-    const startMinutes = timeToMinutes(block.startTime);
-    const endMinutes = timeToMinutes(dayEndTime);
-    const maxDuration = endMinutes - startMinutes;
-    
-    if (durationMin > maxDuration) {
-      alert(`Duration would extend past ${formatTimeDisplay(dayEndTime)}. Maximum duration from this start time is ${formatDuration(maxDuration)}.`);
-      return;
-    }
-    
+  const handleSave = (scope?: ApplyScope) => {
     onUpdate({
       ...block,
-      titleOverride: titleOverride.trim() || undefined,
-      durationMin,
-      location: location.trim() || undefined,
-      notes: notes.trim() || undefined,
-    });
+      titleOverride,
+      startMinutes,
+      durationMinutes,
+      location,
+      notes,
+      countsTowardGoldenRule,
+      goldenRuleBucketId: countsTowardGoldenRule && goldenRuleBucketId ? goldenRuleBucketId : null,
+    }, scope);
   };
 
-  const handleSplit = () => {
-    onSplit(block.id, splitAfter);
-    setShowSplitModal(false);
+  const handleDelete = (scope?: ApplyScope) => {
+    onDelete(scope);
+    setShowDeleteConfirm(false);
   };
 
   const title = template?.title || 'Unknown Block';
-  const canSplit = block.durationMin >= 30;
-  
-  const splitOptions: number[] = [];
-  for (let i = 15; i < block.durationMin; i += 15) {
-    splitOptions.push(i);
-  }
+  const timeOptions = generateTimeOptions(plan.settings.dayStartMinutes, plan.settings.dayEndMinutes);
+  const isRecurring = !!block.recurrenceSeriesId;
 
   return (
     <div className="w-80 bg-white border-l h-full flex flex-col">
@@ -100,23 +107,16 @@ export function BlockEditPanel({ block, template, dayEndTime, onUpdate, onDelete
             <p className="text-sm text-gray-500">Template</p>
             <p className="font-medium">{title}</p>
             {template && (
-              <>
-                <p className="text-xs text-gray-500">{template.category}</p>
-                {template.goldenRuleKey && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    Counts toward: {template.goldenRuleKey}
-                  </p>
-                )}
-              </>
+              <p className="text-xs text-gray-500">{template.category}</p>
             )}
           </div>
 
           <div>
-            <p className="text-sm text-gray-500">Time</p>
+            <p className="text-sm text-gray-500">Placement</p>
+            <p className="text-sm">Week {block.week}, {block.day}</p>
             <p className="text-sm">
-              {formatTimeDisplay(block.startTime)} - {formatTimeDisplay(getEndTime(block.startTime, block.durationMin))}
+              {minutesToTimeDisplay(block.startMinutes)} - {minutesToTimeDisplay(getEndMinutes(block.startMinutes, block.durationMinutes))}
             </p>
-            <p className="text-xs text-gray-500">Week {block.week}, {block.day}</p>
           </div>
 
           <div>
@@ -131,30 +131,48 @@ export function BlockEditPanel({ block, template, dayEndTime, onUpdate, onDelete
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium mb-1">Duration (15-min increments)</label>
-            <select
-              value={durationMin}
-              onChange={e => setDurationMin(parseInt(e.target.value))}
-              className="w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              data-testid="block-duration-select"
-            >
-              {DURATION_OPTIONS.map(dur => (
-                <option key={dur} value={dur}>{formatDuration(dur)}</option>
-              ))}
-            </select>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-sm font-medium mb-1">Start Time</label>
+              <select
+                value={startMinutes}
+                onChange={e => setStartMinutes(parseInt(e.target.value))}
+                className="w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                data-testid="block-start-time-select"
+              >
+                {timeOptions.map(m => (
+                  <option key={m} value={m}>{minutesToTimeDisplay(m)}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Duration</label>
+              <select
+                value={durationMinutes}
+                onChange={e => setDurationMinutes(parseInt(e.target.value))}
+                className="w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                data-testid="block-duration-select"
+              >
+                {DURATION_OPTIONS.map(dur => (
+                  <option key={dur} value={dur}>{formatDuration(dur)}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div>
             <label className="block text-sm font-medium mb-1">Location</label>
-            <input
-              type="text"
+            <select
               value={location}
               onChange={e => setLocation(e.target.value)}
-              placeholder="Optional"
               className="w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              data-testid="block-location-input"
-            />
+              data-testid="block-location-select"
+            >
+              <option value="">No location</option>
+              {plan.settings.resources.map(r => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -162,11 +180,55 @@ export function BlockEditPanel({ block, template, dayEndTime, onUpdate, onDelete
             <textarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
-              placeholder="Optional"
               className="w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               rows={3}
               data-testid="block-notes-input"
             />
+          </div>
+
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                checked={countsTowardGoldenRule}
+                onChange={e => setCountsTowardGoldenRule(e.target.checked)}
+                data-testid="block-counts-golden-rule"
+              />
+              Counts toward Golden Rule
+            </label>
+          </div>
+
+          {countsTowardGoldenRule && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Golden Rule Bucket</label>
+              <select
+                value={goldenRuleBucketId}
+                onChange={e => setGoldenRuleBucketId(e.target.value as GoldenRuleBucketId | '')}
+                className="w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                data-testid="block-golden-rule-select"
+              >
+                <option value="">Select bucket...</option>
+                {GOLDEN_RULE_BUCKETS.map(b => (
+                  <option key={b.id} value={b.id}>{b.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {isRecurring && (
+            <div className="p-2 bg-blue-50 rounded text-xs">
+              This block is part of a recurring series.
+            </div>
+          )}
+
+          <div>
+            <button
+              onClick={() => setShowRecurrence(true)}
+              className="text-sm text-blue-600 hover:underline"
+              data-testid="setup-recurrence-button"
+            >
+              Set up recurrence...
+            </button>
           </div>
         </div>
       </div>
@@ -180,17 +242,6 @@ export function BlockEditPanel({ block, template, dayEndTime, onUpdate, onDelete
           >
             Duplicate
           </button>
-          {canSplit && (
-            <button
-              onClick={() => setShowSplitModal(true)}
-              className="flex-1 px-3 py-2 text-sm border rounded hover:bg-gray-50"
-              data-testid="split-block-button"
-            >
-              Split
-            </button>
-          )}
-        </div>
-        <div className="flex gap-2">
           <button
             onClick={() => setShowDeleteConfirm(true)}
             className="flex-1 px-3 py-2 text-sm border border-red-300 text-red-600 rounded hover:bg-red-50"
@@ -198,67 +249,173 @@ export function BlockEditPanel({ block, template, dayEndTime, onUpdate, onDelete
           >
             Delete
           </button>
-          <button
-            onClick={handleSave}
-            className="flex-1 px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-            data-testid="save-block-button"
-          >
-            Save
-          </button>
         </div>
+        <button
+          onClick={() => isRecurring ? setApplyScopeAction('save') : handleSave()}
+          className="w-full px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+          data-testid="save-block-button"
+        >
+          Save
+        </button>
       </div>
 
       <ConfirmModal
-        open={showDeleteConfirm}
+        open={showDeleteConfirm && !isRecurring}
         onClose={() => setShowDeleteConfirm(false)}
-        onConfirm={onDelete}
+        onConfirm={() => handleDelete()}
         title="Delete Block"
         message="Are you sure you want to delete this block from the schedule?"
         confirmText="Delete"
       />
 
-      <Modal open={showSplitModal} onClose={() => setShowSplitModal(false)} title="Split Block">
+      <Modal open={showDeleteConfirm && isRecurring} onClose={() => setShowDeleteConfirm(false)} title="Delete Recurring Block">
         <div className="space-y-4">
-          <p className="text-sm text-gray-600">
-            Split this {formatDuration(block.durationMin)} block into two blocks.
-          </p>
-          
-          <div>
-            <label className="block text-sm font-medium mb-1">Split after:</label>
-            <select
-              value={splitAfter}
-              onChange={e => setSplitAfter(parseInt(e.target.value))}
-              className="w-full px-3 py-2 border rounded text-sm"
-              data-testid="split-time-select"
+          <p className="text-sm">This block is part of a recurring series. What would you like to delete?</p>
+          <div className="space-y-2">
+            <button
+              onClick={() => handleDelete('this')}
+              className="w-full px-4 py-2 text-sm border rounded hover:bg-gray-50 text-left"
             >
-              {splitOptions.map(mins => {
-                const splitTime = minutesToTime(timeToMinutes(block.startTime) + mins);
-                return (
-                  <option key={mins} value={mins}>
-                    {formatDuration(mins)} ({formatTimeDisplay(splitTime)})
-                  </option>
-                );
-              })}
+              This instance only
+            </button>
+            <button
+              onClick={() => handleDelete('thisAndFuture')}
+              className="w-full px-4 py-2 text-sm border rounded hover:bg-gray-50 text-left"
+            >
+              This and future occurrences
+            </button>
+            <button
+              onClick={() => handleDelete('all')}
+              className="w-full px-4 py-2 text-sm border border-red-300 text-red-600 rounded hover:bg-red-50 text-left"
+            >
+              All occurrences
+            </button>
+          </div>
+          <button
+            onClick={() => setShowDeleteConfirm(false)}
+            className="w-full px-4 py-2 text-sm border rounded hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+        </div>
+      </Modal>
+
+      <Modal open={applyScopeAction === 'save'} onClose={() => setApplyScopeAction(null)} title="Save Recurring Block">
+        <div className="space-y-4">
+          <p className="text-sm">This block is part of a recurring series. Apply changes to:</p>
+          <div className="space-y-2">
+            <button
+              onClick={() => { handleSave('this'); setApplyScopeAction(null); }}
+              className="w-full px-4 py-2 text-sm border rounded hover:bg-gray-50 text-left"
+            >
+              This instance only
+            </button>
+            <button
+              onClick={() => { handleSave('thisAndFuture'); setApplyScopeAction(null); }}
+              className="w-full px-4 py-2 text-sm border rounded hover:bg-gray-50 text-left"
+            >
+              This and future occurrences
+            </button>
+            <button
+              onClick={() => { handleSave('all'); setApplyScopeAction(null); }}
+              className="w-full px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 text-left"
+            >
+              All occurrences
+            </button>
+          </div>
+          <button
+            onClick={() => setApplyScopeAction(null)}
+            className="w-full px-4 py-2 text-sm border rounded hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+        </div>
+      </Modal>
+
+      <Modal open={showRecurrence} onClose={() => setShowRecurrence(false)} title="Set Up Recurrence">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Repeat</label>
+            <select
+              value={recurrenceType}
+              onChange={e => setRecurrenceType(e.target.value as RecurrenceType)}
+              className="w-full px-3 py-2 border rounded text-sm"
+            >
+              <option value="none">None</option>
+              <option value="weekly">Weekly (same day each week)</option>
+              <option value="custom">Custom (choose days)</option>
             </select>
           </div>
 
-          <p className="text-xs text-gray-500">
-            This will create two blocks: {formatDuration(splitAfter)} + {formatDuration(block.durationMin - splitAfter)}
-          </p>
+          {recurrenceType !== 'none' && (
+            <>
+              {recurrenceType === 'custom' && (
+                <div>
+                  <label className="block text-sm font-medium mb-2">Days of week</label>
+                  <div className="flex flex-wrap gap-2">
+                    {DAYS.map(day => (
+                      <label key={day} className="flex items-center gap-1 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={recurrenceDays.includes(day)}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              setRecurrenceDays([...recurrenceDays, day]);
+                            } else {
+                              setRecurrenceDays(recurrenceDays.filter(d => d !== day));
+                            }
+                          }}
+                        />
+                        {day.slice(0, 3)}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-          <div className="flex justify-end gap-3">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Start Week</label>
+                  <select
+                    value={recurrenceStartWeek}
+                    onChange={e => setRecurrenceStartWeek(parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border rounded text-sm"
+                  >
+                    {Array.from({ length: plan.settings.weeks }, (_, i) => i + 1).map(w => (
+                      <option key={w} value={w}>Week {w}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">End Week</label>
+                  <select
+                    value={recurrenceEndWeek}
+                    onChange={e => setRecurrenceEndWeek(parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border rounded text-sm"
+                  >
+                    {Array.from({ length: plan.settings.weeks }, (_, i) => i + 1).map(w => (
+                      <option key={w} value={w}>Week {w}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="flex justify-end gap-3 pt-4">
             <button
-              onClick={() => setShowSplitModal(false)}
+              onClick={() => setShowRecurrence(false)}
               className="px-4 py-2 text-sm border rounded hover:bg-gray-50"
             >
               Cancel
             </button>
             <button
-              onClick={handleSplit}
+              onClick={() => {
+                setShowRecurrence(false);
+              }}
               className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-              data-testid="confirm-split-button"
             >
-              Split
+              Apply
             </button>
           </div>
         </div>

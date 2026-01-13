@@ -1,12 +1,12 @@
 import { 
   Plan, 
   BlockTemplate, 
-  GoldenRuleKey,
-  GOLDEN_RULE_BUDGETS,
+  GOLDEN_RULE_BUCKETS,
+  GoldenRuleBucketId,
 } from '@/state/types';
 
-export interface TopicTotal {
-  key: GoldenRuleKey;
+export interface BucketTotal {
+  id: GoldenRuleBucketId;
   label: string;
   scheduled: number;
   budget: number;
@@ -14,26 +14,34 @@ export interface TopicTotal {
   status: 'under' | 'on-target' | 'over';
 }
 
-export function calculateTopicTotals(
+export function calculateGoldenRuleTotals(
   plan: Plan,
   templates: BlockTemplate[]
-): TopicTotal[] {
-  const totals: Record<GoldenRuleKey, number> = {} as Record<GoldenRuleKey, number>;
+): BucketTotal[] {
+  const totals: Record<string, number> = {};
   
-  for (const budget of GOLDEN_RULE_BUDGETS) {
-    totals[budget.key] = 0;
+  for (const bucket of GOLDEN_RULE_BUCKETS) {
+    totals[bucket.id] = 0;
   }
   
   for (const block of plan.blocks) {
+    if (!block.countsTowardGoldenRule) continue;
+    
+    const bucketId = block.goldenRuleBucketId;
+    if (bucketId && totals[bucketId] !== undefined) {
+      totals[bucketId] += block.durationMinutes;
+      continue;
+    }
+    
     const template = templates.find(t => t.id === block.templateId);
-    if (template && template.goldenRuleKey) {
-      totals[template.goldenRuleKey] += block.durationMin;
+    if (template?.countsTowardGoldenRule && template.goldenRuleBucketId) {
+      totals[template.goldenRuleBucketId] += block.durationMinutes;
     }
   }
   
-  return GOLDEN_RULE_BUDGETS.map(budget => {
-    const scheduled = totals[budget.key];
-    const difference = scheduled - budget.budgetMinutes;
+  return GOLDEN_RULE_BUCKETS.map(bucket => {
+    const scheduled = totals[bucket.id];
+    const difference = scheduled - bucket.budgetMinutes;
     
     let status: 'under' | 'on-target' | 'over';
     if (difference < -15) {
@@ -45,69 +53,16 @@ export function calculateTopicTotals(
     }
     
     return { 
-      key: budget.key,
-      label: budget.label, 
+      id: bucket.id,
+      label: bucket.label, 
       scheduled, 
-      budget: budget.budgetMinutes, 
+      budget: bucket.budgetMinutes, 
       difference, 
       status 
     };
   });
 }
 
-export interface GoldenRuleCheck {
-  allowed: boolean;
-  warning: boolean;
-  message: string;
-  exceedBy: number;
-}
-
-export function checkGoldenRuleLimit(
-  plan: Plan,
-  templates: BlockTemplate[],
-  templateId: string,
-  newDuration: number,
-  existingBlockId?: string
-): GoldenRuleCheck {
-  const template = templates.find(t => t.id === templateId);
-  if (!template || !template.goldenRuleKey) {
-    return { allowed: true, warning: false, message: '', exceedBy: 0 };
-  }
-  
-  const budgetItem = GOLDEN_RULE_BUDGETS.find(b => b.key === template.goldenRuleKey);
-  if (!budgetItem) {
-    return { allowed: true, warning: false, message: '', exceedBy: 0 };
-  }
-  
-  let currentTotal = 0;
-  for (const block of plan.blocks) {
-    if (existingBlockId && block.id === existingBlockId) continue;
-    const blockTemplate = templates.find(t => t.id === block.templateId);
-    if (blockTemplate && blockTemplate.goldenRuleKey === template.goldenRuleKey) {
-      currentTotal += block.durationMin;
-    }
-  }
-  
-  const newTotal = currentTotal + newDuration;
-  const exceedBy = newTotal - budgetItem.budgetMinutes;
-  
-  if (exceedBy <= 15) {
-    return { allowed: true, warning: false, message: '', exceedBy: 0 };
-  }
-  
-  if (exceedBy <= 60) {
-    return {
-      allowed: true,
-      warning: true,
-      message: `This will exceed Golden Rule hours for "${budgetItem.label}" by ${exceedBy} minutes. Confirm?`,
-      exceedBy,
-    };
-  }
-  
-  return {
-    allowed: false,
-    warning: false,
-    message: `Not allowed. This exceeds Golden Rule hours for "${budgetItem.label}" by ${exceedBy} minutes.`,
-    exceedBy,
-  };
+export function getBucketById(id: GoldenRuleBucketId) {
+  return GOLDEN_RULE_BUCKETS.find(b => b.id === id);
 }

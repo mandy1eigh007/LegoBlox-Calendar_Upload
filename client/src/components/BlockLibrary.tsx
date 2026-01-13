@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { useStore } from '@/state/store';
-import { BlockTemplate, CATEGORIES, GOLDEN_RULE_BUDGETS, GoldenRuleKey, COLOR_PALETTE, Category } from '@/state/types';
+import { BlockTemplate, CATEGORIES, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId, COLOR_PALETTE, Category } from '@/state/types';
 import { Modal, ConfirmModal } from './Modal';
 import { formatDuration } from '@/lib/time';
 import { v4 as uuidv4 } from 'uuid';
@@ -33,7 +33,7 @@ function DraggableTemplate({ template, onEdit }: DraggableTemplateProps) {
         <div className="flex-1 min-w-0">
           <p className="font-medium text-sm truncate">{template.title}</p>
           <p className="text-xs text-gray-500">{template.category}</p>
-          <p className="text-xs text-gray-400 mt-1">{formatDuration(template.defaultDurationMin)}</p>
+          <p className="text-xs text-gray-400 mt-1">{formatDuration(template.defaultDurationMinutes)}</p>
         </div>
         <button
           onClick={(e) => {
@@ -54,9 +54,10 @@ function DraggableTemplate({ template, onEdit }: DraggableTemplateProps) {
 interface TemplateFormData {
   title: string;
   category: Category;
-  defaultDurationMin: number;
+  defaultDurationMinutes: number;
   colorHex: string;
-  goldenRuleKey: GoldenRuleKey | '';
+  countsTowardGoldenRule: boolean;
+  goldenRuleBucketId: GoldenRuleBucketId | '';
   defaultLocation: string;
   defaultNotes: string;
 }
@@ -64,14 +65,15 @@ interface TemplateFormData {
 const DEFAULT_FORM: TemplateFormData = {
   title: '',
   category: 'PD',
-  defaultDurationMin: 60,
+  defaultDurationMinutes: 60,
   colorHex: COLOR_PALETTE[0].hex,
-  goldenRuleKey: '',
+  countsTowardGoldenRule: true,
+  goldenRuleBucketId: '',
   defaultLocation: '',
   defaultNotes: '',
 };
 
-const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180, 240, 300, 480];
+const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180, 240, 300, 360, 420, 480];
 
 export function BlockLibrary() {
   const { state, dispatch } = useStore();
@@ -90,7 +92,7 @@ export function BlockLibrary() {
 
   const handleCreate = () => {
     if (!formData.title.trim()) return;
-    if (formData.defaultDurationMin % 15 !== 0) {
+    if (formData.defaultDurationMinutes % 15 !== 0) {
       alert('Duration must be a multiple of 15 minutes');
       return;
     }
@@ -99,9 +101,14 @@ export function BlockLibrary() {
       id: uuidv4(),
       title: formData.title.trim(),
       category: formData.category,
-      defaultDurationMin: formData.defaultDurationMin,
       colorHex: formData.colorHex,
-      goldenRuleKey: formData.goldenRuleKey || null,
+      defaultDurationMinutes: formData.defaultDurationMinutes,
+      countsTowardGoldenRule: formData.countsTowardGoldenRule,
+      goldenRuleBucketId: formData.countsTowardGoldenRule && formData.goldenRuleBucketId 
+        ? formData.goldenRuleBucketId 
+        : null,
+      defaultLocation: formData.defaultLocation,
+      defaultNotes: formData.defaultNotes,
     };
     
     dispatch({ type: 'ADD_TEMPLATE', payload: template });
@@ -111,7 +118,7 @@ export function BlockLibrary() {
 
   const handleEdit = () => {
     if (!editingId || !formData.title.trim()) return;
-    if (formData.defaultDurationMin % 15 !== 0) {
+    if (formData.defaultDurationMinutes % 15 !== 0) {
       alert('Duration must be a multiple of 15 minutes');
       return;
     }
@@ -120,9 +127,14 @@ export function BlockLibrary() {
       id: editingId,
       title: formData.title.trim(),
       category: formData.category,
-      defaultDurationMin: formData.defaultDurationMin,
       colorHex: formData.colorHex,
-      goldenRuleKey: formData.goldenRuleKey || null,
+      defaultDurationMinutes: formData.defaultDurationMinutes,
+      countsTowardGoldenRule: formData.countsTowardGoldenRule,
+      goldenRuleBucketId: formData.countsTowardGoldenRule && formData.goldenRuleBucketId 
+        ? formData.goldenRuleBucketId 
+        : null,
+      defaultLocation: formData.defaultLocation,
+      defaultNotes: formData.defaultNotes,
     };
     
     dispatch({ type: 'UPDATE_TEMPLATE', payload: template });
@@ -137,15 +149,24 @@ export function BlockLibrary() {
     }
   };
 
+  const handleDuplicate = () => {
+    if (editingId) {
+      dispatch({ type: 'DUPLICATE_TEMPLATE', payload: editingId });
+      setEditingId(null);
+      setFormData(DEFAULT_FORM);
+    }
+  };
+
   const openEdit = (template: BlockTemplate) => {
     setFormData({
       title: template.title,
       category: template.category,
-      defaultDurationMin: template.defaultDurationMin,
+      defaultDurationMinutes: template.defaultDurationMinutes,
       colorHex: template.colorHex,
-      goldenRuleKey: template.goldenRuleKey || '',
-      defaultLocation: '',
-      defaultNotes: '',
+      countsTowardGoldenRule: template.countsTowardGoldenRule,
+      goldenRuleBucketId: template.goldenRuleBucketId || '',
+      defaultLocation: template.defaultLocation,
+      defaultNotes: template.defaultNotes,
     });
     setEditingId(template.id);
   };
@@ -180,8 +201,8 @@ export function BlockLibrary() {
         <div>
           <label className="block text-sm font-medium mb-1">Default Duration *</label>
           <select
-            value={formData.defaultDurationMin}
-            onChange={e => setFormData({ ...formData, defaultDurationMin: parseInt(e.target.value) })}
+            value={formData.defaultDurationMinutes}
+            onChange={e => setFormData({ ...formData, defaultDurationMinutes: parseInt(e.target.value) })}
             className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             data-testid="template-duration-select"
           >
@@ -193,21 +214,55 @@ export function BlockLibrary() {
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-1">Golden Rule Mapping</label>
-        <select
-          value={formData.goldenRuleKey}
-          onChange={e => setFormData({ ...formData, goldenRuleKey: e.target.value as GoldenRuleKey | '' })}
-          className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-          data-testid="template-golden-rule-select"
-        >
-          <option value="">No mapping (does not count toward totals)</option>
-          {GOLDEN_RULE_BUDGETS.map(budget => (
-            <option key={budget.key} value={budget.key}>{budget.label}</option>
-          ))}
-        </select>
-        <p className="text-xs text-gray-500 mt-1">
-          Maps this template to a Golden Rule budget for tracking
-        </p>
+        <label className="flex items-center gap-2 text-sm font-medium">
+          <input
+            type="checkbox"
+            checked={formData.countsTowardGoldenRule}
+            onChange={e => setFormData({ ...formData, countsTowardGoldenRule: e.target.checked })}
+            data-testid="template-counts-golden-rule"
+          />
+          Counts toward Golden Rule hours
+        </label>
+      </div>
+
+      {formData.countsTowardGoldenRule && (
+        <div>
+          <label className="block text-sm font-medium mb-1">Golden Rule Bucket *</label>
+          <select
+            value={formData.goldenRuleBucketId}
+            onChange={e => setFormData({ ...formData, goldenRuleBucketId: e.target.value as GoldenRuleBucketId | '' })}
+            className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            data-testid="template-golden-rule-select"
+          >
+            <option value="">Select a bucket...</option>
+            {GOLDEN_RULE_BUCKETS.map(bucket => (
+              <option key={bucket.id} value={bucket.id}>{bucket.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <div>
+        <label className="block text-sm font-medium mb-1">Default Location</label>
+        <input
+          type="text"
+          value={formData.defaultLocation}
+          onChange={e => setFormData({ ...formData, defaultLocation: e.target.value })}
+          className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="e.g. Classroom 1, Shop"
+          data-testid="template-location-input"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">Default Notes</label>
+        <textarea
+          value={formData.defaultNotes}
+          onChange={e => setFormData({ ...formData, defaultNotes: e.target.value })}
+          className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+          rows={2}
+          data-testid="template-notes-input"
+        />
       </div>
 
       <div>
@@ -229,13 +284,22 @@ export function BlockLibrary() {
 
       <div className="flex justify-between pt-4">
         {isEdit && (
-          <button
-            onClick={() => setDeleteId(editingId)}
-            className="px-4 py-2 text-sm border border-red-300 text-red-600 rounded hover:bg-red-50"
-            data-testid="delete-template-button"
-          >
-            Delete
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setDeleteId(editingId)}
+              className="px-4 py-2 text-sm border border-red-300 text-red-600 rounded hover:bg-red-50"
+              data-testid="delete-template-button"
+            >
+              Delete
+            </button>
+            <button
+              onClick={handleDuplicate}
+              className="px-4 py-2 text-sm border rounded hover:bg-gray-50"
+              data-testid="duplicate-template-button"
+            >
+              Duplicate
+            </button>
+          </div>
         )}
         <div className="flex gap-3 ml-auto">
           <button
@@ -251,7 +315,7 @@ export function BlockLibrary() {
           </button>
           <button
             onClick={isEdit ? handleEdit : handleCreate}
-            disabled={!formData.title.trim()}
+            disabled={!formData.title.trim() || (formData.countsTowardGoldenRule && !formData.goldenRuleBucketId)}
             className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
             data-testid="save-template-button"
           >
@@ -296,10 +360,6 @@ export function BlockLibrary() {
             <option key={cat} value={cat}>{cat}</option>
           ))}
         </select>
-        
-        <p className="text-xs text-gray-500 mt-2">
-          Drag to place 15-min blocks. Resize after placing.
-        </p>
       </div>
 
       <div className="flex-1 overflow-auto p-4 scrollbar-thin">

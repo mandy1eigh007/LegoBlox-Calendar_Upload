@@ -1,8 +1,13 @@
 import { useState } from 'react';
 import { Plan, BlockTemplate, DAYS } from '@/state/types';
-import { generateTimeSlots, formatTimeDisplay, timeToMinutes, getEndTime } from '@/lib/time';
-import { calculateTopicTotals } from '@/lib/goldenRule';
-import { formatDuration } from '@/lib/time';
+import { 
+  minutesToTimeDisplay, 
+  getEndMinutes,
+  SLOT_HEIGHT_PX,
+  formatDuration,
+  formatMinutesAsHoursMinutes
+} from '@/lib/time';
+import { calculateGoldenRuleTotals } from '@/lib/goldenRule';
 
 interface PrintViewProps {
   plan: Plan;
@@ -14,12 +19,15 @@ interface PrintViewProps {
 export function PrintView({ plan, currentWeek: initialWeek, templates, onClose }: PrintViewProps) {
   const [currentWeek, setCurrentWeek] = useState(initialWeek);
   const { settings } = plan;
-  const timeSlots = generateTimeSlots(settings.dayStartTime, settings.dayEndTime, settings.slotMin);
-  const enabledDays = DAYS.filter(day => settings.enabledDays.includes(day));
-  const dayStartMinutes = timeToMinutes(settings.dayStartTime);
+  
+  const timeSlots: number[] = [];
+  for (let m = settings.dayStartMinutes; m < settings.dayEndMinutes; m += 15) {
+    timeSlots.push(m);
+  }
+  
   const slotHeight = 20;
 
-  const totals = calculateTopicTotals(plan, templates);
+  const totals = calculateGoldenRuleTotals(plan, templates);
   const activeTopics = totals.filter(t => t.scheduled > 0 || t.budget > 0);
 
   const handlePrint = () => {
@@ -69,7 +77,7 @@ export function PrintView({ plan, currentWeek: initialWeek, templates, onClose }
         <div className="border rounded overflow-hidden mb-8">
           <div className="flex border-b bg-gray-100">
             <div className="w-20 flex-shrink-0 p-2 text-sm font-medium border-r">Time</div>
-            {enabledDays.map(day => (
+            {DAYS.map(day => (
               <div
                 key={day}
                 className="flex-1 p-2 text-sm font-medium text-center border-r last:border-r-0"
@@ -81,18 +89,18 @@ export function PrintView({ plan, currentWeek: initialWeek, templates, onClose }
 
           <div className="flex">
             <div className="w-20 flex-shrink-0 border-r">
-              {timeSlots.map((time, idx) => (
+              {timeSlots.map((minutes, idx) => (
                 <div
-                  key={time}
+                  key={minutes}
                   className="text-xs text-gray-600 text-right pr-2 border-b"
                   style={{ height: slotHeight }}
                 >
-                  {idx % 2 === 0 ? formatTimeDisplay(time) : ''}
+                  {idx % 2 === 0 ? minutesToTimeDisplay(minutes) : ''}
                 </div>
               ))}
             </div>
 
-            {enabledDays.map(day => {
+            {DAYS.map(day => {
               const dayBlocks = plan.blocks.filter(b => b.week === currentWeek && b.day === day);
               
               return (
@@ -111,9 +119,8 @@ export function PrintView({ plan, currentWeek: initialWeek, templates, onClose }
                   
                   {dayBlocks.map(block => {
                     const template = templates.find(t => t.id === block.templateId);
-                    const startMinutes = timeToMinutes(block.startTime);
-                    const topOffset = ((startMinutes - dayStartMinutes) / 15) * slotHeight;
-                    const blockHeight = (block.durationMin / 15) * slotHeight;
+                    const topOffset = ((block.startMinutes - settings.dayStartMinutes) / 15) * slotHeight;
+                    const blockHeight = (block.durationMinutes / 15) * slotHeight;
                     const title = block.titleOverride || template?.title || 'Unknown';
                     
                     return (
@@ -128,8 +135,11 @@ export function PrintView({ plan, currentWeek: initialWeek, templates, onClose }
                         <p className="text-xs font-medium truncate">{title}</p>
                         {blockHeight > 25 && (
                           <p className="text-xs text-gray-600 truncate">
-                            {formatTimeDisplay(block.startTime)}-{formatTimeDisplay(getEndTime(block.startTime, block.durationMin))}
+                            {minutesToTimeDisplay(block.startMinutes)}-{minutesToTimeDisplay(getEndMinutes(block.startMinutes, block.durationMinutes))}
                           </p>
+                        )}
+                        {blockHeight > 40 && settings.showNotesOnPrint && block.notes && (
+                          <p className="text-xs text-gray-500 truncate">{block.notes}</p>
                         )}
                       </div>
                     );
@@ -145,7 +155,7 @@ export function PrintView({ plan, currentWeek: initialWeek, templates, onClose }
           <div className="grid grid-cols-2 gap-2 text-sm">
             {activeTopics.map(item => (
               <div 
-                key={item.key}
+                key={item.id}
                 className={`p-2 rounded ${
                   item.status === 'over' ? 'bg-red-50' : 
                   item.status === 'on-target' ? 'bg-green-50' : 
@@ -159,8 +169,8 @@ export function PrintView({ plan, currentWeek: initialWeek, templates, onClose }
                   item.status === 'on-target' ? 'text-green-600' : 
                   'text-gray-500'
                 }`}>
-                  ({item.status === 'over' ? `Over by ${item.difference}m` : 
-                    item.status === 'under' ? `Under by ${Math.abs(item.difference)}m` : 
+                  ({item.status === 'over' ? `Over ${formatMinutesAsHoursMinutes(item.difference)}` : 
+                    item.status === 'under' ? `Under ${formatMinutesAsHoursMinutes(Math.abs(item.difference))}` : 
                     'On target'})
                 </span>
               </div>

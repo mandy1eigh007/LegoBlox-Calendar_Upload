@@ -5,12 +5,12 @@ import {
   PlacedBlock, 
   CATEGORIES, 
   DAYS, 
-  GOLDEN_RULE_KEYS,
-  GoldenRuleKey
+  GOLDEN_RULE_BUCKETS,
+  GoldenRuleBucketId
 } from './types';
 
-export function isValidGoldenRuleKey(key: string): key is GoldenRuleKey {
-  return GOLDEN_RULE_KEYS.includes(key as GoldenRuleKey);
+export function isValidGoldenRuleBucketId(id: string): id is GoldenRuleBucketId {
+  return GOLDEN_RULE_BUCKETS.some(b => b.id === id);
 }
 
 export function validateTemplate(template: unknown): template is BlockTemplate {
@@ -20,11 +20,11 @@ export function validateTemplate(template: unknown): template is BlockTemplate {
   if (typeof t.id !== 'string' || !t.id) return false;
   if (typeof t.title !== 'string' || !t.title) return false;
   if (!CATEGORIES.includes(t.category as typeof CATEGORIES[number])) return false;
-  if (typeof t.defaultDurationMin !== 'number' || t.defaultDurationMin < 15) return false;
+  if (typeof t.defaultDurationMinutes !== 'number' || t.defaultDurationMinutes < 15) return false;
   if (typeof t.colorHex !== 'string') return false;
   
-  if (t.goldenRuleKey !== null && t.goldenRuleKey !== undefined) {
-    if (!isValidGoldenRuleKey(t.goldenRuleKey as string)) return false;
+  if (t.goldenRuleBucketId !== null && t.goldenRuleBucketId !== undefined) {
+    if (!isValidGoldenRuleBucketId(t.goldenRuleBucketId as string)) return false;
   }
   
   return true;
@@ -38,8 +38,8 @@ export function validatePlacedBlock(block: unknown): block is PlacedBlock {
   if (typeof b.templateId !== 'string' || !b.templateId) return false;
   if (typeof b.week !== 'number' || b.week < 1) return false;
   if (!DAYS.includes(b.day as typeof DAYS[number])) return false;
-  if (typeof b.startTime !== 'string') return false;
-  if (typeof b.durationMin !== 'number' || b.durationMin < 15) return false;
+  if (typeof b.startMinutes !== 'number') return false;
+  if (typeof b.durationMinutes !== 'number' || b.durationMinutes < 15) return false;
   
   return true;
 }
@@ -54,7 +54,6 @@ export function validatePlan(plan: unknown): plan is Plan {
   const s = p.settings as Record<string, unknown>;
   if (typeof s.name !== 'string' || !s.name) return false;
   if (typeof s.weeks !== 'number' || s.weeks < 1) return false;
-  if (!Array.isArray(s.enabledDays)) return false;
   
   if (!Array.isArray(p.blocks)) return false;
   for (const block of p.blocks) {
@@ -71,7 +70,10 @@ export function validateAppState(state: unknown): { valid: boolean; error?: stri
   
   const s = state as Record<string, unknown>;
   
-  if (s.version !== 1) {
+  if (s.version !== 2) {
+    if (s.version === 1) {
+      return { valid: true };
+    }
     return { valid: false, error: 'Unsupported version' };
   }
   

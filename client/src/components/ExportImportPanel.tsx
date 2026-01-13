@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useStore } from '@/state/store';
 import { Plan, AppState } from '@/state/types';
-import { exportToCSV, downloadCSV, downloadJSON } from '@/lib/csv';
+import { exportToCSV, exportToICS, downloadCSV, downloadJSON, downloadICS } from '@/lib/csv';
 import { validateAppState } from '@/state/validators';
 import { Modal } from './Modal';
 
@@ -23,9 +23,15 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
     downloadCSV(csv, filename);
   };
 
+  const handleExportICS = () => {
+    const ics = exportToICS(plan, state.templates);
+    const filename = `${plan.settings.name.replace(/\s+/g, '_')}_calendar.ics`;
+    downloadICS(ics, filename);
+  };
+
   const handleExportJSON = () => {
     const exportData: AppState = {
-      version: 1,
+      version: 2,
       templates: state.templates,
       plans: [plan],
     };
@@ -77,20 +83,27 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
       <div className="space-y-6">
         <div>
           <h4 className="font-medium mb-3">Export Current Plan</h4>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <button
               onClick={handleExportCSV}
               className="flex-1 px-4 py-2 text-sm border rounded hover:bg-gray-50"
               data-testid="export-csv-button"
             >
-              Export as CSV
+              CSV
             </button>
             <button
               onClick={handleExportJSON}
               className="flex-1 px-4 py-2 text-sm border rounded hover:bg-gray-50"
               data-testid="export-json-button"
             >
-              Export as JSON
+              JSON
+            </button>
+            <button
+              onClick={handleExportICS}
+              className="flex-1 px-4 py-2 text-sm border rounded hover:bg-gray-50"
+              data-testid="export-ics-button"
+            >
+              ICS (Calendar)
             </button>
           </div>
         </div>

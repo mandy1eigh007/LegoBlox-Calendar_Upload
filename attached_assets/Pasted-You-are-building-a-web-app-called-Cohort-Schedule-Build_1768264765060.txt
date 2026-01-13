@@ -1,0 +1,212 @@
+You are building a web app called “Cohort Schedule Builder” to replace the painful manual calendar-building process for ANEW-style pre-apprenticeship cohorts.
+
+Hard rule: DO NOT invent requirements, DO NOT invent data, DO NOT leave placeholders. If something is truly ambiguous, choose the simplest reasonable implementation and document that assumption in a short ASSUMPTIONS section at the end.
+
+PRIMARY GOAL
+Make scheduling fast and flexible by using drag-and-drop “blocks” (templates) onto a weekly grid, while enforcing Golden Rule hour budgets with real-time over/under totals.
+
+MATCH THE UI/BEHAVIOR SHOWN IN THE SCREENSHOTS
+Layout is 3 columns:
+1) Left: Block Library with search, category filter dropdown, and a New button.
+   - Block tiles show Title, Category, Default Duration.
+   - Library blocks must be editable (not just instances placed on the calendar).
+2) Center: Week grid (Mon–Fri columns) with time slots and drag/drop.
+3) Right: Side panel that can show:
+   - Golden Rule Totals (default view)
+   - Edit Block (when a scheduled block is selected)
+   - Edit Template (when editing a library block)
+
+TIME REQUIREMENTS
+- Day start: 6:30 AM
+- Day end: 3:30 PM
+- Time resolution: 15-minute increments everywhere.
+- Grid must snap placement and resizing to 15-minute increments.
+- Dragging must NOT “jump around.” Fix the math so dropping at 2:00 PM places at 2:00 PM.
+
+CORE FEATURES (MUST HAVE)
+A) Templates (Block Library)
+Data fields for a Template:
+- id
+- title
+- category (examples: PD, Shop, Math, Admin, Certification, Other)
+- color (simple solid background; no icons)
+- defaultDurationMinutes (must be multiple of 15)
+- countsTowardGoldenRule: boolean
+- goldenRuleBucketId: nullable (required if countsTowardGoldenRule=true)
+- defaultLocation (optional text)
+- defaultNotes (optional text)
+
+Library functionality:
+- Create template
+- Edit template
+- Duplicate template
+- Delete template (only if not referenced OR provide a warning and keep instances intact with “orphaned template” handling)
+- Search templates by title
+- Filter by category
+- Sort templates (manual drag reorder OR simple alphabetical)
+
+B) Schedule Grid (Week View)
+- Weeks are discrete: Week 1, Week 2, etc. Week selector dropdown at top.
+- Buttons at top: Copy to Next Week, Reset Week, Export, Print View, Edit Settings.
+- “Copy to Next Week” must copy all blocks from current week to next week, including recurring series that apply, without duplicating duplicates.
+- “Reset Week” deletes all scheduled blocks in that week (confirm dialog).
+
+Placement rules:
+- Drag a template onto the grid to create an instance.
+- On drop: instance start time is the snapped time under cursor. Duration starts at template defaultDurationMinutes.
+- Instance can be resized by dragging bottom handle; snaps by 15 minutes.
+- Instance can be moved by dragging; snaps by 15 minutes.
+- Instances must be constrained within 6:30–3:30.
+
+Critical bug fix (jumping):
+- Use a single source of truth for slot height.
+- Convert pointer Y to minutes using:
+  - gridTop = calendarGrid.getBoundingClientRect().top
+  - yWithinGrid = (clientY - gridTop) + gridScrollContainer.scrollTop
+  - slotIndex = round(yWithinGrid / slotHeightPx)
+  - minutesFromStart = slotIndex * 15
+  - startTime = dayStartMinutes + minutesFromStart
+- Clamp slotIndex to valid range.
+- DO NOT mix 30-min labels with 15-min snapping. Labels can be 30-min, but snapping and math must be 15.
+
+Overlaps/conflicts:
+- Allow overlaps by default (because reality is messy), but visibly flag conflicts:
+  - If two blocks overlap in the same “location/resource” (Classroom 1, Classroom 2, Shop, Offsite), show a red outline and add a conflict message in Edit Block.
+- Provide a Settings option: “Disallow overlaps” (toggle). If enabled, prevent drop/resize into conflicts.
+
+C) Edit Block (Scheduled Instance Side Panel)
+When clicking an instance, open Edit Block panel with:
+- Template name (read-only) + button “Edit Template”
+- Title Override (text)
+- Start time (editable via time picker with 15-min steps)
+- Duration (dropdown in 15-min steps; 15, 30, 45, … up to full-day)
+- Day + Week (shows Week # and weekday)
+- Location (text or dropdown of common resources)
+- Notes (multi-line)
+- Counts toward Golden Rule (toggle; if on, require bucket selection)
+- Golden Rule Bucket (dropdown) if counting
+Buttons:
+- Save
+- Duplicate (duplicates in same week/day/time; then user can move)
+- Delete
+
+Multi-week / multi-day / recurring (MUST ADD)
+In Edit Block add “Repeat” section:
+- None (default)
+- Weekly
+- Custom (choose weekdays checkboxes)
+Fields:
+- Apply to weeks: startWeek .. endWeek (inclusive)
+- Days of week selection (Mon–Fri)
+- “Apply” scope options when editing an existing recurring block:
+  - This instance only
+  - This and future
+  - All occurrences
+Implementation detail:
+- Store a recurrenceSeriesId on instances that belong to a series.
+- For exceptions (edited single occurrence), store an exception record keyed by (seriesId, weekIndex, dayOfWeek, startTime).
+
+D) Golden Rule Totals (Right Panel)
+This panel must show “Scheduled / Budget” and Over/Under in minutes AND in hours:minutes.
+- Totals must update immediately when blocks are placed/moved/resized/deleted.
+- Over/Under threshold indicator:
+  - On target: within +/- 15 min
+  - Over: more than +15 min
+  - Under: less than -15 min
+No icons. Use text and subtle color only.
+
+Golden Rule buckets (fixed; do not let users edit budgets in UI unless in Admin Settings):
+Load the following bucket list in a config file (minutes):
+- Introduction to Pre-Apprenticeship: 180
+- Professional Development Principles (Intro+Mid+Final total): 180
+- Grit/Growth Mindset: 60
+- How to be a Successful Apprentice: 60
+- Elevator Pitch: 120
+- Resumes: 240
+- Interviews (Interview Skills 120 + Group Interviews 120 + Mock Interview Prep 360): 600
+- Applying for Apprenticeships & Job Search: 180
+- Financial Education: 180
+- Emotional Intelligence: 120
+- RISE Up Advocacy & Bystander Intervention: 120
+- Workers Compensation/Unemployment Insurance: 120
+- Apprenticeship Portfolio: 240
+- Individual Career Plan: 180
+- Application Prep: 120
+- ACE Instruction: 240
+- ACEs: 2160
+- Shop Introduction: 60
+- Introduction to the Construction Trades: 120
+- Construction Trade Awareness + Poster Project: 240
+- Labor History: 60
+- Hand Tools: 180
+- Power Tools: 180
+- Materials Knowledge: 60
+- Intro to Measuring Tape + Measuring Tape Exercises: 120
+- Skills Project: 2520
+- Intro to Scaffolding: 120
+- Ladder Safety: 60
+- Intro to Clean Energy: 120
+- Apprenticeship Tours: 1200
+- Worksite Tours: 480
+- Speaker Presentations: 240
+- OSHA 10: 600
+- Forklift Certification: 480
+- Flagger Certification: 480
+- Physical Fitness: 1920
+- Nutrition: 60
+
+Rules:
+- Only blocks with countsTowardGoldenRule=true contribute to totals.
+- Lunch, workouts, admin holds, etc. should default to countsTowardGoldenRule=false.
+
+E) Import/Export
+Export must include:
+- JSON export/import (entire plan, templates + schedule)
+- CSV export (instances list: week, day, start, end, title, category, bucket, location, notes)
+- ICS export (calendar events)
+Import:
+- ICS import that supports:
+  - Basic VEVENT
+  - RRULE weekly recurrences
+  - RECURRENCE-ID exceptions
+Imported events should come in as “Fixed Events” templates/instances (locked by default).
+
+F) Settings
+Edit Settings modal must include:
+- Day start time (default 6:30) and end time (default 3:30)
+- Week count (how many weeks in program)
+- Default resources list (Classroom 1, Classroom 2, Shop, Offsite, Administration) editable
+- Overlap policy toggle (allow vs disallow)
+- Print settings (show notes yes/no)
+
+TECH STACK (pick one and implement fully, no partial)
+Use: React + TypeScript + Vite + Tailwind.
+Drag/drop: dnd-kit (preferred) OR react-dnd. Use one and do it cleanly.
+State: Zustand (preferred) or Redux Toolkit.
+Persistence: localStorage for autosave + explicit JSON export/import.
+
+QUALITY REQUIREMENTS
+- No icons in UI.
+- All time math in minutes. Store times as minutes-from-midnight.
+- Everything snaps to 15 minutes.
+- The duration dropdown and the visual block height MUST match. Fix the current mismatch bug.
+- Provide a small “Diagnostics” panel in Settings that shows:
+  - slotHeightPx
+  - computed minutes on hover
+So we can confirm time math is correct when debugging.
+
+ACCEPTANCE TESTS (build these as manual checklist in README AND implement at least a few automated tests)
+1) Drag “Work Out” to Tuesday at exactly 2:00 PM: it lands at 2:00 PM (no jump).
+2) Resize an event by 15 minutes: Golden Rule totals update immediately.
+3) Edit duration to 1h: event becomes exactly 4 slots tall.
+4) Apply recurrence Mon–Thu for Weeks 1–4: occurrences appear in all selected weeks/days.
+5) Edit a single occurrence in Week 2 only: series remains intact; only that instance changes.
+6) Import an ICS with RRULE weekly workouts: events appear repeated as fixed or mapped blocks.
+7) Export JSON then import: schedule is identical.
+
+DELIVERABLES
+- Full working project code.
+- Clear README with how to run, how to use, and the acceptance test checklist.
+- Seed data: create the templates shown in the screenshots (Work Out, Lunch, OSHA 10, Intro to Pre-Apprenticeship, Support Services Intake, Intro into ACES, Intro into Tape Measure) with sensible defaults and correct golden-rule counting toggles.
+
+Finally: If anything in this prompt conflicts, prioritize (1) 15-min accurate scheduling, (2) stable drag/drop, (3) Golden Rule totals accuracy, (4) recurrence, (5) import/export.

@@ -1,6 +1,6 @@
 import { Plan, BlockTemplate } from '@/state/types';
-import { calculateTopicTotals } from '@/lib/goldenRule';
-import { formatDuration } from '@/lib/time';
+import { calculateGoldenRuleTotals } from '@/lib/goldenRule';
+import { formatDuration, formatMinutesAsHoursMinutes } from '@/lib/time';
 
 interface GoldenRuleTotalsProps {
   plan: Plan;
@@ -8,7 +8,7 @@ interface GoldenRuleTotalsProps {
 }
 
 export function GoldenRuleTotals({ plan, templates }: GoldenRuleTotalsProps) {
-  const totals = calculateTopicTotals(plan, templates);
+  const totals = calculateGoldenRuleTotals(plan, templates);
   
   const activeTopics = totals.filter(t => t.scheduled > 0 || t.budget > 0);
 
@@ -28,7 +28,7 @@ export function GoldenRuleTotals({ plan, templates }: GoldenRuleTotalsProps) {
           <div className="space-y-1">
             {activeTopics.map(item => (
               <div
-                key={item.key}
+                key={item.id}
                 className={`p-2 rounded text-xs ${
                   item.status === 'over' 
                     ? 'bg-red-50 border border-red-200' 
@@ -36,7 +36,7 @@ export function GoldenRuleTotals({ plan, templates }: GoldenRuleTotalsProps) {
                       ? 'bg-green-50 border border-green-200' 
                       : 'bg-gray-50 border border-gray-200'
                 }`}
-                data-testid={`golden-rule-${item.key}`}
+                data-testid={`golden-rule-${item.id}`}
               >
                 <p className="font-medium truncate" title={item.label}>
                   {item.label}
@@ -52,10 +52,13 @@ export function GoldenRuleTotals({ plan, templates }: GoldenRuleTotalsProps) {
                         ? 'text-green-600' 
                         : 'text-gray-500'
                   }`}>
-                    {item.status === 'over' && `Over by ${item.difference}m`}
-                    {item.status === 'under' && `Under by ${Math.abs(item.difference)}m`}
+                    {item.status === 'over' && `Over ${formatMinutesAsHoursMinutes(item.difference)}`}
+                    {item.status === 'under' && `Under ${formatMinutesAsHoursMinutes(Math.abs(item.difference))}`}
                     {item.status === 'on-target' && 'On target'}
                   </span>
+                </div>
+                <div className="text-gray-400 mt-0.5">
+                  {item.scheduled}m / {item.budget}m
                 </div>
               </div>
             ))}
@@ -67,8 +70,8 @@ export function GoldenRuleTotals({ plan, templates }: GoldenRuleTotalsProps) {
         <div className="text-xs text-gray-500">
           <p className="font-medium mb-1">Status Legend:</p>
           <p className="text-green-600">On target: within +/- 15 min</p>
-          <p className="text-red-600">Over: exceeds budget by more than 15 min</p>
-          <p className="text-gray-500">Under: below budget by more than 15 min</p>
+          <p className="text-red-600">Over: exceeds budget by 15+ min</p>
+          <p className="text-gray-500">Under: below budget by 15+ min</p>
         </div>
       </div>
     </div>

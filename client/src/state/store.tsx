@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import { AppState, Action, Plan, BlockTemplate, PlacedBlock } from './types';
+import { AppState, Action, PlacedBlock, RecurrenceSeries } from './types';
 import { loadState, saveState, createInitialState } from '@/lib/storage';
+import { v4 as uuidv4 } from 'uuid';
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -23,6 +24,17 @@ function reducer(state: AppState, action: Action): AppState {
         ...state,
         templates: state.templates.filter(t => t.id !== action.payload),
       };
+
+    case 'DUPLICATE_TEMPLATE': {
+      const original = state.templates.find(t => t.id === action.payload);
+      if (!original) return state;
+      const duplicate = {
+        ...original,
+        id: uuidv4(),
+        title: `${original.title} (Copy)`,
+      };
+      return { ...state, templates: [...state.templates, duplicate] };
+    }
       
     case 'ADD_PLAN':
       return { ...state, plans: [...state.plans, action.payload] };
@@ -54,24 +66,134 @@ function reducer(state: AppState, action: Action): AppState {
     }
       
     case 'UPDATE_BLOCK': {
-      const { planId, block } = action.payload;
+      const { planId, block, scope } = action.payload;
       return {
         ...state,
-        plans: state.plans.map(p => 
-          p.id === planId 
-            ? { ...p, blocks: p.blocks.map(b => b.id === block.id ? block : b) }
-            : p
-        ),
+        plans: state.plans.map(p => {
+          if (p.id !== planId) return p;
+          
+          if (!scope || scope === 'this') {
+            return { ...p, blocks: p.blocks.map(b => b.id === block.id ? block : b) };
+          }
+          
+          if (scope === 'thisAndFuture' && block.recurrenceSeriesId) {
+            return {
+              ...p,
+              blocks: p.blocks.map(b => {
+                if (b.recurrenceSeriesId === block.recurrenceSeriesId && b.week >= block.week) {
+                  return {
+                    ...b,
+                    startMinutes: block.startMinutes,
+                    durationMinutes: block.durationMinutes,
+                    titleOverride: block.titleOverride,
+                    location: block.location,
+                    notes: block.notes,
+                    countsTowardGoldenRule: block.countsTowardGoldenRule,
+                    goldenRuleBucketId: block.goldenRuleBucketId,
+                  };
+                }
+                return b;
+              }),
+            };
+          }
+          
+          if (scope === 'all' && block.recurrenceSeriesId) {
+            return {
+              ...p,
+              blocks: p.blocks.map(b => {
+                if (b.recurrenceSeriesId === block.recurrenceSeriesId) {
+                  return {
+                    ...b,
+                    startMinutes: block.startMinutes,
+                    durationMinutes: block.durationMinutes,
+                    titleOverride: block.titleOverride,
+                    location: block.location,
+                    notes: block.notes,
+                    countsTowardGoldenRule: block.countsTowardGoldenRule,
+                    goldenRuleBucketId: block.goldenRuleBucketId,
+                  };
+                }
+                return b;
+              }),
+            };
+          }
+          
+          return { ...p, blocks: p.blocks.map(b => b.id === block.id ? block : b) };
+        }),
       };
     }
       
     case 'DELETE_BLOCK': {
-      const { planId, blockId } = action.payload;
+      const { planId, blockId, scope } = action.payload;
+      return {
+        ...state,
+        plans: state.plans.map(p => {
+          if (p.id !== planId) return p;
+          
+          const block = p.blocks.find(b => b.id === blockId);
+          if (!block) return p;
+          
+          if (!scope || scope === 'this') {
+            return { ...p, blocks: p.blocks.filter(b => b.id !== blockId) };
+          }
+          
+          if (scope === 'thisAndFuture' && block.recurrenceSeriesId) {
+            return {
+              ...p,
+              blocks: p.blocks.filter(b => 
+                !(b.recurrenceSeriesId === block.recurrenceSeriesId && b.week >= block.week)
+              ),
+            };
+          }
+          
+          if (scope === 'all' && block.recurrenceSeriesId) {
+            return {
+              ...p,
+              blocks: p.blocks.filter(b => b.recurrenceSeriesId !== block.recurrenceSeriesId),
+              recurrenceSeries: p.recurrenceSeries.filter(s => s.id !== block.recurrenceSeriesId),
+            };
+          }
+          
+          return { ...p, blocks: p.blocks.filter(b => b.id !== blockId) };
+        }),
+      };
+    }
+
+    case 'ADD_RECURRENCE_SERIES': {
+      const { planId, series } = action.payload;
       return {
         ...state,
         plans: state.plans.map(p => 
           p.id === planId 
-            ? { ...p, blocks: p.blocks.filter(b => b.id !== blockId) }
+            ? { ...p, recurrenceSeries: [...p.recurrenceSeries, series] }
+            : p
+        ),
+      };
+    }
+
+    case 'UPDATE_RECURRENCE_SERIES': {
+      const { planId, series } = action.payload;
+      return {
+        ...state,
+        plans: state.plans.map(p => 
+          p.id === planId 
+            ? { ...p, recurrenceSeries: p.recurrenceSeries.map(s => s.id === series.id ? series : s) }
+            : p
+        ),
+      };
+    }
+
+    case 'DELETE_RECURRENCE_SERIES': {
+      const { planId, seriesId } = action.payload;
+      return {
+        ...state,
+        plans: state.plans.map(p => 
+          p.id === planId 
+            ? { 
+                ...p, 
+                recurrenceSeries: p.recurrenceSeries.filter(s => s.id !== seriesId),
+                blocks: p.blocks.filter(b => b.recurrenceSeriesId !== seriesId),
+              }
             : p
         ),
       };
@@ -84,12 +206,20 @@ function reducer(state: AppState, action: Action): AppState {
         plans: state.plans.map(p => {
           if (p.id !== planId) return p;
           
+          const existingToWeekBlockIds = new Set(
+            p.blocks.filter(b => b.week === toWeek).map(b => `${b.day}-${b.startMinutes}`)
+          );
+          
           const blocksFromWeek = p.blocks.filter(b => b.week === fromWeek);
-          const newBlocks: PlacedBlock[] = blocksFromWeek.map(b => ({
-            ...b,
-            id: crypto.randomUUID(),
-            week: toWeek,
-          }));
+          const newBlocks: PlacedBlock[] = blocksFromWeek
+            .filter(b => !existingToWeekBlockIds.has(`${b.day}-${b.startMinutes}`))
+            .map(b => ({
+              ...b,
+              id: uuidv4(),
+              week: toWeek,
+              recurrenceSeriesId: null,
+              isRecurrenceException: false,
+            }));
           
           return { ...p, blocks: [...p.blocks, ...newBlocks] };
         }),
@@ -173,7 +303,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   return (
     <StoreContext.Provider value={{ state, dispatch }}>
       {loadError && (
-        <div className="fixed top-0 left-0 right-0 bg-yellow-100 border-b border-yellow-300 p-3 text-center text-sm">
+        <div className="fixed top-0 left-0 right-0 bg-yellow-100 border-b border-yellow-300 p-3 text-center text-sm z-50">
           {loadError}
           <button 
             onClick={() => setLoadError(null)}

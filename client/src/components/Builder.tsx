@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation, useParams } from 'wouter';
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import { useStore } from '@/state/store';
-import { BlockTemplate, PlacedBlock, Day, DAYS } from '@/state/types';
+import { BlockTemplate, PlacedBlock, Day, DAYS, ApplyScope } from '@/state/types';
 import { BlockLibrary } from './BlockLibrary';
 import { WeekGrid } from './WeekGrid';
 import { BlockEditPanel } from './BlockEditPanel';
@@ -11,9 +11,15 @@ import { PlanEditor } from './PlanEditor';
 import { ExportImportPanel } from './ExportImportPanel';
 import { PrintView } from './PrintView';
 import { ConfirmModal } from './Modal';
-import { findCollisions, findNextAvailableSlot, wouldFitInDay } from '@/lib/collision';
-import { checkGoldenRuleLimit } from '@/lib/goldenRule';
-import { timeToMinutes, minutesToTime, snapToSlot, formatTimeDisplay, getEndTime } from '@/lib/time';
+import { findTimeConflicts, wouldFitInDay } from '@/lib/collision';
+import { 
+  SLOT_HEIGHT_PX, 
+  SLOT_MINUTES,
+  minutesToTimeDisplay,
+  getEndMinutes,
+  snapToSlot,
+  clampMinutes
+} from '@/lib/time';
 import { v4 as uuidv4 } from 'uuid';
 
 export function Builder() {
@@ -31,9 +37,10 @@ export function Builder() {
   const [showPrint, setShowPrint] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [warningMessage, setWarningMessage] = useState<{ message: string; onConfirm: () => void } | null>(null);
-  const [copyResult, setCopyResult] = useState<string | null>(null);
   const [draggedItem, setDraggedItem] = useState<{ type: 'template' | 'placed-block'; data: BlockTemplate | PlacedBlock } | null>(null);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [hoverMinutes, setHoverMinutes] = useState<number | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -49,13 +56,6 @@ export function Builder() {
       return () => clearTimeout(timer);
     }
   }, [errorMessage]);
-
-  useEffect(() => {
-    if (copyResult) {
-      const timer = setTimeout(() => setCopyResult(null), 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [copyResult]);
 
   if (!plan) {
     return (
@@ -75,21 +75,23 @@ export function Builder() {
   }
 
   const { settings } = plan;
-  const enabledDays = DAYS.filter(day => settings.enabledDays.includes(day));
 
-  const calculateDropTime = (dayIndex: number, clientY: number, gridElement: Element): string => {
+  const calculateDropMinutes = (clientY: number, gridElement: Element): number => {
     const rect = gridElement.getBoundingClientRect();
     const headerHeight = 41;
-    const slotHeight = 24;
     const scrollTop = gridElement.scrollTop;
-    const relativeY = clientY - rect.top - headerHeight + scrollTop;
-    const slotIndex = Math.floor(relativeY / slotHeight);
-    const dayStartMinutes = timeToMinutes(settings.dayStartTime);
-    const dayEndMinutes = timeToMinutes(settings.dayEndTime);
-    const rawMinutes = dayStartMinutes + (slotIndex * 15);
-    const snappedMinutes = snapToSlot(rawMinutes, 15);
-    const clampedMinutes = Math.min(Math.max(snappedMinutes, dayStartMinutes), dayEndMinutes - 15);
-    return minutesToTime(clampedMinutes);
+    const yWithinGrid = (clientY - rect.top - headerHeight) + scrollTop;
+    const slotIndex = Math.round(yWithinGrid / SLOT_HEIGHT_PX);
+    const minutesFromStart = slotIndex * SLOT_MINUTES;
+    const rawMinutes = settings.dayStartMinutes + minutesFromStart;
+    const snappedMinutes = snapToSlot(rawMinutes, SLOT_MINUTES);
+    return clampMinutes(snappedMinutes, settings.dayStartMinutes, settings.dayEndMinutes - 15);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!gridRef.current) return;
+    const minutes = calculateDropMinutes(e.clientY, gridRef.current);
+    setHoverMinutes(minutes);
   };
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -115,112 +117,72 @@ export function Builder() {
     const day = overData.day as Day;
     const activeData = active.data.current;
     
-    const gridElement = document.querySelector('[class*="flex-1 overflow-auto"]');
+    const gridElement = document.querySelector('[data-testid="week-grid"]');
     if (!gridElement) return;
     
     const pointerY = (event.activatorEvent as PointerEvent)?.clientY || 0;
     const deltaY = event.delta.y;
     const finalY = pointerY + deltaY;
     
-    let dropTime = calculateDropTime(enabledDays.indexOf(day), finalY, gridElement);
+    const dropMinutes = calculateDropMinutes(finalY, gridElement);
     
     if (activeData?.type === 'template') {
       const template = activeData.template as BlockTemplate;
-      placeNewBlock(template, day, dropTime);
+      placeNewBlock(template, day, dropMinutes);
     } else if (activeData?.type === 'placed-block') {
       const block = activeData.block as PlacedBlock;
-      moveBlock(block, day, dropTime);
+      moveBlock(block, day, dropMinutes);
     }
   };
 
-  const placeNewBlock = (template: BlockTemplate, day: Day, startTime: string) => {
-    const duration = 15;
+  const placeNewBlock = (template: BlockTemplate, day: Day, startMinutes: number) => {
+    const duration = template.defaultDurationMinutes;
     
-    if (!wouldFitInDay(startTime, duration, settings.dayEndTime)) {
-      setErrorMessage(`Block would extend beyond ${formatTimeDisplay(settings.dayEndTime)}.`);
+    if (!wouldFitInDay(startMinutes, duration, settings.dayEndMinutes)) {
+      setErrorMessage(`Block would extend beyond ${minutesToTimeDisplay(settings.dayEndMinutes)}.`);
       return;
     }
     
-    let collisions = findCollisions(plan.blocks, currentWeek, day, startTime, duration);
+    const conflicts = findTimeConflicts(plan.blocks, currentWeek, day, startMinutes, duration);
     
-    if (collisions.length > 0 && autoPlace) {
-      const nextSlot = findNextAvailableSlot(
-        plan.blocks, currentWeek, day, startTime, duration,
-        settings.dayStartTime, settings.dayEndTime, settings.slotMin
-      );
-      
-      if (nextSlot) {
-        startTime = nextSlot;
-        collisions = [];
-      } else {
-        setErrorMessage('No open slot available that fits.');
-        return;
-      }
-    }
-    
-    if (collisions.length > 0) {
-      const conflict = collisions[0];
-      const conflictTitle = state.templates.find(t => t.id === conflict.block.templateId)?.title || 'Unknown';
-      setErrorMessage(`Cannot place. Conflicts with: ${conflictTitle} ${formatTimeDisplay(conflict.startTime)}-${formatTimeDisplay(conflict.endTime)}`);
+    if (conflicts.length > 0 && !settings.allowOverlaps) {
+      const conflictTitle = state.templates.find(t => t.id === conflicts[0].templateId)?.title || 'Unknown';
+      setErrorMessage(`Cannot place. Conflicts with: ${conflictTitle} at ${minutesToTimeDisplay(conflicts[0].startMinutes)}`);
       return;
     }
     
-    const goldenRuleCheck = checkGoldenRuleLimit(plan, state.templates, template.id, duration);
-    
-    if (!goldenRuleCheck.allowed) {
-      setErrorMessage(goldenRuleCheck.message);
-      return;
-    }
-    
-    const doPlace = () => {
-      const block: PlacedBlock = {
-        id: uuidv4(),
-        templateId: template.id,
-        week: currentWeek,
-        day,
-        startTime,
-        durationMin: duration,
-      };
-      
-      dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
+    const block: PlacedBlock = {
+      id: uuidv4(),
+      templateId: template.id,
+      week: currentWeek,
+      day,
+      startMinutes,
+      durationMinutes: duration,
+      titleOverride: '',
+      location: template.defaultLocation,
+      notes: template.defaultNotes,
+      countsTowardGoldenRule: template.countsTowardGoldenRule,
+      goldenRuleBucketId: template.goldenRuleBucketId,
+      recurrenceSeriesId: null,
+      isRecurrenceException: false,
     };
     
-    if (goldenRuleCheck.warning) {
-      setWarningMessage({ message: goldenRuleCheck.message, onConfirm: doPlace });
-    } else {
-      doPlace();
-    }
+    dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
   };
 
-  const moveBlock = (block: PlacedBlock, newDay: Day, newStartTime: string) => {
-    const duration = block.durationMin;
+  const moveBlock = (block: PlacedBlock, newDay: Day, newStartMinutes: number) => {
+    const duration = block.durationMinutes;
     
-    if (!wouldFitInDay(newStartTime, duration, settings.dayEndTime)) {
-      setErrorMessage(`Block would extend beyond ${formatTimeDisplay(settings.dayEndTime)}.`);
+    if (!wouldFitInDay(newStartMinutes, duration, settings.dayEndMinutes)) {
+      setErrorMessage(`Block would extend beyond ${minutesToTimeDisplay(settings.dayEndMinutes)}.`);
       return;
     }
     
-    let collisions = findCollisions(plan.blocks, currentWeek, newDay, newStartTime, duration, block.id);
+    const conflicts = findTimeConflicts(plan.blocks, currentWeek, newDay, newStartMinutes, duration, block.id);
     
-    if (collisions.length > 0 && autoPlace) {
-      const nextSlot = findNextAvailableSlot(
-        plan.blocks, currentWeek, newDay, newStartTime, duration,
-        settings.dayStartTime, settings.dayEndTime, settings.slotMin, block.id
-      );
-      
-      if (nextSlot) {
-        newStartTime = nextSlot;
-        collisions = [];
-      } else {
-        setErrorMessage('No open slot available that fits.');
-        return;
-      }
-    }
-    
-    if (collisions.length > 0) {
-      const conflict = collisions[0];
-      const conflictTitle = state.templates.find(t => t.id === conflict.block.templateId)?.title || 'Unknown';
-      setErrorMessage(`Cannot place. Conflicts with: ${conflictTitle} ${formatTimeDisplay(conflict.startTime)}-${formatTimeDisplay(conflict.endTime)}`);
+    if (conflicts.length > 0 && !settings.allowOverlaps) {
+      const conflictTitle = state.templates.find(t => t.id === conflicts[0].templateId)?.title || 'Unknown';
+      setErrorMessage(`Cannot move. Conflicts with: ${conflictTitle}`);
       return;
     }
     
@@ -228,7 +190,7 @@ export function Builder() {
       ...block,
       week: currentWeek,
       day: newDay,
-      startTime: newStartTime,
+      startMinutes: newStartMinutes,
     };
     
     dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updatedBlock } });
@@ -238,130 +200,55 @@ export function Builder() {
     const block = plan.blocks.find(b => b.id === blockId);
     if (!block) return;
     
-    if (newDuration % 15 !== 0) {
-      setErrorMessage('Duration must be a multiple of 15 minutes.');
+    if (newDuration % 15 !== 0) return;
+    
+    if (!wouldFitInDay(block.startMinutes, newDuration, settings.dayEndMinutes)) {
       return;
     }
     
-    if (!wouldFitInDay(block.startTime, newDuration, settings.dayEndTime)) {
-      return;
-    }
-    
-    const collisions = findCollisions(
+    const conflicts = findTimeConflicts(
       plan.blocks, block.week, block.day,
-      block.startTime, newDuration, block.id
+      block.startMinutes, newDuration, block.id
     );
     
-    if (collisions.length > 0) {
+    if (conflicts.length > 0 && !settings.allowOverlaps) {
       return;
     }
     
-    const template = state.templates.find(t => t.id === block.templateId);
-    if (template) {
-      const goldenRuleCheck = checkGoldenRuleLimit(plan, state.templates, template.id, newDuration, block.id);
-      if (!goldenRuleCheck.allowed) {
-        setErrorMessage(goldenRuleCheck.message);
-        return;
-      }
-    }
-    
-    const updatedBlock: PlacedBlock = { ...block, durationMin: newDuration };
+    const updatedBlock: PlacedBlock = { ...block, durationMinutes: newDuration };
     dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updatedBlock } });
   };
 
-  const handleBlockUpdate = (updatedBlock: PlacedBlock) => {
-    const template = state.templates.find(t => t.id === updatedBlock.templateId);
-    if (!template) return;
-    
-    const originalBlock = plan.blocks.find(b => b.id === updatedBlock.id);
-    if (!originalBlock) return;
-    
-    if (updatedBlock.durationMin % 15 !== 0) {
+  const handleBlockUpdate = (updatedBlock: PlacedBlock, scope?: ApplyScope) => {
+    if (updatedBlock.durationMinutes % 15 !== 0) {
       setErrorMessage('Duration must be a multiple of 15 minutes.');
       return;
     }
     
-    if (updatedBlock.durationMin !== originalBlock.durationMin) {
-      if (!wouldFitInDay(updatedBlock.startTime, updatedBlock.durationMin, settings.dayEndTime)) {
-        setErrorMessage(`Duration would extend past ${formatTimeDisplay(settings.dayEndTime)}.`);
-        return;
-      }
-      
-      const collisions = findCollisions(
-        plan.blocks, updatedBlock.week, updatedBlock.day, 
-        updatedBlock.startTime, updatedBlock.durationMin, updatedBlock.id
-      );
-      
-      if (collisions.length > 0) {
-        setErrorMessage('New duration would cause overlap with existing block.');
-        return;
-      }
-      
-      const goldenRuleCheck = checkGoldenRuleLimit(
-        plan, state.templates, template.id, updatedBlock.durationMin, updatedBlock.id
-      );
-      
-      if (!goldenRuleCheck.allowed) {
-        setErrorMessage(goldenRuleCheck.message);
-        return;
-      }
-      
-      if (goldenRuleCheck.warning) {
-        setWarningMessage({
-          message: goldenRuleCheck.message,
-          onConfirm: () => {
-            dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updatedBlock } });
-            setSelectedBlockId(null);
-          },
-        });
-        return;
-      }
-    }
-    
-    dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updatedBlock } });
-    setSelectedBlockId(null);
-  };
-
-  const handleBlockDelete = () => {
-    if (selectedBlockId) {
-      dispatch({ type: 'DELETE_BLOCK', payload: { planId: plan.id, blockId: selectedBlockId } });
-      setSelectedBlockId(null);
-    }
-  };
-
-  const handleBlockSplit = (blockId: string, splitAfterMinutes: number) => {
-    const block = plan.blocks.find(b => b.id === blockId);
-    if (!block) return;
-    
-    if (splitAfterMinutes % 15 !== 0 || splitAfterMinutes < 15 || splitAfterMinutes >= block.durationMin) {
-      setErrorMessage('Invalid split point.');
+    if (!wouldFitInDay(updatedBlock.startMinutes, updatedBlock.durationMinutes, settings.dayEndMinutes)) {
+      setErrorMessage(`Duration would extend past ${minutesToTimeDisplay(settings.dayEndMinutes)}.`);
       return;
     }
     
-    const firstDuration = splitAfterMinutes;
-    const secondDuration = block.durationMin - splitAfterMinutes;
-    const secondStartTime = getEndTime(block.startTime, firstDuration);
+    const conflicts = findTimeConflicts(
+      plan.blocks, updatedBlock.week, updatedBlock.day, 
+      updatedBlock.startMinutes, updatedBlock.durationMinutes, updatedBlock.id
+    );
     
-    const firstBlock: PlacedBlock = {
-      ...block,
-      durationMin: firstDuration,
-    };
+    if (conflicts.length > 0 && !settings.allowOverlaps) {
+      setErrorMessage('New time/duration would cause overlap with existing block.');
+      return;
+    }
     
-    const secondBlock: PlacedBlock = {
-      id: uuidv4(),
-      templateId: block.templateId,
-      week: block.week,
-      day: block.day,
-      startTime: secondStartTime,
-      durationMin: secondDuration,
-      titleOverride: block.titleOverride,
-      location: block.location,
-      notes: block.notes,
-    };
-    
-    dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: firstBlock } });
-    dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block: secondBlock } });
+    dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updatedBlock, scope } });
     setSelectedBlockId(null);
+  };
+
+  const handleBlockDelete = (scope?: ApplyScope) => {
+    if (selectedBlockId) {
+      dispatch({ type: 'DELETE_BLOCK', payload: { planId: plan.id, blockId: selectedBlockId, scope } });
+      setSelectedBlockId(null);
+    }
   };
 
   const handleBlockDuplicate = () => {
@@ -370,54 +257,14 @@ export function Builder() {
     const block = plan.blocks.find(b => b.id === selectedBlockId);
     if (!block) return;
     
-    const endTime = getEndTime(block.startTime, block.durationMin);
+    const newBlock: PlacedBlock = {
+      ...block,
+      id: uuidv4(),
+      recurrenceSeriesId: null,
+      isRecurrenceException: false,
+    };
     
-    if (!wouldFitInDay(endTime, block.durationMin, settings.dayEndTime)) {
-      setErrorMessage('Not enough space to duplicate block.');
-      return;
-    }
-    
-    const collisions = findCollisions(plan.blocks, block.week, block.day, endTime, block.durationMin);
-    
-    if (collisions.length > 0) {
-      const nextSlot = findNextAvailableSlot(
-        plan.blocks, block.week, block.day, endTime, block.durationMin,
-        settings.dayStartTime, settings.dayEndTime, settings.slotMin
-      );
-      
-      if (!nextSlot) {
-        setErrorMessage('No space available to duplicate block.');
-        return;
-      }
-      
-      const newBlock: PlacedBlock = {
-        id: uuidv4(),
-        templateId: block.templateId,
-        week: block.week,
-        day: block.day,
-        startTime: nextSlot,
-        durationMin: block.durationMin,
-        titleOverride: block.titleOverride,
-        location: block.location,
-        notes: block.notes,
-      };
-      
-      dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block: newBlock } });
-    } else {
-      const newBlock: PlacedBlock = {
-        id: uuidv4(),
-        templateId: block.templateId,
-        week: block.week,
-        day: block.day,
-        startTime: endTime,
-        durationMin: block.durationMin,
-        titleOverride: block.titleOverride,
-        location: block.location,
-        notes: block.notes,
-      };
-      
-      dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block: newBlock } });
-    }
+    dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block: newBlock } });
   };
 
   const handleCopyWeek = () => {
@@ -426,57 +273,8 @@ export function Builder() {
       return;
     }
     
-    const nextWeek = currentWeek + 1;
-    const blocksToCheck = plan.blocks.filter(b => b.week === currentWeek);
-    const existingNextWeekBlocks = plan.blocks.filter(b => b.week === nextWeek);
-    
-    const skipped: string[] = [];
-    const copied: PlacedBlock[] = [];
-    
-    for (const block of blocksToCheck) {
-      const template = state.templates.find(t => t.id === block.templateId);
-      const title = template?.title || 'Unknown';
-      
-      const collisions = findCollisions(
-        [...existingNextWeekBlocks, ...copied],
-        nextWeek, block.day, block.startTime, block.durationMin
-      );
-      
-      if (collisions.length > 0) {
-        skipped.push(`${title} (${block.day} ${formatTimeDisplay(block.startTime)}): overlaps with existing block`);
-        continue;
-      }
-      
-      if (template) {
-        const tempPlan = { ...plan, blocks: [...plan.blocks, ...copied] };
-        const goldenRuleCheck = checkGoldenRuleLimit(tempPlan, state.templates, template.id, block.durationMin);
-        
-        if (!goldenRuleCheck.allowed) {
-          skipped.push(`${title} (${block.day} ${formatTimeDisplay(block.startTime)}): exceeds Golden Rule hours`);
-          continue;
-        }
-      }
-      
-      copied.push({
-        ...block,
-        id: uuidv4(),
-        week: nextWeek,
-      });
-    }
-    
-    if (copied.length > 0) {
-      for (const newBlock of copied) {
-        dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block: newBlock } });
-      }
-    }
-    
-    if (skipped.length > 0) {
-      setCopyResult(`Copied ${copied.length} blocks. Skipped ${skipped.length}:\n${skipped.join('\n')}`);
-    } else {
-      setCopyResult(`Copied ${copied.length} blocks to Week ${nextWeek}.`);
-    }
-    
-    setCurrentWeek(nextWeek);
+    dispatch({ type: 'COPY_WEEK', payload: { planId: plan.id, fromWeek: currentWeek, toWeek: currentWeek + 1 } });
+    setCurrentWeek(currentWeek + 1);
   };
 
   const handleResetWeek = () => {
@@ -583,13 +381,14 @@ export function Builder() {
           </div>
         )}
 
-        {copyResult && (
-          <div className="bg-blue-50 border-b border-blue-200 px-4 py-2 text-sm text-blue-700 whitespace-pre-line" data-testid="copy-result">
-            {copyResult}
+        {showDiagnostics && (
+          <div className="bg-gray-100 border-b px-4 py-2 text-xs font-mono">
+            Diagnostics: slotHeightPx={SLOT_HEIGHT_PX}, slotMinutes={SLOT_MINUTES}, 
+            hoverMinutes={hoverMinutes !== null ? `${hoverMinutes} (${minutesToTimeDisplay(hoverMinutes)})` : 'none'}
           </div>
         )}
 
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex overflow-hidden" onMouseMove={handleMouseMove} ref={gridRef}>
           <div className="w-64 flex-shrink-0">
             <BlockLibrary />
           </div>
@@ -607,10 +406,9 @@ export function Builder() {
             <BlockEditPanel
               block={selectedBlock}
               template={selectedTemplate}
-              dayEndTime={settings.dayEndTime}
+              plan={plan}
               onUpdate={handleBlockUpdate}
               onDelete={handleBlockDelete}
-              onSplit={handleBlockSplit}
               onDuplicate={handleBlockDuplicate}
               onClose={() => setSelectedBlockId(null)}
             />
@@ -631,7 +429,7 @@ export function Builder() {
               }}
             >
               <p className="text-sm font-medium">{(draggedItem.data as BlockTemplate).title}</p>
-              <p className="text-xs text-gray-500">15m block</p>
+              <p className="text-xs text-gray-500">{(draggedItem.data as BlockTemplate).defaultDurationMinutes}m</p>
             </div>
           )}
           {draggedItem && draggedItem.type === 'placed-block' && (
@@ -652,7 +450,7 @@ export function Builder() {
         </DragOverlay>
       </div>
 
-      <PlanEditor plan={plan} open={showSettings} onClose={() => setShowSettings(false)} />
+      <PlanEditor plan={plan} open={showSettings} onClose={() => setShowSettings(false)} onToggleDiagnostics={() => setShowDiagnostics(!showDiagnostics)} showDiagnostics={showDiagnostics} />
       <ExportImportPanel plan={plan} open={showExport} onClose={() => setShowExport(false)} />
       
       <ConfirmModal
@@ -662,18 +460,6 @@ export function Builder() {
         title="Reset Week"
         message={`Are you sure you want to clear all blocks from Week ${currentWeek}? This action cannot be undone.`}
         confirmText="Reset"
-      />
-
-      <ConfirmModal
-        open={warningMessage !== null}
-        onClose={() => setWarningMessage(null)}
-        onConfirm={() => {
-          warningMessage?.onConfirm();
-          setWarningMessage(null);
-        }}
-        title="Golden Rule Warning"
-        message={warningMessage?.message || ''}
-        confirmText="Proceed"
       />
     </DndContext>
   );

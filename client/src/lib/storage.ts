@@ -1,35 +1,150 @@
-import { AppState } from '@/state/types';
-import { validateAppState } from '@/state/validators';
+import { AppState, DEFAULT_RESOURCES } from '@/state/types';
 import { createSeedTemplates } from './seedTemplates';
+import { DAY_START_DEFAULT, DAY_END_DEFAULT } from './time';
 
-const STORAGE_KEY = 'schedule_builder_v1';
+const STORAGE_KEY = 'cohort_schedule_builder_v2';
 
 export function createInitialState(): AppState {
   return {
-    version: 1,
+    version: 2,
     templates: createSeedTemplates(),
     plans: [],
   };
+}
+
+export function createDefaultPlanSettings() {
+  return {
+    name: '',
+    weeks: 9,
+    dayStartMinutes: DAY_START_DEFAULT,
+    dayEndMinutes: DAY_END_DEFAULT,
+    slotMinutes: 15 as const,
+    resources: [...DEFAULT_RESOURCES],
+    allowOverlaps: true,
+    showNotesOnPrint: true,
+  };
+}
+
+function isValidState(data: unknown): data is AppState {
+  if (!data || typeof data !== 'object') return false;
+  const s = data as Record<string, unknown>;
+  if (s.version !== 2) return false;
+  if (!Array.isArray(s.templates)) return false;
+  if (!Array.isArray(s.plans)) return false;
+  return true;
+}
+
+function migrateV1ToV2(oldState: unknown): AppState | null {
+  if (!oldState || typeof oldState !== 'object') return null;
+  const s = oldState as Record<string, unknown>;
+  
+  if (s.version === 1 && Array.isArray(s.templates) && Array.isArray(s.plans)) {
+    const newTemplates = (s.templates as unknown[]).map((t: unknown) => {
+      const template = t as Record<string, unknown>;
+      return {
+        id: template.id as string,
+        title: template.title as string,
+        category: template.category as string,
+        colorHex: template.colorHex as string,
+        defaultDurationMinutes: (template.defaultDurationMin as number) || 60,
+        countsTowardGoldenRule: !!template.goldenRuleKey,
+        goldenRuleBucketId: (template.goldenRuleKey as string) || null,
+        defaultLocation: '',
+        defaultNotes: '',
+      };
+    });
+    
+    const newPlans = (s.plans as unknown[]).map((p: unknown) => {
+      const plan = p as Record<string, unknown>;
+      const oldSettings = plan.settings as Record<string, unknown>;
+      
+      const dayStartMinutes = oldSettings.dayStartTime 
+        ? parseInt((oldSettings.dayStartTime as string).split(':')[0]) * 60 + 
+          parseInt((oldSettings.dayStartTime as string).split(':')[1])
+        : DAY_START_DEFAULT;
+        
+      const dayEndMinutes = oldSettings.dayEndTime 
+        ? parseInt((oldSettings.dayEndTime as string).split(':')[0]) * 60 + 
+          parseInt((oldSettings.dayEndTime as string).split(':')[1])
+        : DAY_END_DEFAULT;
+      
+      const newBlocks = (plan.blocks as unknown[] || []).map((b: unknown) => {
+        const block = b as Record<string, unknown>;
+        const startTime = block.startTime as string;
+        const startMinutes = startTime 
+          ? parseInt(startTime.split(':')[0]) * 60 + parseInt(startTime.split(':')[1])
+          : dayStartMinutes;
+        
+        return {
+          id: block.id as string,
+          templateId: block.templateId as string,
+          week: block.week as number,
+          day: block.day as string,
+          startMinutes,
+          durationMinutes: (block.durationMin as number) || 60,
+          titleOverride: (block.titleOverride as string) || '',
+          location: (block.location as string) || '',
+          notes: (block.notes as string) || '',
+          countsTowardGoldenRule: true,
+          goldenRuleBucketId: null,
+          recurrenceSeriesId: null,
+          isRecurrenceException: false,
+        };
+      });
+      
+      return {
+        id: plan.id as string,
+        settings: {
+          name: oldSettings.name as string,
+          weeks: (oldSettings.weeks as number) || 9,
+          dayStartMinutes,
+          dayEndMinutes,
+          slotMinutes: 15 as const,
+          resources: [...DEFAULT_RESOURCES],
+          allowOverlaps: true,
+          showNotesOnPrint: true,
+        },
+        blocks: newBlocks,
+        recurrenceSeries: [],
+      };
+    });
+    
+    return {
+      version: 2,
+      templates: newTemplates as AppState['templates'],
+      plans: newPlans as AppState['plans'],
+    };
+  }
+  
+  return null;
 }
 
 export function loadState(): { state: AppState; error?: string } {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (!stored) {
+      const oldStored = localStorage.getItem('schedule_builder_v1');
+      if (oldStored) {
+        const oldParsed = JSON.parse(oldStored);
+        const migrated = migrateV1ToV2(oldParsed);
+        if (migrated) {
+          saveState(migrated);
+          return { state: migrated };
+        }
+      }
       return { state: createInitialState() };
     }
     
     const parsed = JSON.parse(stored);
-    const validation = validateAppState(parsed);
     
-    if (!validation.valid) {
+    if (!isValidState(parsed)) {
       return { 
         state: createInitialState(), 
-        error: `Data validation failed: ${validation.error}. Starting fresh.` 
+        error: 'Data format changed. Starting fresh with templates.' 
       };
     }
     
-    return { state: parsed as AppState };
+    return { state: parsed };
   } catch (e) {
     return { 
       state: createInitialState(), 
@@ -48,4 +163,5 @@ export function saveState(state: AppState): void {
 
 export function resetStorage(): void {
   localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem('schedule_builder_v1');
 }
