@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { validateAppState } from '@/state/validators';
 import { processImageWithOCR, OCREvent } from '@/lib/ocr';
 import { parseICSWithDateRange, convertICSEventsToBlocks, ICSEventWithDate } from '@/lib/csv';
-import { resolveTemplateForImportedTitle } from '@/lib/templateMatcher';
+import { resolveTemplateForImportedTitle, TemplateCandidate, getBucketLabel } from '@/lib/templateMatcher';
 import { Loader2, AlertTriangle } from 'lucide-react';
 
 type DateRangeMode = 'all' | 'range' | 'week';
@@ -55,6 +55,8 @@ export function PlanList() {
   const [showPasteICS, setShowPasteICS] = useState(false);
   const [pasteICSText, setPasteICSText] = useState('');
   const csvInputRef = useRef<HTMLInputElement>(null);
+  const [icsTemplateAssignments, setIcsTemplateAssignments] = useState<Record<string, string | null>>({});
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
 
   const handleCreate = () => {
     if (!formData.name.trim()) return;
@@ -253,10 +255,30 @@ export function PlanList() {
       return;
     }
     
+    const blocksWithAssignments = blocks.map((block, idx) => {
+      const event = filteredICSEvents[idx];
+      if (!event) return block;
+      
+      const manualAssignment = icsTemplateAssignments[event.uid];
+      const suggestedTemplate = icsTemplateSuggestions[event.uid]?.match.templateId;
+      const templateId = manualAssignment !== undefined ? manualAssignment : (suggestedTemplate || block.templateId);
+      
+      if (templateId && templateId !== block.templateId) {
+        const template = state.templates.find(t => t.id === templateId);
+        return {
+          ...block,
+          templateId,
+          countsTowardGoldenRule: template?.countsTowardGoldenRule ?? false,
+          goldenRuleBucketId: template?.goldenRuleBucketId ?? null,
+        };
+      }
+      return block;
+    });
+    
     const plan: Plan = {
       id: uuidv4(),
       settings: { ...createDefaultPlanSettings(), name: icsImportPlanName },
-      blocks,
+      blocks: blocksWithAssignments,
       recurrenceSeries: [],
     };
     
@@ -284,6 +306,8 @@ export function PlanList() {
     setIcsSelectedEvents(new Set());
     setIcsBulkResource('');
     setIcsBulkBucketId('');
+    setIcsTemplateAssignments({});
+    setExpandedEventId(null);
   };
   
   const handlePasteICSParse = () => {
@@ -338,6 +362,35 @@ export function PlanList() {
   
   const roundedEventsCount = filteredICSEvents.filter(e => e.wasRounded).length;
   const outsideHoursCount = pendingICSEvents.filter(e => e.isOutsideScheduleHours && !e.isWeekend).length;
+  
+  const icsTemplateSuggestions = useMemo(() => {
+    const suggestions: Record<string, { 
+      match: ReturnType<typeof resolveTemplateForImportedTitle>;
+      candidates: TemplateCandidate[];
+    }> = {};
+    
+    for (const event of filteredICSEvents) {
+      const result = resolveTemplateForImportedTitle(event.summary, state.templates);
+      suggestions[event.uid] = {
+        match: result,
+        candidates: result.candidates,
+      };
+    }
+    return suggestions;
+  }, [filteredICSEvents, state.templates]);
+  
+  const assignTemplateToEvent = (eventUid: string, templateId: string | null) => {
+    setIcsTemplateAssignments(prev => ({ ...prev, [eventUid]: templateId }));
+    setExpandedEventId(null);
+  };
+  
+  const getEventAssignedTemplate = (eventUid: string) => {
+    if (icsTemplateAssignments[eventUid] !== undefined) {
+      return icsTemplateAssignments[eventUid];
+    }
+    const suggestion = icsTemplateSuggestions[eventUid];
+    return suggestion?.match.templateId || null;
+  };
   
   const handleBulkApply = () => {
     if (icsSelectedEvents.size === 0 || (icsBulkResource === '' && icsBulkBucketId === '')) return;
@@ -1000,21 +1053,29 @@ export function PlanList() {
                       <th className="p-2 text-left">Date</th>
                       <th className="p-2 text-left">Time</th>
                       <th className="p-2 text-left">Title</th>
-                      <th className="p-2 text-left">Resource</th>
-                      <th className="p-2 text-left">Category</th>
+                      <th className="p-2 text-left w-48">Category (double-click to assign)</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredICSEvents.slice(0, 30).map(event => {
+                    {filteredICSEvents.slice(0, 50).map(event => {
                       const startHour = event.dtstart.getHours();
                       const startMin = event.dtstart.getMinutes();
                       const endHour = event.dtend.getHours();
                       const endMin = event.dtend.getMinutes();
-                      const bucket = event.goldenRuleBucketId 
-                        ? GOLDEN_RULE_BUCKETS.find(b => b.id === event.goldenRuleBucketId)
+                      const suggestion = icsTemplateSuggestions[event.uid];
+                      const assignedTemplateId = getEventAssignedTemplate(event.uid);
+                      const assignedTemplate = assignedTemplateId 
+                        ? state.templates.find(t => t.id === assignedTemplateId)
                         : null;
+                      const isExpanded = expandedEventId === event.uid;
+                      const confidence = suggestion?.match.confidence || 0;
+                      const hasMultipleCandidates = (suggestion?.candidates.length || 0) > 1;
+                      
                       return (
-                        <tr key={event.uid} className={icsSelectedEvents.has(event.uid) ? 'bg-blue-50' : event.wasRounded ? 'bg-amber-50' : ''}>
+                        <tr 
+                          key={event.uid} 
+                          className={`${icsSelectedEvents.has(event.uid) ? 'bg-blue-50' : event.wasRounded ? 'bg-amber-50' : ''} ${isExpanded ? 'border-b-0' : ''}`}
+                        >
                           <td className="p-2">
                             <input
                               type="checkbox"
@@ -1024,23 +1085,89 @@ export function PlanList() {
                             />
                           </td>
                           <td className="p-2">{event.dtstart.toLocaleDateString()}</td>
-                          <td className="p-2">
+                          <td className="p-2 whitespace-nowrap">
                             {startHour % 12 || 12}:{startMin.toString().padStart(2, '0')} {startHour >= 12 ? 'PM' : 'AM'} - 
                             {endHour % 12 || 12}:{endMin.toString().padStart(2, '0')} {endHour >= 12 ? 'PM' : 'AM'}
                           </td>
-                          <td className="p-2 truncate max-w-[80px]" title={event.summary}>{event.summary}</td>
-                          <td className="p-2">
-                            {event.resource ? (
-                              <span className="text-blue-600">{event.resource}</span>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
+                          <td className="p-2 max-w-[120px]">
+                            <span className="block truncate" title={event.summary}>{event.summary}</span>
                           </td>
                           <td className="p-2">
-                            {bucket ? (
-                              <span className="text-purple-600" title={bucket.label}>{bucket.label.slice(0, 15)}</span>
-                            ) : (
-                              <span className="text-gray-400">-</span>
+                            <div 
+                              className="cursor-pointer"
+                              onDoubleClick={() => setExpandedEventId(isExpanded ? null : event.uid)}
+                            >
+                              {assignedTemplate ? (
+                                <div className="flex items-center gap-1">
+                                  <span 
+                                    className="w-2 h-2 rounded-full flex-shrink-0" 
+                                    style={{ backgroundColor: assignedTemplate.colorHex }}
+                                  />
+                                  <span className="text-green-700 font-medium truncate" title={assignedTemplate.title}>
+                                    {assignedTemplate.title.slice(0, 18)}
+                                  </span>
+                                  {confidence >= 0.9 && <span className="text-green-500 text-[10px]">auto</span>}
+                                </div>
+                              ) : hasMultipleCandidates ? (
+                                <div className="text-amber-600">
+                                  <span className="font-medium">{suggestion?.candidates.length} options</span>
+                                  <span className="text-[10px] ml-1">(dbl-click)</span>
+                                </div>
+                              ) : suggestion?.candidates[0] ? (
+                                <div className="text-blue-600">
+                                  <span className="truncate">{suggestion.candidates[0].templateTitle.slice(0, 15)}?</span>
+                                  <span className="text-[10px] ml-1">({Math.round(confidence * 100)}%)</span>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400 italic">No match (dbl-click)</span>
+                              )}
+                            </div>
+                            
+                            {isExpanded && (
+                              <div className="mt-2 bg-white border rounded shadow-lg p-2 absolute z-10 w-64">
+                                <p className="text-xs font-medium mb-2">Assign "{event.summary.slice(0, 25)}..." to:</p>
+                                <div className="max-h-40 overflow-auto space-y-1">
+                                  {suggestion?.candidates.map(c => (
+                                    <button
+                                      key={c.templateId}
+                                      onClick={() => assignTemplateToEvent(event.uid, c.templateId)}
+                                      className="w-full text-left px-2 py-1 text-xs rounded hover:bg-blue-50 flex items-center gap-2"
+                                    >
+                                      <span 
+                                        className="w-2 h-2 rounded-full flex-shrink-0" 
+                                        style={{ backgroundColor: state.templates.find(t => t.id === c.templateId)?.colorHex || '#999' }}
+                                      />
+                                      <span className="flex-1 truncate">{c.templateTitle}</span>
+                                      <span className="text-gray-400">{Math.round(c.score * 100)}%</span>
+                                    </button>
+                                  ))}
+                                  <hr className="my-1" />
+                                  <select
+                                    className="w-full text-xs border rounded px-1 py-1"
+                                    value=""
+                                    onChange={(e) => {
+                                      if (e.target.value) assignTemplateToEvent(event.uid, e.target.value);
+                                    }}
+                                  >
+                                    <option value="">Other templates...</option>
+                                    {state.templates.map(t => (
+                                      <option key={t.id} value={t.id}>{t.title}</option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    onClick={() => assignTemplateToEvent(event.uid, null)}
+                                    className="w-full text-left px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded"
+                                  >
+                                    Leave unassigned
+                                  </button>
+                                </div>
+                                <button
+                                  onClick={() => setExpandedEventId(null)}
+                                  className="mt-2 w-full text-xs text-gray-500 hover:underline"
+                                >
+                                  Close
+                                </button>
+                              </div>
                             )}
                           </td>
                         </tr>
