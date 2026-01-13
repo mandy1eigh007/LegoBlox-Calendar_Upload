@@ -1,4 +1,4 @@
-import { BlockTemplate, Category, COLOR_PALETTE, GoldenRuleBucketId } from '@/state/types';
+import { BlockTemplate, Category, COLOR_PALETTE, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId } from '@/state/types';
 import { v4 as uuidv4 } from 'uuid';
 
 interface SeedTemplate {
@@ -11,28 +11,102 @@ interface SeedTemplate {
   defaultNotes?: string;
 }
 
-const SEED_TEMPLATES: SeedTemplate[] = [
-  { title: 'Work Out', category: 'Other', defaultDurationMinutes: 60, countsTowardGoldenRule: true, goldenRuleBucketId: 'PHYSICAL_FITNESS', defaultLocation: 'Shop' },
+const BUCKET_CATEGORY_MAP: Record<GoldenRuleBucketId, Category> = {
+  'INTRO_PREAPP': 'PD',
+  'PD_PRINCIPLES': 'PD',
+  'GRIT_GROWTH': 'PD',
+  'SUCCESSFUL_APPRENTICE': 'PD',
+  'ELEVATOR_PITCH': 'PD',
+  'RESUMES': 'PD',
+  'INTERVIEWS': 'PD',
+  'APPLY_APPRENTICESHIPS': 'PD',
+  'FINANCIAL_ED': 'PD',
+  'EMOTIONAL_INTEL': 'PD',
+  'RISE_UP': 'PD',
+  'WORKERS_COMP': 'PD',
+  'PORTFOLIO': 'PD',
+  'CAREER_PLAN': 'PD',
+  'APP_PREP': 'PD',
+  'ACE_INSTRUCTION': 'Shop',
+  'ACES': 'Shop',
+  'SHOP_INTRO': 'Shop',
+  'CONSTRUCTION_TRADES': 'Shop',
+  'TRADE_AWARENESS': 'Shop',
+  'LABOR_HISTORY': 'Shop',
+  'HAND_TOOLS': 'Shop',
+  'POWER_TOOLS': 'Shop',
+  'MATERIALS': 'Shop',
+  'MEASURING_TAPE': 'Shop',
+  'SKILLS_PROJECT': 'Shop',
+  'SCAFFOLDING': 'Shop',
+  'LADDER_SAFETY': 'Shop',
+  'CLEAN_ENERGY': 'Shop',
+  'APPRENTICE_TOURS': 'Other',
+  'WORKSITE_TOURS': 'Other',
+  'SPEAKER_PRESENTATIONS': 'Other',
+  'OSHA_10': 'Certification',
+  'FORKLIFT': 'Certification',
+  'FLAGGER': 'Certification',
+  'PHYSICAL_FITNESS': 'Other',
+  'NUTRITION': 'Other',
+};
+
+const BUCKET_LOCATION_MAP: Partial<Record<GoldenRuleBucketId, string>> = {
+  'INTRO_PREAPP': 'Classroom 1',
+  'PD_PRINCIPLES': 'Classroom 1',
+  'GRIT_GROWTH': 'Classroom 1',
+  'SUCCESSFUL_APPRENTICE': 'Classroom 1',
+  'ELEVATOR_PITCH': 'Classroom 1',
+  'RESUMES': 'Classroom 1',
+  'INTERVIEWS': 'Classroom 1',
+  'APPLY_APPRENTICESHIPS': 'Classroom 1',
+  'FINANCIAL_ED': 'Classroom 1',
+  'EMOTIONAL_INTEL': 'Classroom 1',
+  'RISE_UP': 'Classroom 1',
+  'WORKERS_COMP': 'Classroom 1',
+  'PORTFOLIO': 'Classroom 1',
+  'CAREER_PLAN': 'Classroom 1',
+  'APP_PREP': 'Classroom 1',
+  'ACE_INSTRUCTION': 'Shop',
+  'ACES': 'Shop',
+  'SHOP_INTRO': 'Shop',
+  'CONSTRUCTION_TRADES': 'Shop',
+  'TRADE_AWARENESS': 'Shop',
+  'LABOR_HISTORY': 'Classroom 1',
+  'HAND_TOOLS': 'Shop',
+  'POWER_TOOLS': 'Shop',
+  'MATERIALS': 'Shop',
+  'MEASURING_TAPE': 'Shop',
+  'SKILLS_PROJECT': 'Shop',
+  'SCAFFOLDING': 'Shop',
+  'LADDER_SAFETY': 'Shop',
+  'CLEAN_ENERGY': 'Classroom 1',
+  'APPRENTICE_TOURS': 'Offsite',
+  'WORKSITE_TOURS': 'Offsite',
+  'SPEAKER_PRESENTATIONS': 'Classroom 1',
+  'OSHA_10': 'Classroom 1',
+  'FORKLIFT': 'Shop',
+  'FLAGGER': 'Offsite',
+  'PHYSICAL_FITNESS': 'Shop',
+  'NUTRITION': 'Classroom 1',
+};
+
+function createGoldenRuleTemplates(): SeedTemplate[] {
+  return GOLDEN_RULE_BUCKETS.map(bucket => ({
+    title: bucket.label,
+    category: BUCKET_CATEGORY_MAP[bucket.id as GoldenRuleBucketId],
+    defaultDurationMinutes: Math.min(bucket.budgetMinutes, 240),
+    countsTowardGoldenRule: true,
+    goldenRuleBucketId: bucket.id as GoldenRuleBucketId,
+    defaultLocation: BUCKET_LOCATION_MAP[bucket.id as GoldenRuleBucketId] || '',
+  }));
+}
+
+const ADMIN_TEMPLATES: SeedTemplate[] = [
   { title: 'Lunch', category: 'Admin', defaultDurationMinutes: 60, countsTowardGoldenRule: false, goldenRuleBucketId: null },
-  { title: 'OSHA 10', category: 'Certification', defaultDurationMinutes: 300, countsTowardGoldenRule: true, goldenRuleBucketId: 'OSHA_10', defaultLocation: 'Classroom 1' },
-  { title: 'Intro to Pre-Apprenticeship', category: 'PD', defaultDurationMinutes: 180, countsTowardGoldenRule: true, goldenRuleBucketId: 'INTRO_PREAPP', defaultLocation: 'Classroom 1' },
-  { title: 'Support Services Intake and Intro', category: 'Support Services', defaultDurationMinutes: 90, countsTowardGoldenRule: true, goldenRuleBucketId: 'INTRO_PREAPP', defaultLocation: 'Administration' },
-  { title: 'Intro into ACES', category: 'Shop', defaultDurationMinutes: 120, countsTowardGoldenRule: true, goldenRuleBucketId: 'ACE_INSTRUCTION', defaultLocation: 'Shop' },
-  { title: 'Intro into Tape Measure for ACES', category: 'Shop', defaultDurationMinutes: 60, countsTowardGoldenRule: true, goldenRuleBucketId: 'MEASURING_TAPE', defaultLocation: 'Shop' },
-  { title: 'ACEs', category: 'Shop', defaultDurationMinutes: 120, countsTowardGoldenRule: true, goldenRuleBucketId: 'ACES', defaultLocation: 'Shop' },
-  { title: 'Grit/Growth Mindset', category: 'PD', defaultDurationMinutes: 60, countsTowardGoldenRule: true, goldenRuleBucketId: 'GRIT_GROWTH', defaultLocation: 'Classroom 1' },
-  { title: 'Successful Apprentice', category: 'PD', defaultDurationMinutes: 60, countsTowardGoldenRule: true, goldenRuleBucketId: 'SUCCESSFUL_APPRENTICE', defaultLocation: 'Classroom 1' },
-  { title: 'Elevator Pitch', category: 'PD', defaultDurationMinutes: 120, countsTowardGoldenRule: true, goldenRuleBucketId: 'ELEVATOR_PITCH', defaultLocation: 'Classroom 1' },
-  { title: 'Resume Workshop', category: 'PD', defaultDurationMinutes: 240, countsTowardGoldenRule: true, goldenRuleBucketId: 'RESUMES', defaultLocation: 'Classroom 1' },
-  { title: 'Interview Skills', category: 'PD', defaultDurationMinutes: 120, countsTowardGoldenRule: true, goldenRuleBucketId: 'INTERVIEWS', defaultLocation: 'Classroom 1' },
-  { title: 'Group Interviews', category: 'PD', defaultDurationMinutes: 120, countsTowardGoldenRule: true, goldenRuleBucketId: 'INTERVIEWS', defaultLocation: 'Classroom 1' },
-  { title: 'Mock Interview Prep', category: 'PD', defaultDurationMinutes: 120, countsTowardGoldenRule: true, goldenRuleBucketId: 'INTERVIEWS', defaultLocation: 'Classroom 1' },
-  { title: 'Job Search Strategies', category: 'PD', defaultDurationMinutes: 180, countsTowardGoldenRule: true, goldenRuleBucketId: 'APPLY_APPRENTICESHIPS', defaultLocation: 'Classroom 1' },
-  { title: 'Hand Tools', category: 'Shop', defaultDurationMinutes: 180, countsTowardGoldenRule: true, goldenRuleBucketId: 'HAND_TOOLS', defaultLocation: 'Shop' },
-  { title: 'Power Tools', category: 'Shop', defaultDurationMinutes: 180, countsTowardGoldenRule: true, goldenRuleBucketId: 'POWER_TOOLS', defaultLocation: 'Shop' },
-  { title: 'Skills Project', category: 'Shop', defaultDurationMinutes: 240, countsTowardGoldenRule: true, goldenRuleBucketId: 'SKILLS_PROJECT', defaultLocation: 'Shop' },
-  { title: 'Apprenticeship Tour', category: 'Other', defaultDurationMinutes: 240, countsTowardGoldenRule: true, goldenRuleBucketId: 'APPRENTICE_TOURS', defaultLocation: 'Offsite' },
-  { title: 'Forklift', category: 'Certification', defaultDurationMinutes: 480, countsTowardGoldenRule: true, goldenRuleBucketId: 'FORKLIFT', defaultLocation: 'Shop' },
+  { title: 'Break', category: 'Admin', defaultDurationMinutes: 15, countsTowardGoldenRule: false, goldenRuleBucketId: null },
+  { title: 'Check-In', category: 'Admin', defaultDurationMinutes: 15, countsTowardGoldenRule: false, goldenRuleBucketId: null },
+  { title: 'Dismissal', category: 'Admin', defaultDurationMinutes: 15, countsTowardGoldenRule: false, goldenRuleBucketId: null },
 ];
 
 const CATEGORY_COLORS: Record<Category, string> = {
@@ -46,7 +120,9 @@ const CATEGORY_COLORS: Record<Category, string> = {
 };
 
 export function createSeedTemplates(): BlockTemplate[] {
-  return SEED_TEMPLATES.map(seed => ({
+  const allTemplates = [...createGoldenRuleTemplates(), ...ADMIN_TEMPLATES];
+  
+  return allTemplates.map(seed => ({
     id: uuidv4(),
     title: seed.title,
     category: seed.category,
