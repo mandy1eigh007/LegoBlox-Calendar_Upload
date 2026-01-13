@@ -4,6 +4,7 @@ import { useStore } from '@/state/store';
 import { BlockTemplate, CATEGORIES, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId, COLOR_PALETTE, Category } from '@/state/types';
 import { Modal, ConfirmModal } from './Modal';
 import { formatDuration } from '@/lib/time';
+import { createSeedTemplates } from '@/lib/seedTemplates';
 import { v4 as uuidv4 } from 'uuid';
 
 interface DraggableTemplateProps {
@@ -82,7 +83,14 @@ export function BlockLibrary() {
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [formData, setFormData] = useState<TemplateFormData>(DEFAULT_FORM);
+
+  const handleResetTemplates = () => {
+    const defaultTemplates = createSeedTemplates();
+    dispatch({ type: 'RESET_TEMPLATES', payload: defaultTemplates });
+    setShowResetConfirm(false);
+  };
 
   const filteredTemplates = state.templates.filter(t => {
     const matchesSearch = t.title.toLowerCase().includes(search.toLowerCase());
@@ -331,13 +339,22 @@ export function BlockLibrary() {
       <div className="p-4 border-b">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold">Block Library</h2>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-            data-testid="create-template-button"
-          >
-            New
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowResetConfirm(true)}
+              className="px-2 py-1 text-xs border rounded hover:bg-gray-50"
+              data-testid="reset-templates-button"
+            >
+              Reset
+            </button>
+            <button
+              onClick={() => setShowCreate(true)}
+              className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+              data-testid="create-template-button"
+            >
+              New
+            </button>
+          </div>
         </div>
         
         <input
@@ -393,6 +410,15 @@ export function BlockLibrary() {
         title="Delete Template"
         message="Are you sure you want to delete this template? Placed blocks using this template will remain."
         confirmText="Delete"
+      />
+
+      <ConfirmModal
+        open={showResetConfirm}
+        onClose={() => setShowResetConfirm(false)}
+        onConfirm={handleResetTemplates}
+        title="Reset Templates"
+        message="This will replace all your templates with the default set of 37+ templates matching Golden Rule categories. Any custom templates will be lost. Continue?"
+        confirmText="Reset"
       />
     </div>
   );

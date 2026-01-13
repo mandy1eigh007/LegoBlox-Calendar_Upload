@@ -35,6 +35,9 @@ function reducer(state: AppState, action: Action): AppState {
       };
       return { ...state, templates: [...state.templates, duplicate] };
     }
+
+    case 'RESET_TEMPLATES':
+      return { ...state, templates: action.payload };
       
     case 'ADD_PLAN':
       return { ...state, plans: [...state.plans, action.payload] };

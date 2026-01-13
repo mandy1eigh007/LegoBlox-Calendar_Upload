@@ -142,6 +142,7 @@ export type Action =
   | { type: 'UPDATE_TEMPLATE'; payload: BlockTemplate }
   | { type: 'DELETE_TEMPLATE'; payload: string }
   | { type: 'DUPLICATE_TEMPLATE'; payload: string }
+  | { type: 'RESET_TEMPLATES'; payload: BlockTemplate[] }
   | { type: 'ADD_PLAN'; payload: Plan }
   | { type: 'UPDATE_PLAN'; payload: Plan }
   | { type: 'DELETE_PLAN'; payload: string }
