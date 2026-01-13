@@ -297,41 +297,41 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   };
 
   const handleApplyCSVDrafts = () => {
-    const defaultTemplate = state.templates[0];
-    if (!defaultTemplate) {
-      setImportError('No templates available. Create a template first.');
-      return;
-    }
-
     let imported = 0;
+    let unassigned = 0;
+    
     for (const draft of csvDrafts) {
       const matchingTemplate = state.templates.find(t => 
         t.title.toLowerCase() === draft.title.toLowerCase()
-      ) || defaultTemplate;
+      );
       
       const block: PlacedBlock = {
         id: uuidv4(),
-        templateId: matchingTemplate.id,
+        templateId: matchingTemplate ? matchingTemplate.id : null,
         week: draft.week,
         day: draft.day,
         startMinutes: draft.startMinutes,
         durationMinutes: draft.durationMinutes,
-        titleOverride: matchingTemplate.title === draft.title ? '' : draft.title,
+        titleOverride: draft.title,
         location: draft.location,
         notes: draft.notes,
-        countsTowardGoldenRule: matchingTemplate.countsTowardGoldenRule,
-        goldenRuleBucketId: matchingTemplate.goldenRuleBucketId,
+        countsTowardGoldenRule: matchingTemplate ? matchingTemplate.countsTowardGoldenRule : false,
+        goldenRuleBucketId: matchingTemplate ? matchingTemplate.goldenRuleBucketId : null,
         recurrenceSeriesId: null,
         isRecurrenceException: false,
       };
       
       dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
       imported++;
+      if (!matchingTemplate) unassigned++;
     }
     
     setCSVDrafts([]);
     setCSVContent(null);
-    setImportSuccess(`Imported ${imported} events from CSV.`);
+    const msg = unassigned > 0 
+      ? `Imported ${imported} events (${unassigned} unassigned - double-click to assign).`
+      : `Imported ${imported} events from CSV.`;
+    setImportSuccess(msg);
   };
 
   const cancelCSVImport = () => {
@@ -368,13 +368,9 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   };
 
   const handleApplyOCREvents = () => {
-    const defaultTemplate = state.templates[0];
-    if (!defaultTemplate) {
-      setImportError('No templates available. Create a template first.');
-      return;
-    }
-
     let imported = 0;
+    let unassigned = 0;
+    
     for (const event of ocrEvents) {
       if (event.startMinutes === null || event.endMinutes === null || !event.day) continue;
       
@@ -388,31 +384,35 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
       
       const matchingTemplate = state.templates.find(t => 
         t.title.toLowerCase() === event.title.toLowerCase()
-      ) || defaultTemplate;
+      );
       
       const block: PlacedBlock = {
         id: uuidv4(),
-        templateId: matchingTemplate.id,
+        templateId: matchingTemplate ? matchingTemplate.id : null,
         week: 1,
         day: event.day,
         startMinutes,
         durationMinutes,
-        titleOverride: matchingTemplate.title === event.title ? '' : event.title,
+        titleOverride: event.title,
         location: '',
         notes: `Imported via OCR: ${event.rawText}`,
-        countsTowardGoldenRule: matchingTemplate.countsTowardGoldenRule,
-        goldenRuleBucketId: matchingTemplate.goldenRuleBucketId,
+        countsTowardGoldenRule: matchingTemplate ? matchingTemplate.countsTowardGoldenRule : false,
+        goldenRuleBucketId: matchingTemplate ? matchingTemplate.goldenRuleBucketId : null,
         recurrenceSeriesId: null,
         isRecurrenceException: false,
       };
       
       dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
       imported++;
+      if (!matchingTemplate) unassigned++;
     }
     
     setOCREvents([]);
     setOCRRawText('');
-    setImportSuccess(`Imported ${imported} events from image.`);
+    const msg = unassigned > 0 
+      ? `Imported ${imported} events (${unassigned} unassigned - double-click to assign).`
+      : `Imported ${imported} events from image.`;
+    setImportSuccess(msg);
   };
 
   const cancelOCRImport = () => {

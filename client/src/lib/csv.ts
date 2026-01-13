@@ -435,7 +435,7 @@ export function convertICSEventsToBlocks(
       location: event.location || '',
       notes: event.description || '',
       countsTowardGoldenRule: matchedTemplate ? matchedTemplate.countsTowardGoldenRule : false,
-      goldenRuleBucketId: matchedTemplate ? (event.goldenRuleBucketId || matchedTemplate.goldenRuleBucketId) : null,
+      goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
       recurrenceSeriesId: null,
       isRecurrenceException: false,
       resource: event.resource,

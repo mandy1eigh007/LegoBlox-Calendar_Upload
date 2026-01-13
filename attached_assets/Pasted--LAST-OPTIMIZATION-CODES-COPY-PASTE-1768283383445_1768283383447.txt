@@ -1,0 +1,688 @@
+/* =========================================================
+   LAST OPTIMIZATION CODES (COPY/PASTE PACKAGE)
+   Goal: fix 15-min grid snapping, 6:30–3:30 range, stop “jumping”
+         add recurring/multi-week placement, student read-only publish,
+         and calendar comparison (room/resource conflicts).
+   Notes:
+   - No icons used.
+   - Unmatched imports must stay UNASSIGNED and not count toward totals.
+   ========================================================= */
+
+
+/* =========================
+   FILE: src/lib/timeGrid.ts
+   ========================= */
+export type DayKey = "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun";
+
+export type GridSettings = {
+  dayStart: string;   // "06:30"
+  dayEnd: string;     // "15:30"
+  slotMinutes: number; // 15
+  days: DayKey[];     // ["Mon","Tue","Wed","Thu","Fri"]
+};
+
+export function timeToMinutes(t: string): number {
+  // expects "HH:MM"
+  const [hh, mm] = t.split(":").map((x) => Number(x));
+  return hh * 60 + mm;
+}
+
+export function minutesToTime(mins: number): string {
+  const hh = Math.floor(mins / 60);
+  const mm = mins % 60;
+  const h12 = ((hh + 11) % 12) + 1;
+  const ampm = hh >= 12 ? "PM" : "AM";
+  const mm2 = String(mm).padStart(2, "0");
+  return `${h12}:${mm2} ${ampm}`;
+}
+
+export function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n));
+}
+
+export function snapToGrid(mins: number, settings: GridSettings): number {
+  // Snap relative to dayStart so 6:30 aligns perfectly.
+  const start = timeToMinutes(settings.dayStart);
+  const step = settings.slotMinutes;
+
+  const rel = mins - start;
+  const snappedRel = Math.round(rel / step) * step;
+  return start + snappedRel;
+}
+
+export function gridRange(settings: GridSettings): { start: number; end: number; totalMinutes: number; slots: number } {
+  const start = timeToMinutes(settings.dayStart);
+  const end = timeToMinutes(settings.dayEnd);
+  const totalMinutes = end - start;
+  const slots = Math.floor(totalMinutes / settings.slotMinutes);
+  return { start, end, totalMinutes, slots };
+}
+
+/**
+ * Convert a Y pixel position into minutes on the grid.
+ * Critical: pass scrollTop from the scroll container to prevent “jumping”.
+ */
+export function yToMinutes(opts: {
+  y: number;
+  gridTop: number;
+  scrollTop: number;
+  pxPerMinute: number;
+  settings: GridSettings;
+}): number {
+  const { y, gridTop, scrollTop, pxPerMinute, settings } = opts;
+  const start = timeToMinutes(settings.dayStart);
+  const end = timeToMinutes(settings.dayEnd);
+
+  const yInside = (y - gridTop) + scrollTop;
+  const minutesFromStart = yInside / pxPerMinute;
+  const raw = start + minutesFromStart;
+
+  const snapped = snapToGrid(raw, settings);
+  return clamp(snapped, start, end);
+}
+
+export function durationToSlots(durationMinutes: number, slotMinutes: number): number {
+  return Math.max(1, Math.round(durationMinutes / slotMinutes));
+}
+
+export function slotsToDuration(slots: number, slotMinutes: number): number {
+  return Math.max(slotMinutes, slots * slotMinutes);
+}
+
+
+/* =============================
+   FILE: src/lib/planTypes.ts
+   ============================= */
+export type TemplateRef = {
+  id: string;
+  title: string;
+  category: string; // PD, Shop, Admin, Math, Other, etc.
+  defaultMinutes: number; // store as minutes (15-min multiple)
+  countsTowardGoldenRule: boolean;
+  goldenRuleKey?: string; // ties into Golden Rule totals (e.g., "IntroPreApprenticeship")
+};
+
+export type PlanEvent = {
+  id: string;
+  weekIndex: number;
+  day: DayKey;
+
+  startMinutes: number;   // absolute minutes from midnight
+  durationMinutes: number;
+
+  // Imported summary/title as shown to humans
+  title: string;
+
+  // Template assignment
+  templateId: string | null; // null = UNASSIGNED (does not count)
+  confidence?: number;        // optional (import)
+  normalizedTitle?: string;   // optional (import)
+  suggestions?: Array<{ templateId: string; confidence: number; reason: string }>; // optional (import)
+
+  // Logistics
+  location?: string;          // "Classroom 1", "Classroom 2", "Shop", "Offsite", etc.
+  contactName?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  notes?: string;
+
+  // For tours/speakers: external org + address etc.
+  partnerOrg?: string;
+  address?: string;
+};
+
+export type Plan = {
+  id: string;
+  name: string;
+
+  settings: GridSettings;
+
+  templates: TemplateRef[];
+  events: PlanEvent[];
+
+  // Student-facing publish
+  isPublished: boolean;
+  publicId: string | null; // stable ID for sharing
+};
+
+
+/* =================================
+   FILE: src/lib/publish.ts
+   ================================= */
+export function makePublicId(): string {
+  // short, URL-safe
+  const rand = Math.random().toString(36).slice(2, 10);
+  const ts = Date.now().toString(36).slice(-6);
+  return `${rand}${ts}`;
+}
+
+export function studentUrl(publicId: string): string {
+  // You will wire this to your router path.
+  // Example route: /student/schedule/:publicId
+  return `${window.location.origin}/student/schedule/${publicId}`;
+}
+
+
+/* ====================================
+   FILE: src/lib/compareCalendars.ts
+   ==================================== */
+import type { Plan, PlanEvent } from "./planTypes";
+
+export type Conflict = {
+  type: "ROOM_OVERLAP";
+  resource: string; // e.g., "Classroom 1"
+  a: { planId: string; planName: string; event: PlanEvent };
+  b: { planId: string; planName: string; event: PlanEvent };
+};
+
+function overlaps(a: PlanEvent, b: PlanEvent): boolean {
+  if (a.weekIndex !== b.weekIndex) return false;
+  if (a.day !== b.day) return false;
+
+  const aStart = a.startMinutes;
+  const aEnd = a.startMinutes + a.durationMinutes;
+  const bStart = b.startMinutes;
+  const bEnd = b.startMinutes + b.durationMinutes;
+
+  return aStart < bEnd && bStart < aEnd;
+}
+
+/**
+ * Compare two plans for conflicts on the same resource (location).
+ * Treat location as the “room/resource key”.
+ */
+export function comparePlans(planA: Plan, planB: Plan): Conflict[] {
+  const conflicts: Conflict[] = [];
+
+  const aEvents = planA.events.filter((e) => (e.location || "").trim() !== "");
+  const bEvents = planB.events.filter((e) => (e.location || "").trim() !== "");
+
+  for (const ae of aEvents) {
+    for (const be of bEvents) {
+      const aLoc = (ae.location || "").trim();
+      const bLoc = (be.location || "").trim();
+      if (!aLoc || !bLoc) continue;
+      if (aLoc !== bLoc) continue;
+
+      if (overlaps(ae, be)) {
+        conflicts.push({
+          type: "ROOM_OVERLAP",
+          resource: aLoc,
+          a: { planId: planA.id, planName: planA.name, event: ae },
+          b: { planId: planB.id, planName: planB.name, event: be },
+        });
+      }
+    }
+  }
+
+  return conflicts;
+}
+
+
+/* ======================================
+   FILE: src/components/StudentSchedule.tsx
+   ====================================== */
+import React from "react";
+import type { Plan, PlanEvent } from "../lib/planTypes";
+import { gridRange, minutesToTime } from "../lib/timeGrid";
+
+type Props = {
+  plan: Plan;
+  weekIndex: number;
+};
+
+function byStart(a: PlanEvent, b: PlanEvent) {
+  return a.startMinutes - b.startMinutes;
+}
+
+export function StudentSchedule({ plan, weekIndex }: Props) {
+  const { settings } = plan;
+  const range = gridRange(settings);
+
+  const events = plan.events
+    .filter((e) => e.weekIndex === weekIndex)
+    .slice()
+    .sort(byStart);
+
+  // Render simple read-only list per day (fast + clear for students).
+  // If you already have the grid UI, reuse it but lock editing.
+  return (
+    <div className="studentWrap">
+      <div className="studentHeader">
+        <div className="studentTitle">{plan.name}</div>
+        <div className="studentSub">
+          Week {weekIndex + 1} • {settings.dayStart}–{settings.dayEnd} • Updates show automatically
+        </div>
+      </div>
+
+      <div className="studentDays">
+        {settings.days.map((day) => {
+          const dayEvents = events.filter((e) => e.day === day);
+
+          return (
+            <div key={day} className="studentDay">
+              <div className="studentDayTitle">{day}</div>
+
+              {dayEvents.length === 0 ? (
+                <div className="studentEmpty">No scheduled items.</div>
+              ) : (
+                dayEvents.map((e) => {
+                  const start = minutesToTime(e.startMinutes);
+                  const end = minutesToTime(e.startMinutes + e.durationMinutes);
+                  return (
+                    <div key={e.id} className="studentEvent">
+                      <div className="studentEventTop">
+                        <div className="studentEventTime">{start} – {end}</div>
+                        <div className="studentEventLoc">{e.location ? e.location : ""}</div>
+                      </div>
+                      <div className="studentEventTitle">{e.title}</div>
+
+                      {(e.partnerOrg || e.address || e.contactName || e.contactEmail || e.contactPhone) ? (
+                        <div className="studentEventMeta">
+                          {e.partnerOrg ? <div>{e.partnerOrg}</div> : null}
+                          {e.address ? <div>{e.address}</div> : null}
+                          {e.contactName ? <div>Contact: {e.contactName}</div> : null}
+                          {e.contactEmail ? <div>{e.contactEmail}</div> : null}
+                          {e.contactPhone ? <div>{e.contactPhone}</div> : null}
+                        </div>
+                      ) : null}
+
+                      {e.notes ? <div className="studentEventNotes">{e.notes}</div> : null}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="studentFooter">
+        If something changes, refresh this page. You do not need to download anything.
+      </div>
+    </div>
+  );
+}
+
+
+/* ======================================
+   FILE: src/styles/studentSchedule.css
+   ====================================== */
+/* Add this to your global import once (main.tsx or App.tsx) */
+.studentWrap {
+  max-width: 1100px;
+  margin: 24px auto;
+  padding: 16px;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+.studentHeader {
+  padding: 18px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f7f7ff, #fff7f2);
+  border: 1px solid #e9e9ef;
+}
+
+.studentTitle {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.studentSub {
+  margin-top: 6px;
+  color: #4b5563;
+  font-size: 14px;
+}
+
+.studentDays {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.studentDay {
+  border: 1px solid #e9e9ef;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 12px;
+  min-height: 240px;
+}
+
+.studentDayTitle {
+  font-weight: 800;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f0f0f5;
+  margin-bottom: 10px;
+}
+
+.studentEmpty {
+  color: #6b7280;
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+.studentEvent {
+  border: 1px solid #eef0f6;
+  background: #fbfbfe;
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.studentEventTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: #374151;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.studentEventTime {
+  font-weight: 700;
+}
+
+.studentEventLoc {
+  color: #6b7280;
+  text-align: right;
+}
+
+.studentEventTitle {
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.studentEventMeta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #4b5563;
+}
+
+.studentEventNotes {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #374151;
+  white-space: pre-wrap;
+}
+
+.studentFooter {
+  margin-top: 16px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+
+/* ====================================================
+   FILE: src/components/PublishToggle.tsx
+   ==================================================== */
+import React from "react";
+import type { Plan } from "../lib/planTypes";
+import { makePublicId, studentUrl } from "../lib/publish";
+
+type Props = {
+  plan: Plan;
+  onChange: (next: Plan) => void;
+};
+
+export function PublishToggle({ plan, onChange }: Props) {
+  const isPublished = plan.isPublished && plan.publicId;
+
+  function publish() {
+    const publicId = plan.publicId || makePublicId();
+    onChange({ ...plan, isPublished: true, publicId });
+  }
+
+  function unpublish() {
+    // Keep publicId for future re-publish if you want stable links.
+    onChange({ ...plan, isPublished: false });
+  }
+
+  return (
+    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+      {!isPublished ? (
+        <button type="button" onClick={publish} className="btnPrimary">
+          Publish for Students (Read-Only)
+        </button>
+      ) : (
+        <button type="button" onClick={unpublish} className="btnDanger">
+          Unpublish
+        </button>
+      )}
+
+      {isPublished ? (
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="smallLabel">Student link:</div>
+          <input
+            readOnly
+            value={studentUrl(plan.publicId!)}
+            style={{
+              width: 360,
+              maxWidth: "90vw",
+              padding: "8px 10px",
+              border: "1px solid #e5e7eb",
+              borderRadius: 10,
+              background: "#fff",
+            }}
+          />
+          <button
+            type="button"
+            className="btnSecondary"
+            onClick={() => navigator.clipboard.writeText(studentUrl(plan.publicId!))}
+          >
+            Copy Link
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+
+/* ======================================================
+   FILE: src/styles/buttons.css
+   ====================================================== */
+/* import once globally */
+.btnPrimary, .btnSecondary, .btnDanger {
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.btnPrimary { background: #2563eb; color: #fff; }
+.btnSecondary { background: #fff; color: #111827; border-color: #e5e7eb; }
+.btnDanger { background: #fff; color: #b91c1c; border-color: #fecaca; }
+
+.smallLabel { font-size: 12px; color: #6b7280; font-weight: 700; }
+
+
+/* ============================================================
+   FILE: src/components/RecurringPlacement.tsx
+   Adds: place same block across multiple weeks/days
+   ============================================================ */
+import React, { useMemo, useState } from "react";
+import type { Plan, PlanEvent } from "../lib/planTypes";
+
+type Props = {
+  plan: Plan;
+  baseEvent: PlanEvent; // the event currently being edited
+  weekCount: number;    // e.g., 9 (new program length)
+  onAddEvents: (events: PlanEvent[]) => void;
+};
+
+function newId() {
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-5);
+}
+
+export function RecurringPlacement({ plan, baseEvent, weekCount, onAddEvents }: Props) {
+  const [selectedWeeks, setSelectedWeeks] = useState<number[]>([baseEvent.weekIndex]);
+  const [selectedDays, setSelectedDays] = useState(plan.settings.days);
+  const [apply, setApply] = useState(false);
+
+  const weekOptions = useMemo(() => Array.from({ length: weekCount }, (_, i) => i), [weekCount]);
+
+  function toggleWeek(i: number) {
+    setSelectedWeeks((prev) => (prev.includes(i) ? prev.filter((x) => x !== i) : [...prev, i].sort((a,b)=>a-b)));
+  }
+
+  function toggleDay(d: any) {
+    setSelectedDays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]));
+  }
+
+  function buildCopies(): PlanEvent[] {
+    const copies: PlanEvent[] = [];
+    for (const w of selectedWeeks) {
+      for (const d of selectedDays) {
+        // Skip original
+        if (w === baseEvent.weekIndex && d === baseEvent.day) continue;
+
+        copies.push({
+          ...baseEvent,
+          id: newId(),
+          weekIndex: w,
+          day: d,
+        });
+      }
+    }
+    return copies;
+  }
+
+  function applyCopies() {
+    const copies = buildCopies();
+    onAddEvents(copies);
+  }
+
+  return (
+    <div style={{ marginTop: 14, borderTop: "1px solid #eef0f6", paddingTop: 12 }}>
+      <div style={{ fontWeight: 900, marginBottom: 8 }}>Repeat / Multi-Place</div>
+
+      <div style={{ fontSize: 12, color: "#4b5563", marginBottom: 10 }}>
+        Use this to place the same block across multiple weeks and/or days.
+      </div>
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>Weeks</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", maxWidth: 360 }}>
+            {weekOptions.map((w) => (
+              <button
+                type="button"
+                key={w}
+                onClick={() => toggleWeek(w)}
+                className={selectedWeeks.includes(w) ? "btnPrimary" : "btnSecondary"}
+                style={{ padding: "6px 10px", borderRadius: 10, fontWeight: 900 }}
+              >
+                W{w + 1}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>Days</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {plan.settings.days.map((d) => (
+              <button
+                type="button"
+                key={d}
+                onClick={() => toggleDay(d)}
+                className={selectedDays.includes(d) ? "btnPrimary" : "btnSecondary"}
+                style={{ padding: "6px 10px", borderRadius: 10, fontWeight: 900 }}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center" }}>
+        <button type="button" className="btnPrimary" onClick={applyCopies}>
+          Create Copies
+        </button>
+        <div style={{ fontSize: 12, color: "#6b7280" }}>
+          Copies will keep the same title, time, duration, template, and details.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/* =================================================================
+   FILE: src/lib/goldenRuleTotals.ts
+   Ensures UNASSIGNED imports do NOT count until you assign a template.
+   ================================================================= */
+import type { Plan } from "./planTypes";
+
+export type GoldenRuleRow = {
+  key: string;
+  label: string;
+  budgetMinutes: number;
+  scheduledMinutes: number;
+  deltaMinutes: number; // scheduled - budget
+};
+
+export function computeGoldenRule(plan: Plan, budgets: Array<{ key: string; label: string; budgetMinutes: number }>): GoldenRuleRow[] {
+  const byKey: Record<string, number> = {};
+  for (const b of budgets) byKey[b.key] = 0;
+
+  // Only count events that have templateId AND template countsTowardGoldenRule
+  const templateMap = new Map(plan.templates.map((t) => [t.id, t]));
+
+  for (const e of plan.events) {
+    if (!e.templateId) continue; // UNASSIGNED -> does not count
+    const t = templateMap.get(e.templateId);
+    if (!t) continue;
+    if (!t.countsTowardGoldenRule) continue;
+    if (!t.goldenRuleKey) continue;
+
+    byKey[t.goldenRuleKey] = (byKey[t.goldenRuleKey] || 0) + e.durationMinutes;
+  }
+
+  return budgets.map((b) => {
+    const scheduled = byKey[b.key] || 0;
+    return {
+      key: b.key,
+      label: b.label,
+      budgetMinutes: b.budgetMinutes,
+      scheduledMinutes: scheduled,
+      deltaMinutes: scheduled - b.budgetMinutes,
+    };
+  });
+}
+
+
+/* =========================================================
+   WIRING INSTRUCTIONS (FAST, NO FLUFF)
+   =========================================================
+   1) Global grid settings for your plans:
+      settings = { dayStart:"06:30", dayEnd:"15:30", slotMinutes:15, days:["Tue","Wed","Thu","Fri","Mon"] or your preferred order }
+      (You said classes start at 6:30 and calendar should go to 3:30.)
+
+   2) Fix dragging “jumping”:
+      In your drop handler, compute:
+        gridTop = gridElement.getBoundingClientRect().top
+        scrollTop = scrollContainer.scrollTop
+        pxPerMinute = (rowHeightPx / slotMinutes)  OR  (totalGridHeightPx / totalMinutes)
+      Then call yToMinutes({ y: pointerY, gridTop, scrollTop, pxPerMinute, settings })
+      and set event.startMinutes to that.
+
+   3) Add PublishToggle on the plan screen header:
+      <PublishToggle plan={plan} onChange={savePlan} />
+      Add route /student/schedule/:publicId that loads plan by publicId and renders <StudentSchedule />
+
+   4) Add RecurringPlacement inside your right-side edit panel:
+      <RecurringPlacement plan={plan} baseEvent={event} weekCount={9} onAddEvents={(copies)=>addEvents(copies)} />
+
+   5) Compare calendars:
+      Use comparePlans(planA, planB). If conflicts exist, show a “Conflicts” panel and highlight those blocks.
+
+   6) Keep imports honest:
+      Unmatched template => templateId = null (UNASSIGNED) and does not count.
+*/
+
+/* END PACKAGE */
