@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo } from 'react';
 import { useLocation } from 'wouter';
 import { useStore } from '@/state/store';
-import { Plan, PlanSettings, DEFAULT_RESOURCES, AppState, PlacedBlock, Day, DAYS, GOLDEN_RULE_BUCKETS } from '@/state/types';
+import { Plan, PlanSettings, DEFAULT_RESOURCES, AppState, PlacedBlock, Day, DAYS, GOLDEN_RULE_BUCKETS, SchedulerMode } from '@/state/types';
 import { Modal, ConfirmModal } from './Modal';
 import { createDefaultPlanSettings } from '@/lib/storage';
 import { v4 as uuidv4 } from 'uuid';
@@ -586,36 +586,67 @@ export function PlanList() {
           </div>
         ) : (
           <div className="grid gap-4">
-            {state.plans.map(plan => (
-              <div
-                key={plan.id}
-                className="bg-white rounded-lg border p-4 flex items-center justify-between hover:border-blue-300 transition-colors"
-                data-testid={`plan-card-${plan.id}`}
-              >
-                <div>
-                  <h3 className="font-semibold text-gray-900">{plan.settings.name}</h3>
-                  <p className="text-sm text-gray-500">
-                    {plan.settings.weeks} weeks | {plan.blocks.length} blocks
-                  </p>
+            {state.plans.map(plan => {
+              const isPredictive = plan.settings.schedulerMode === 'predictive';
+              return (
+                <div
+                  key={plan.id}
+                  className={`bg-white rounded-lg border p-4 flex items-center justify-between transition-colors ${
+                    isPredictive ? 'hover:border-purple-300' : 'hover:border-blue-300'
+                  }`}
+                  data-testid={`plan-card-${plan.id}`}
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-gray-900">{plan.settings.name}</h3>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        isPredictive 
+                          ? 'bg-purple-100 text-purple-700' 
+                          : 'bg-blue-100 text-blue-700'
+                      }`}>
+                        {isPredictive ? 'Predictive' : 'Manual'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-500">
+                      {plan.settings.weeks} weeks | {plan.blocks.length} blocks
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        if (plan.settings.schedulerMode !== 'manual') {
+                          dispatch({ type: 'UPDATE_PLAN', payload: { ...plan, settings: { ...plan.settings, schedulerMode: 'manual' } } });
+                        }
+                        navigate(`/plan/${plan.id}`);
+                      }}
+                      className="px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                      data-testid={`open-manual-${plan.id}`}
+                    >
+                      Manual
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (plan.settings.schedulerMode !== 'predictive') {
+                          dispatch({ type: 'UPDATE_PLAN', payload: { ...plan, settings: { ...plan.settings, schedulerMode: 'predictive' } } });
+                        }
+                        navigate(`/plan/${plan.id}`);
+                      }}
+                      className="px-3 py-2 text-sm bg-purple-600 text-white rounded hover:bg-purple-700"
+                      data-testid={`open-predictive-${plan.id}`}
+                    >
+                      Predictive
+                    </button>
+                    <button
+                      onClick={() => setDeleteId(plan.id)}
+                      className="px-3 py-2 text-sm border border-red-300 text-red-600 rounded hover:bg-red-50"
+                      data-testid={`delete-plan-${plan.id}`}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => navigate(`/plan/${plan.id}`)}
-                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-                    data-testid={`open-plan-${plan.id}`}
-                  >
-                    Open
-                  </button>
-                  <button
-                    onClick={() => setDeleteId(plan.id)}
-                    className="px-4 py-2 text-sm border border-red-300 text-red-600 rounded hover:bg-red-50"
-                    data-testid={`delete-plan-${plan.id}`}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -645,6 +676,38 @@ export function PlanList() {
               className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               data-testid="plan-weeks-input"
             />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium mb-1">Scheduler Mode</label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, schedulerMode: 'manual' })}
+                className={`p-3 border-2 rounded-lg text-left transition-colors ${
+                  formData.schedulerMode === 'manual' 
+                    ? 'border-blue-500 bg-blue-50' 
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+                data-testid="mode-manual-button"
+              >
+                <div className="font-medium text-sm">Manual Builder</div>
+                <div className="text-xs text-gray-500 mt-1">Drag-and-drop schedule creation</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, schedulerMode: 'predictive' })}
+                className={`p-3 border-2 rounded-lg text-left transition-colors ${
+                  formData.schedulerMode === 'predictive' 
+                    ? 'border-purple-500 bg-purple-50' 
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+                data-testid="mode-predictive-button"
+              >
+                <div className="font-medium text-sm">Predictive Builder</div>
+                <div className="text-xs text-gray-500 mt-1">AI-powered schedule suggestions</div>
+              </button>
+            </div>
           </div>
 
           <div className="flex justify-end gap-3 pt-4">
