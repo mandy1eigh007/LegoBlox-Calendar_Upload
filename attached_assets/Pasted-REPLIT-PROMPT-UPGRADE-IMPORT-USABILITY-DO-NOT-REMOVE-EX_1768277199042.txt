@@ -1,0 +1,129 @@
+REPLIT PROMPT — UPGRADE IMPORT + USABILITY (DO NOT REMOVE EXISTING FEATURES)
+
+Context
+We already have:
+- Export / Import modal (with Google + Outlook export instructions)
+- Home screen import buttons (Import Backup JSON, Import Screenshot OCR, Import ICS)
+- Drag-and-drop upload (ICS/JSON/image)
+- CSV import with column mapping
+- Screenshot OCR import using Tesseract.js (with “limitations” + raw OCR text guidance)
+- ICS import with preview of detected events before creating plan (partially done)
+
+Goal
+Make imports reliable, controllable, and fast. Especially ICS import:
+- User must be able to import only a chosen date range
+- User must be able to map imported events into our schedule weeks/days/hours
+- Imports must handle timezone and not shift times unexpectedly
+- If iOS/Windows file pickers don’t show .ics, provide fallbacks (drag-drop, paste ICS text)
+- After import, user must be able to quickly correct titles, times, locations, resources, and Golden Rule category mapping
+
+Non-negotiables
+- Do NOT remove or hide existing Import/Export UI.
+- Do NOT change the overall layout.
+- Do NOT add placeholder logic; build fully.
+- Do NOT invent requirements not stated here.
+- No icons in UI labels.
+- Must support schedules running 06:30–15:30 with 15-minute increments.
+- Import must not silently “snap” incorrectly; if rounding occurs, show it and allow user to change it.
+
+Deliverables
+Implement all items below and provide exact file list changed + how to test.
+
+1) Fix file picker not seeing .ics (common on iOS/Windows)
+- Ensure input accept includes: ".ics,text/calendar"
+- Ensure drag-drop accepts file.type "text/calendar" OR filename endsWith ".ics"
+- Add a third fallback: “Paste ICS Text” textarea in the Import modal:
+  - User can paste raw ICS content and click “Parse”
+  - Parsed results go through the same preview flow
+
+2) ICS import: Date range picker + preview filtering
+In the Import ICS flow (home screen and modal):
+- Add Start Date and End Date fields (date pickers)
+- Default:
+  - Start Date = min DTSTART date from the ICS
+  - End Date = max DTSTART date from the ICS
+- When user changes date range:
+  - Preview list updates immediately to show only events whose DTSTART is within range
+- Add a quick option dropdown:
+  - “All dates”
+  - “Select range”
+  - “Single week (Mon–Sun)”
+(keep simple; no icons)
+
+3) ICS import: Time window filter + timezone handling
+- Provide a toggle: “Keep original times exactly” (default ON)
+- Provide a schedule-hours filter:
+  - Day Start (default 06:30)
+  - Day End (default 15:30)
+  - Option: “Include events outside schedule hours” (default OFF)
+- Timezone:
+  - If ICS has TZID, respect it
+  - If it’s floating time, treat as local browser time
+  - Show detected timezone at preview stage
+  - If conversion occurs, show before/after times (do not silently shift)
+
+4) ICS import: Mapping imported dates into our plan weeks
+This is critical for turning “calendar file” into “our schedule builder.”
+Add a mapping step after preview:
+- “Create new plan from import” OR “Import into existing plan”
+- If creating new plan:
+  - Ask for Plan Start Date (default = first event date in range)
+  - Compute Week 1 from Plan Start Date
+- If importing into existing plan:
+  - Choose target plan
+  - Choose alignment method:
+    A) Align by calendar date (same dates)
+    B) Shift dates so first imported event lands on selected target week/day
+- Show a small table:
+  - Imported Date -> Target Week/Day
+User can adjust plan start date until the mapping looks correct.
+
+5) ICS import: Event normalization to 15-minute increments
+- If an event time is not on a 15-minute boundary:
+  - Round to nearest 15 by default
+  - Show a warning row in preview: “Rounded from 8:07–9:02 to 8:00–9:00”
+  - Allow user to override rounding per event in preview before import
+
+6) ICS import: Bulk edit + category mapping (Golden Rule readiness)
+In the preview list, add:
+- Bulk actions:
+  - Set Category for selected events
+  - Set SubjectKey for selected events
+  - Set Resource (Classroom 1/2/Shop/Offsite)
+  - Set Location
+- Smart suggestions (non-destructive):
+  - If title contains “Shop” or matches known shop blocks -> suggest Resource=Shop
+  - If title contains “Classroom 1/2” -> suggest accordingly
+- Require user to confirm SubjectKey mapping OR allow “Unassigned” but then:
+  - Unassigned events do NOT count toward Golden Rule totals until mapped
+
+7) Screenshot OCR import: stop pretending it can infer times reliably
+Keep it, but make it useful:
+- Always show raw OCR text and detected blocks
+- Never auto-assign times unless the screenshot explicitly contains time ranges
+- Provide a “Convert OCR Results to Draft Blocks” mode:
+  - Creates blocks with titles only
+  - User must set day/time via a quick assignment UI (pick day, start time, duration)
+This turns OCR into “data entry assist,” not “magic.”
+
+8) Home screen usability upgrades (import-first workflow)
+- Home screen must have:
+  - “Import ICS”
+  - “Import Screenshot (OCR)”
+  - “Import CSV”
+  - Drag-drop zone with clear supported file types
+- After a successful import, automatically open the newly created plan.
+
+9) Acceptance tests (must pass)
+A) iOS/Windows: .ics can be imported via (1) file picker, (2) drag-drop, (3) paste text
+B) Date range filtering reduces preview list correctly
+C) No silent timezone shifting; preview shows timezone + any conversion
+D) Imported events can be bulk-mapped to SubjectKey and Resource
+E) Events not aligned to 15-minute boundaries are rounded with visible warnings and per-event override
+
+Output requirements
+- List files changed
+- Steps to test each acceptance test
+- No missing items
+
+Do not ask me questions. Build with sensible defaults and settings.
