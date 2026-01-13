@@ -64,8 +64,9 @@ function DraggablePlacedBlock({
   const topOffset = minutesToPixelOffset(block.startMinutes, dayStartMinutes);
   const blockHeight = durationToPixelHeight(block.durationMinutes);
   
+  const isUnassigned = block.templateId === null;
   const title = block.titleOverride || template?.title || 'Unknown';
-  const colorHex = template?.colorHex || '#6B7280';
+  const colorHex = isUnassigned ? '#9CA3AF' : (template?.colorHex || '#6B7280');
 
   const handleResizeStart = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -123,6 +124,9 @@ function DraggablePlacedBlock({
         }}
         className="px-2 py-1 cursor-grab active:cursor-grabbing h-full"
       >
+        {isUnassigned && (
+          <p className="text-xs font-bold bg-white/30 px-1 rounded mb-0.5 inline-block">Unassigned</p>
+        )}
         <p className="text-xs font-medium truncate">{title}</p>
         {blockHeight > 30 && (
           <p className="text-xs opacity-80 truncate">

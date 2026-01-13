@@ -1,15 +1,16 @@
 import { Plan, BlockTemplate } from '@/state/types';
-import { calculateGoldenRuleTotals } from '@/lib/goldenRule';
+import { calculateGoldenRuleSummary } from '@/lib/goldenRule';
 import { formatDuration, formatMinutesAsHoursMinutes } from '@/lib/time';
-import { Check } from 'lucide-react';
 
 interface GoldenRuleTotalsProps {
   plan: Plan;
   templates: BlockTemplate[];
+  onShowUnassigned?: () => void;
 }
 
-export function GoldenRuleTotals({ plan, templates }: GoldenRuleTotalsProps) {
-  const totals = calculateGoldenRuleTotals(plan, templates);
+export function GoldenRuleTotals({ plan, templates, onShowUnassigned }: GoldenRuleTotalsProps) {
+  const summary = calculateGoldenRuleSummary(plan, templates);
+  const totals = summary.buckets;
   
   const activeTopics = totals.filter(t => t.scheduled > 0 || t.budget > 0);
 
@@ -46,8 +47,8 @@ export function GoldenRuleTotals({ plan, templates }: GoldenRuleTotalsProps) {
                     {item.label}
                   </p>
                   {item.met && (
-                    <span className="flex-shrink-0 bg-green-500 text-white rounded-full p-0.5" title="Hours met!">
-                      <Check className="w-3 h-3" />
+                    <span className="flex-shrink-0 bg-green-500 text-white rounded-full px-1.5 py-0.5 text-xs" title="Hours met!">
+                      Done
                     </span>
                   )}
                 </div>
@@ -78,11 +79,29 @@ export function GoldenRuleTotals({ plan, templates }: GoldenRuleTotalsProps) {
         )}
       </div>
 
+      {summary.unassignedCount > 0 && (
+        <div className="p-3 border-t bg-amber-50">
+          <div className="text-xs text-amber-800">
+            <p className="font-medium">Unassigned (not counting)</p>
+            <p className="font-mono">{formatDuration(summary.unassignedMinutes)} ({summary.unassignedCount} block{summary.unassignedCount !== 1 ? 's' : ''})</p>
+            {onShowUnassigned && (
+              <button
+                onClick={onShowUnassigned}
+                className="mt-1 text-amber-700 underline hover:text-amber-900"
+                data-testid="review-unassigned-button"
+              >
+                Review and assign
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="p-3 border-t bg-gray-50">
         <div className="text-xs text-gray-500">
           <p className="font-medium mb-1">Status Legend:</p>
           <p className="flex items-center gap-1">
-            <span className="inline-flex bg-green-500 text-white rounded-full p-0.5"><Check className="w-2.5 h-2.5" /></span>
+            <span className="inline-flex bg-green-500 text-white rounded-full px-1.5 py-0.5 text-xs">Done</span>
             <span className="text-green-700">Complete: hours met</span>
           </p>
           <p className="text-green-600">On target: within +/- 15 min</p>

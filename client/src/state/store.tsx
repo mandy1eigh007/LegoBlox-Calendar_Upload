@@ -391,6 +391,97 @@ function reducer(state: AppState, action: Action): AppState {
         },
         templates: state.templates.filter(t => t.engagementId !== action.payload),
       };
+
+    case 'PUBLISH_PLAN': {
+      const { planId, publicId, timestamp } = action.payload;
+      return {
+        ...state,
+        plans: state.plans.map(p => 
+          p.id === planId 
+            ? { 
+                ...p, 
+                isPublished: true, 
+                publishedAt: timestamp,
+                publicId: p.publicId || publicId,
+                updatedAt: timestamp,
+              } 
+            : p
+        ),
+      };
+    }
+
+    case 'UNPUBLISH_PLAN': {
+      const { planId, timestamp } = action.payload;
+      return {
+        ...state,
+        plans: state.plans.map(p => 
+          p.id === planId 
+            ? { ...p, isPublished: false, updatedAt: timestamp } 
+            : p
+        ),
+      };
+    }
+
+    case 'REGENERATE_PUBLIC_ID': {
+      const { planId, newPublicId, timestamp } = action.payload;
+      return {
+        ...state,
+        plans: state.plans.map(p => 
+          p.id === planId 
+            ? { ...p, publicId: newPublicId, updatedAt: timestamp } 
+            : p
+        ),
+      };
+    }
+
+    case 'ASSIGN_BLOCK_TEMPLATE': {
+      const { planId, blockId, templateId, timestamp } = action.payload;
+      const template = state.templates.find(t => t.id === templateId);
+      return {
+        ...state,
+        plans: state.plans.map(p => {
+          if (p.id !== planId) return p;
+          return {
+            ...p,
+            updatedAt: timestamp,
+            blocks: p.blocks.map(b => {
+              if (b.id !== blockId) return b;
+              return {
+                ...b,
+                templateId,
+                countsTowardGoldenRule: template?.countsTowardGoldenRule ?? false,
+                goldenRuleBucketId: template?.goldenRuleBucketId ?? null,
+              };
+            }),
+          };
+        }),
+      };
+    }
+
+    case 'ASSIGN_MULTIPLE_BLOCKS_TEMPLATE': {
+      const { planId, blockIds, templateId, timestamp } = action.payload;
+      const template = state.templates.find(t => t.id === templateId);
+      const blockIdSet = new Set(blockIds);
+      return {
+        ...state,
+        plans: state.plans.map(p => {
+          if (p.id !== planId) return p;
+          return {
+            ...p,
+            updatedAt: timestamp,
+            blocks: p.blocks.map(b => {
+              if (!blockIdSet.has(b.id)) return b;
+              return {
+                ...b,
+                templateId,
+                countsTowardGoldenRule: template?.countsTowardGoldenRule ?? false,
+                goldenRuleBucketId: template?.goldenRuleBucketId ?? null,
+              };
+            }),
+          };
+        }),
+      };
+    }
       
     default:
       return state;

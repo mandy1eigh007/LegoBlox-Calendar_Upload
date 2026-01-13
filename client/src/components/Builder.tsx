@@ -15,6 +15,8 @@ import { PartnersPanel } from './PartnersPanel';
 import { ConfirmModal } from './Modal';
 import { ScheduleSuggestionPanel } from './ScheduleSuggestionPanel';
 import { SuggestedBlock } from '@/lib/predictiveScheduler';
+import { UnassignedReviewPanel } from './UnassignedReviewPanel';
+import { generatePublicId, getStudentUrl } from '@/lib/publish';
 import { findTimeConflicts, wouldFitInDay } from '@/lib/collision';
 import { 
   SLOT_HEIGHT_PX, 
@@ -47,6 +49,8 @@ export function Builder() {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [hoverMinutes, setHoverMinutes] = useState<number | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showUnassigned, setShowUnassigned] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(
@@ -325,6 +329,39 @@ export function Builder() {
     }
   };
 
+  const handlePublish = () => {
+    const publicId = plan.publicId || generatePublicId();
+    const timestamp = new Date().toISOString();
+    dispatch({ type: 'PUBLISH_PLAN', payload: { planId: plan.id, publicId, timestamp } });
+  };
+
+  const handleUnpublish = () => {
+    const timestamp = new Date().toISOString();
+    dispatch({ type: 'UNPUBLISH_PLAN', payload: { planId: plan.id, timestamp } });
+  };
+
+  const handleCopyLink = async () => {
+    if (plan.publicId) {
+      try {
+        await navigator.clipboard.writeText(getStudentUrl(plan.publicId));
+        setLinkCopied(true);
+        setTimeout(() => setLinkCopied(false), 2000);
+      } catch {
+        alert(`Copy this link: ${getStudentUrl(plan.publicId)}`);
+      }
+    }
+  };
+
+  const handleAssignBlock = (blockId: string, templateId: string) => {
+    const timestamp = new Date().toISOString();
+    dispatch({ type: 'ASSIGN_BLOCK_TEMPLATE', payload: { planId: plan.id, blockId, templateId, timestamp } });
+  };
+
+  const handleAssignMultiple = (blockIds: string[], templateId: string) => {
+    const timestamp = new Date().toISOString();
+    dispatch({ type: 'ASSIGN_MULTIPLE_BLOCKS_TEMPLATE', payload: { planId: plan.id, blockIds, templateId, timestamp } });
+  };
+
   const selectedBlock = selectedBlockId ? plan.blocks.find(b => b.id === selectedBlockId) : null;
   const selectedTemplate = selectedBlock ? state.templates.find(t => t.id === selectedBlock.templateId) : undefined;
 
@@ -447,8 +484,45 @@ export function Builder() {
                 Suggest Schedule
               </button>
             )}
+            
+            {plan.isPublished ? (
+              <button
+                onClick={handleUnpublish}
+                className="px-3 py-1 text-sm bg-amber-100 text-amber-800 border border-amber-300 rounded hover:bg-amber-200"
+                data-testid="unpublish-button"
+              >
+                Unpublish
+              </button>
+            ) : (
+              <button
+                onClick={handlePublish}
+                className="px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
+                data-testid="publish-button"
+              >
+                Publish for Students
+              </button>
+            )}
           </div>
         </header>
+        
+        {plan.isPublished && plan.publicId && (
+          <div className="bg-green-50 border-b border-green-200 px-4 py-2 text-sm" data-testid="published-banner">
+            <div className="flex items-center gap-3">
+              <span className="text-green-700 font-medium">Published</span>
+              <span className="text-green-600 text-xs truncate flex-1">{getStudentUrl(plan.publicId)}</span>
+              <button
+                onClick={handleCopyLink}
+                className="px-2 py-1 text-xs border border-green-300 rounded hover:bg-green-100"
+                data-testid="copy-link-button"
+              >
+                {linkCopied ? 'Copied!' : 'Copy Link'}
+              </button>
+            </div>
+            <p className="text-xs text-green-600 mt-1">
+              Link works on this device. For other devices, export a JSON backup from Export/Import panel.
+            </p>
+          </div>
+        )}
         
         {plan.settings.schedulerMode === 'predictive' && (
           <div className="bg-purple-50 border-b border-purple-200 px-4 py-2 text-sm text-purple-700 flex items-center gap-2" data-testid="predictive-mode-banner">
@@ -498,7 +572,11 @@ export function Builder() {
             />
           ) : (
             <div className="w-72 flex-shrink-0">
-              <GoldenRuleTotals plan={plan} templates={state.templates} />
+              <GoldenRuleTotals 
+                plan={plan} 
+                templates={state.templates} 
+                onShowUnassigned={() => setShowUnassigned(true)}
+              />
             </div>
           )}
         </div>
@@ -556,6 +634,15 @@ export function Builder() {
           onAccept={handleAcceptSuggestions}
         />
       )}
+      
+      <UnassignedReviewPanel
+        plan={plan}
+        templates={state.templates}
+        open={showUnassigned}
+        onClose={() => setShowUnassigned(false)}
+        onAssignBlock={handleAssignBlock}
+        onAssignMultiple={handleAssignMultiple}
+      />
       
       <ConfirmModal
         open={showResetConfirm}

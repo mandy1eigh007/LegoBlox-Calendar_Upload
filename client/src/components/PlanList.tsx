@@ -7,8 +7,9 @@ import { createDefaultPlanSettings } from '@/lib/storage';
 import { v4 as uuidv4 } from 'uuid';
 import { validateAppState } from '@/state/validators';
 import { processImageWithOCR, OCREvent } from '@/lib/ocr';
-import { Camera, Upload, Loader2, FileUp, FileText, AlertTriangle, ClipboardPaste } from 'lucide-react';
 import { parseICSWithDateRange, convertICSEventsToBlocks, ICSEventWithDate } from '@/lib/csv';
+import { resolveTemplateForImportedTitle } from '@/lib/templateMatcher';
+import { Loader2, AlertTriangle } from 'lucide-react';
 
 type DateRangeMode = 'all' | 'range' | 'week';
 type ImportTarget = 'new' | 'existing';
@@ -141,12 +142,6 @@ export function PlanList() {
 
   const handleCreatePlanFromOCR = () => {
     if (!ocrPlanName.trim() || ocrEvents.length === 0) return;
-    
-    const defaultTemplate = state.templates[0];
-    if (!defaultTemplate) {
-      setImportError('No templates available.');
-      return;
-    }
 
     const blocks: PlacedBlock[] = [];
     for (const event of ocrEvents) {
@@ -163,22 +158,21 @@ export function PlanList() {
         durationMinutes = 930 - startMinutes;
       }
       
-      const matchingTemplate = state.templates.find(t => 
-        t.title.toLowerCase() === event.title.toLowerCase()
-      ) || defaultTemplate;
+      const matchResult = resolveTemplateForImportedTitle(event.title, state.templates);
+      const matchedTemplate = matchResult.templateId ? state.templates.find(t => t.id === matchResult.templateId) : null;
       
       blocks.push({
         id: uuidv4(),
-        templateId: matchingTemplate.id,
+        templateId: matchResult.templateId,
         week: 1,
-        day: event.day || 'Mon',
+        day: event.day || 'Monday',
         startMinutes,
         durationMinutes,
-        titleOverride: matchingTemplate.title === event.title ? '' : event.title,
+        titleOverride: event.title,
         location: '',
         notes: hasValidTime ? `Imported via OCR: ${event.rawText}` : `Draft block from OCR - adjust time as needed: ${event.rawText}`,
-        countsTowardGoldenRule: matchingTemplate.countsTowardGoldenRule,
-        goldenRuleBucketId: matchingTemplate.goldenRuleBucketId,
+        countsTowardGoldenRule: matchedTemplate ? matchedTemplate.countsTowardGoldenRule : false,
+        goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
         recurrenceSeriesId: null,
         isRecurrenceException: false,
       });
@@ -455,7 +449,7 @@ export function PlanList() {
 
   return (
     <div 
-      className="min-h-screen bg-gray-50 p-8"
+      className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 p-8"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -463,7 +457,6 @@ export function PlanList() {
       {isDragging && (
         <div className="fixed inset-0 bg-blue-500/20 border-4 border-dashed border-blue-500 z-50 flex items-center justify-center pointer-events-none">
           <div className="bg-white rounded-lg p-8 shadow-lg text-center">
-            <FileUp className="w-12 h-12 text-blue-600 mx-auto mb-4" />
             <p className="text-lg font-medium">Drop your file here</p>
             <p className="text-sm text-gray-500">ICS, JSON, or image files</p>
           </div>
@@ -471,9 +464,24 @@ export function PlanList() {
       )}
       
       <div className="max-w-4xl mx-auto">
-        <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
-          <h1 className="text-2xl font-bold text-gray-900">Cohort Schedule Builder</h1>
-          <div className="flex gap-2 flex-wrap">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">Cohort Schedule Builder</h1>
+          <p className="text-gray-600 mt-1">Plan and manage pre-apprenticeship training schedules with Golden Rule hour tracking</p>
+        </div>
+        
+        <div className="mb-6">
+          <button
+            onClick={() => setShowCreate(true)}
+            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-sm"
+            data-testid="create-plan-button"
+          >
+            Create New Plan
+          </button>
+        </div>
+        
+        <div className="bg-white rounded-xl border shadow-sm p-6 mb-6">
+          <h2 className="font-semibold text-gray-900 mb-4">Import Schedule</h2>
+          <div className="flex flex-wrap gap-2 mb-4">
             <input
               ref={jsonInputRef}
               type="file"
@@ -513,50 +521,37 @@ export function PlanList() {
             />
             <button
               onClick={() => icsInputRef.current?.click()}
-              className="px-4 py-2 border rounded hover:bg-gray-50 flex items-center gap-2 bg-white"
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white text-sm font-medium"
               data-testid="import-ics-button"
             >
-              <Upload className="w-4 h-4" />
               Import ICS
             </button>
             <button
               onClick={() => setShowPasteICS(true)}
-              className="px-4 py-2 border rounded hover:bg-gray-50 flex items-center gap-2 bg-white"
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white text-sm font-medium"
               data-testid="paste-ics-button"
             >
-              <ClipboardPaste className="w-4 h-4" />
               Paste ICS
             </button>
             <button
               onClick={() => ocrInputRef.current?.click()}
-              className="px-4 py-2 border rounded hover:bg-gray-50 flex items-center gap-2 bg-white"
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white text-sm font-medium"
               data-testid="import-screenshot-button"
             >
-              <Camera className="w-4 h-4" />
-              Screenshot
+              Screenshot (OCR)
             </button>
             <button
               onClick={() => jsonInputRef.current?.click()}
-              className="px-4 py-2 border rounded hover:bg-gray-50 flex items-center gap-2 bg-white"
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white text-sm font-medium"
               data-testid="import-json-button"
             >
-              <FileText className="w-4 h-4" />
-              Backup
-            </button>
-            <button
-              onClick={() => setShowCreate(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-              data-testid="create-plan-button"
-            >
-              Create New Plan
+              Import Backup
             </button>
           </div>
-        </div>
-        
-        <div className="mb-6 p-4 border-2 border-dashed border-gray-300 rounded-lg bg-white text-center">
-          <FileUp className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-          <p className="text-sm text-gray-600">Drag & drop ICS, JSON, CSV, or image files here</p>
-          <p className="text-xs text-gray-400 mt-1">Supported: .ics (calendar), .json (backup), .csv (spreadsheet), images (OCR)</p>
+          <div className="p-4 border-2 border-dashed border-gray-200 rounded-lg bg-gray-50/50 text-center">
+            <p className="text-sm text-gray-600">Drag and drop files here</p>
+            <p className="text-xs text-gray-400 mt-1">Supports: .ics (calendar), .json (backup), .csv (spreadsheet), images (OCR)</p>
+          </div>
         </div>
         
         {importError && (
@@ -573,82 +568,90 @@ export function PlanList() {
           </div>
         )}
 
-        {state.plans.length === 0 ? (
-          <div className="bg-white rounded-lg border p-12 text-center">
-            <p className="text-gray-500 mb-4">No plans created yet</p>
-            <button
-              onClick={() => setShowCreate(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-              data-testid="create-first-plan-button"
-            >
-              Create Your First Plan
-            </button>
-          </div>
-        ) : (
-          <div className="grid gap-4">
-            {state.plans.map(plan => {
-              const isPredictive = plan.settings.schedulerMode === 'predictive';
-              return (
-                <div
-                  key={plan.id}
-                  className={`bg-white rounded-lg border p-4 flex items-center justify-between transition-colors ${
-                    isPredictive ? 'hover:border-purple-300' : 'hover:border-blue-300'
-                  }`}
-                  data-testid={`plan-card-${plan.id}`}
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-gray-900">{plan.settings.name}</h3>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${
-                        isPredictive 
-                          ? 'bg-purple-100 text-purple-700' 
-                          : 'bg-blue-100 text-blue-700'
-                      }`}>
-                        {isPredictive ? 'Predictive' : 'Manual'}
-                      </span>
+        <div className="mb-6">
+          <h2 className="font-semibold text-gray-900 mb-4">Your Plans</h2>
+          
+          {state.plans.length === 0 ? (
+            <div className="bg-white rounded-xl border shadow-sm p-8 text-center">
+              <p className="text-lg font-medium text-gray-900 mb-2">Create your first plan</p>
+              <p className="text-gray-500 mb-6 text-sm">Get started in three easy steps:</p>
+              <div className="max-w-md mx-auto text-left mb-6">
+                <p className="text-sm text-gray-600 mb-2">1. Create a new plan with your cohort name</p>
+                <p className="text-sm text-gray-600 mb-2">2. Add blocks from the template library</p>
+                <p className="text-sm text-gray-600">3. Publish the schedule for your students</p>
+              </div>
+              <button
+                onClick={() => setShowCreate(true)}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+                data-testid="create-first-plan-button"
+              >
+                Create Your First Plan
+              </button>
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              {state.plans.map(plan => {
+                const isPredictive = plan.settings.schedulerMode === 'predictive';
+                const unassignedCount = plan.blocks.filter(b => b.templateId === null).length;
+                return (
+                  <div
+                    key={plan.id}
+                    className="bg-white rounded-xl border shadow-sm p-5 flex items-center justify-between transition-all hover:shadow-md"
+                    data-testid={`plan-card-${plan.id}`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-semibold text-gray-900">{plan.settings.name}</h3>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${
+                          isPredictive 
+                            ? 'bg-purple-100 text-purple-700' 
+                            : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {isPredictive ? 'Predictive' : 'Manual'}
+                        </span>
+                        {plan.isPublished && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                            Published
+                          </span>
+                        )}
+                        {!plan.isPublished && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                            Draft
+                          </span>
+                        )}
+                        {unassignedCount > 0 && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                            {unassignedCount} unassigned
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-500 mt-1">
+                        {plan.settings.weeks} weeks | {plan.blocks.length} blocks
+                        {plan.updatedAt && ` | Updated ${new Date(plan.updatedAt).toLocaleDateString()}`}
+                      </p>
                     </div>
-                    <p className="text-sm text-gray-500">
-                      {plan.settings.weeks} weeks | {plan.blocks.length} blocks
-                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => navigate(`/plan/${plan.id}`)}
+                        className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+                        data-testid={`open-plan-${plan.id}`}
+                      >
+                        Open
+                      </button>
+                      <button
+                        onClick={() => setDeleteId(plan.id)}
+                        className="px-3 py-2 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50"
+                        data-testid={`delete-plan-${plan.id}`}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => {
-                        if (plan.settings.schedulerMode !== 'manual') {
-                          dispatch({ type: 'UPDATE_PLAN', payload: { ...plan, settings: { ...plan.settings, schedulerMode: 'manual' } } });
-                        }
-                        navigate(`/plan/${plan.id}`);
-                      }}
-                      className="px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-                      data-testid={`open-manual-${plan.id}`}
-                    >
-                      Manual
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (plan.settings.schedulerMode !== 'predictive') {
-                          dispatch({ type: 'UPDATE_PLAN', payload: { ...plan, settings: { ...plan.settings, schedulerMode: 'predictive' } } });
-                        }
-                        navigate(`/plan/${plan.id}`);
-                      }}
-                      className="px-3 py-2 text-sm bg-purple-600 text-white rounded hover:bg-purple-700"
-                      data-testid={`open-predictive-${plan.id}`}
-                    >
-                      Predictive
-                    </button>
-                    <button
-                      onClick={() => setDeleteId(plan.id)}
-                      className="px-3 py-2 text-sm border border-red-300 text-red-600 rounded hover:bg-red-50"
-                      data-testid={`delete-plan-${plan.id}`}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create New Plan">
