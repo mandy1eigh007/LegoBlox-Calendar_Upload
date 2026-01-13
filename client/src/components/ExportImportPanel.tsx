@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useStore } from '@/state/store';
 import { Plan, AppState, PlacedBlock, DAYS, Day } from '@/state/types';
 import { exportToCSV, exportToICS, downloadCSV, downloadJSON, downloadICS, importICSToBlocks, importCSVToBlocks, getCSVHeaders, CSVDraftEvent } from '@/lib/csv';
@@ -26,16 +26,28 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   
   const [csvContent, setCSVContent] = useState<string | null>(null);
   const [csvHeaders, setCSVHeaders] = useState<string[]>([]);
-  const [csvMapping, setCSVMapping] = useState({
-    week: 1,
-    day: 2,
-    startTime: 3,
-    endTime: 4,
-    title: 5,
-    location: 8,
-    notes: 9,
+  const [csvMapping, setCSVMapping] = useState(() => {
+    const saved = localStorage.getItem('csvMapping');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {}
+    }
+    return {
+      week: 1,
+      day: 2,
+      startTime: 3,
+      endTime: 4,
+      title: 5,
+      location: 8,
+      notes: 9,
+    };
   });
   const [csvDrafts, setCSVDrafts] = useState<CSVDraftEvent[]>([]);
+  
+  useEffect(() => {
+    localStorage.setItem('csvMapping', JSON.stringify(csvMapping));
+  }, [csvMapping]);
   
   const ocrInputRef = useRef<HTMLInputElement>(null);
   const [ocrProcessing, setOCRProcessing] = useState(false);

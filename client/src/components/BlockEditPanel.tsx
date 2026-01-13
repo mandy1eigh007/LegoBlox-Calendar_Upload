@@ -16,7 +16,7 @@ interface BlockEditPanelProps {
   onUpdateRecurrence?: (seriesId: string, blocks: PlacedBlock[], series: RecurrenceSeries) => void;
 }
 
-const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180, 240, 300, 360, 420, 480, 540];
+const DURATION_OPTIONS = Array.from({ length: 36 }, (_, i) => (i + 1) * 15);
 
 function generateTimeOptions(startMinutes: number, endMinutes: number): number[] {
   const options: number[] = [];

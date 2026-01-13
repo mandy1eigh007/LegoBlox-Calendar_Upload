@@ -120,6 +120,7 @@ export interface BlockTemplate {
   defaultLocation: string;
   defaultNotes: string;
   engagementId?: string | null;
+  defaultResource?: string;
 }
 
 export interface PlacedBlock {

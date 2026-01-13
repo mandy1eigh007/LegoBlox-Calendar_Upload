@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { useStore } from '@/state/store';
-import { BlockTemplate, CATEGORIES, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId, COLOR_PALETTE, Category } from '@/state/types';
+import { BlockTemplate, CATEGORIES, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId, COLOR_PALETTE, Category, DEFAULT_RESOURCES } from '@/state/types';
 import { Modal, ConfirmModal } from './Modal';
 import { formatDuration } from '@/lib/time';
 import { createSeedTemplates } from '@/lib/seedTemplates';
@@ -61,6 +61,7 @@ interface TemplateFormData {
   goldenRuleBucketId: GoldenRuleBucketId | '';
   defaultLocation: string;
   defaultNotes: string;
+  defaultResource: string;
 }
 
 const DEFAULT_FORM: TemplateFormData = {
@@ -72,9 +73,10 @@ const DEFAULT_FORM: TemplateFormData = {
   goldenRuleBucketId: '',
   defaultLocation: '',
   defaultNotes: '',
+  defaultResource: '',
 };
 
-const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180, 240, 300, 360, 420, 480];
+const DURATION_OPTIONS = Array.from({ length: 36 }, (_, i) => (i + 1) * 15);
 
 export function BlockLibrary() {
   const { state, dispatch } = useStore();
@@ -117,6 +119,7 @@ export function BlockLibrary() {
         : null,
       defaultLocation: formData.defaultLocation,
       defaultNotes: formData.defaultNotes,
+      defaultResource: formData.defaultResource || undefined,
     };
     
     dispatch({ type: 'ADD_TEMPLATE', payload: template });
@@ -143,6 +146,7 @@ export function BlockLibrary() {
         : null,
       defaultLocation: formData.defaultLocation,
       defaultNotes: formData.defaultNotes,
+      defaultResource: formData.defaultResource || undefined,
     };
     
     dispatch({ type: 'UPDATE_TEMPLATE', payload: template });
@@ -175,8 +179,14 @@ export function BlockLibrary() {
       goldenRuleBucketId: template.goldenRuleBucketId || '',
       defaultLocation: template.defaultLocation,
       defaultNotes: template.defaultNotes,
+      defaultResource: template.defaultResource || '',
     });
     setEditingId(template.id);
+  };
+  
+  const adjustFormDuration = (delta: number) => {
+    const newDuration = Math.max(15, Math.min(formData.defaultDurationMinutes + delta, 540));
+    setFormData({ ...formData, defaultDurationMinutes: newDuration });
   };
 
   const TemplateForm = ({ isEdit }: { isEdit: boolean }) => (
@@ -219,6 +229,43 @@ export function BlockLibrary() {
             ))}
           </select>
         </div>
+      </div>
+      
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => adjustFormDuration(-15)}
+          disabled={formData.defaultDurationMinutes <= 15}
+          className="px-3 py-1 text-sm border rounded hover:bg-gray-50 disabled:opacity-50"
+          data-testid="template-duration-minus-15"
+        >
+          -15 min
+        </button>
+        <span className="text-sm text-gray-600 flex-1 text-center">{formatDuration(formData.defaultDurationMinutes)}</span>
+        <button
+          type="button"
+          onClick={() => adjustFormDuration(15)}
+          disabled={formData.defaultDurationMinutes >= 540}
+          className="px-3 py-1 text-sm border rounded hover:bg-gray-50 disabled:opacity-50"
+          data-testid="template-duration-plus-15"
+        >
+          +15 min
+        </button>
+      </div>
+      
+      <div>
+        <label className="block text-sm font-medium mb-1">Default Resource/Room</label>
+        <select
+          value={formData.defaultResource}
+          onChange={e => setFormData({ ...formData, defaultResource: e.target.value })}
+          className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+          data-testid="template-resource-select"
+        >
+          <option value="">No default resource</option>
+          {DEFAULT_RESOURCES.map(r => (
+            <option key={r} value={r}>{r}</option>
+          ))}
+        </select>
       </div>
 
       <div>
