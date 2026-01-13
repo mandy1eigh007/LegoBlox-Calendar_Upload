@@ -427,20 +427,22 @@ export function convertICSEventsToBlocks(
     
     const matchingTemplate = templates.find(t => 
       t.title.toLowerCase() === event.summary.toLowerCase()
-    ) || defaultTemplate;
+    );
+    const templateToUse = matchingTemplate || defaultTemplate;
+    const isUnmatched = !matchingTemplate;
     
     blocks.push({
       id: uuidv4(),
-      templateId: matchingTemplate.id,
+      templateId: templateToUse.id,
       week: normalizedWeek,
       day,
       startMinutes,
       durationMinutes,
-      titleOverride: matchingTemplate.title === event.summary ? '' : event.summary,
+      titleOverride: event.summary,
       location: event.location || '',
       notes: event.description || '',
-      countsTowardGoldenRule: matchingTemplate.countsTowardGoldenRule,
-      goldenRuleBucketId: event.goldenRuleBucketId || matchingTemplate.goldenRuleBucketId,
+      countsTowardGoldenRule: isUnmatched ? false : templateToUse.countsTowardGoldenRule,
+      goldenRuleBucketId: isUnmatched ? null : (event.goldenRuleBucketId || templateToUse.goldenRuleBucketId),
       recurrenceSeriesId: null,
       isRecurrenceException: false,
       resource: event.resource,

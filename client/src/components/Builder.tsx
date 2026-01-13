@@ -430,11 +430,12 @@ export function Builder() {
             </button>
             {plan.settings.schedulerMode === 'predictive' && (
               <button
-                onClick={() => alert('Predictive scheduling requires training data. This feature will suggest optimal block placements based on historical schedules. Coming soon!')}
-                className="px-3 py-1 text-sm bg-purple-600 text-white rounded hover:bg-purple-700"
+                onClick={() => alert('Predictive scheduling is coming soon! This feature will analyze your past schedules and suggest optimal block placements automatically.')}
+                className="px-3 py-1 text-sm bg-purple-400 text-white rounded cursor-not-allowed opacity-75"
                 data-testid="suggest-schedule-button"
+                disabled
               >
-                Suggest Schedule
+                Suggest Schedule (Coming Soon)
               </button>
             )}
           </div>
@@ -442,8 +443,8 @@ export function Builder() {
         
         {plan.settings.schedulerMode === 'predictive' && (
           <div className="bg-purple-50 border-b border-purple-200 px-4 py-2 text-sm text-purple-700 flex items-center gap-2" data-testid="predictive-mode-banner">
-            <span className="font-medium">Predictive Mode:</span>
-            <span>Insufficient training data. Build schedules manually to train the predictive engine.</span>
+            <span className="font-medium">Predictive Mode (Preview):</span>
+            <span>AI-powered scheduling is coming soon. For now, use manual drag-and-drop to build your schedule.</span>
           </div>
         )}
 
