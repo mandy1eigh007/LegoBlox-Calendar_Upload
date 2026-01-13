@@ -7,7 +7,8 @@ import { createDefaultPlanSettings } from '@/lib/storage';
 import { v4 as uuidv4 } from 'uuid';
 import { validateAppState } from '@/state/validators';
 import { processImageWithOCR, OCREvent } from '@/lib/ocr';
-import { Camera, Upload, Loader2 } from 'lucide-react';
+import { Camera, Upload, Loader2, FileUp } from 'lucide-react';
+import { importICSToBlocks } from '@/lib/csv';
 
 export function PlanList() {
   const { state, dispatch } = useStore();
@@ -18,14 +19,20 @@ export function PlanList() {
   
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const ocrInputRef = useRef<HTMLInputElement>(null);
+  const icsInputRef = useRef<HTMLInputElement>(null);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const [ocrProcessing, setOCRProcessing] = useState(false);
   const [ocrProgress, setOCRProgress] = useState(0);
   const [ocrEvents, setOCREvents] = useState<OCREvent[]>([]);
   const [ocrPlanName, setOCRPlanName] = useState('');
   const [ocrRawText, setOCRRawText] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [manualEvents, setManualEvents] = useState<Array<{id: string; title: string; day: Day; startMinutes: number; durationMinutes: number}>>([]);
+  const [icsImportPlanName, setIcsImportPlanName] = useState('');
+  const [pendingICSBlocks, setPendingICSBlocks] = useState<PlacedBlock[]>([]);
 
   const handleCreate = () => {
     if (!formData.name.trim()) return;
@@ -166,8 +173,124 @@ export function PlanList() {
     navigate(`/plan/${plan.id}`);
   };
 
+  const handleICSImport = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const { blocks, skipped } = importICSToBlocks(content, state.templates);
+        
+        if (blocks.length === 0) {
+          setImportError('No valid events found in ICS file. Events must be Mon-Fri, 6:30 AM - 3:30 PM.');
+          return;
+        }
+
+        setPendingICSBlocks(blocks);
+        setIcsImportPlanName(`Imported from ${file.name.replace(/\.[^/.]+$/, '')}`);
+        setImportSuccess(null);
+        setImportError(null);
+      } catch (err) {
+        setImportError('Failed to parse ICS file');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleICSFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    handleICSImport(file);
+    if (icsInputRef.current) {
+      icsInputRef.current.value = '';
+    }
+  };
+
+  const handleCreatePlanFromICS = () => {
+    if (!icsImportPlanName.trim() || pendingICSBlocks.length === 0) return;
+    
+    const plan: Plan = {
+      id: uuidv4(),
+      settings: { ...createDefaultPlanSettings(), name: icsImportPlanName },
+      blocks: pendingICSBlocks,
+      recurrenceSeries: [],
+    };
+    
+    dispatch({ type: 'ADD_PLAN', payload: plan });
+    setPendingICSBlocks([]);
+    setIcsImportPlanName('');
+    setImportSuccess(`Created plan with ${pendingICSBlocks.length} events!`);
+    navigate(`/plan/${plan.id}`);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length === 0) return;
+
+    const file = files[0];
+    const fileName = file.name.toLowerCase();
+    const fileType = file.type;
+
+    if (fileName.endsWith('.ics') || fileName.endsWith('.ical') || fileType === 'text/calendar') {
+      handleICSImport(file);
+    } else if (fileName.endsWith('.json') || fileType === 'application/json') {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const content = event.target?.result as string;
+          const parsed = JSON.parse(content);
+          const validation = validateAppState(parsed);
+          if (!validation.valid) {
+            setImportError(validation.error || 'Invalid JSON file format');
+            return;
+          }
+          dispatch({ type: 'IMPORT_STATE', payload: { state: parsed as AppState, mode: 'merge' } });
+          setImportSuccess('Backup imported successfully!');
+          setImportError(null);
+        } catch (err) {
+          setImportError('Failed to parse JSON file');
+        }
+      };
+      reader.readAsText(file);
+    } else if (fileType.startsWith('image/')) {
+      handleOCRFileSelect({ target: { files: [file] } } as unknown as React.ChangeEvent<HTMLInputElement>);
+    } else {
+      setImportError(`Unsupported file type. Drag an ICS, JSON, or image file.`);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
+    <div 
+      className="min-h-screen bg-gray-50 p-8"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isDragging && (
+        <div className="fixed inset-0 bg-blue-500/20 border-4 border-dashed border-blue-500 z-50 flex items-center justify-center pointer-events-none">
+          <div className="bg-white rounded-lg p-8 shadow-lg text-center">
+            <FileUp className="w-12 h-12 text-blue-600 mx-auto mb-4" />
+            <p className="text-lg font-medium">Drop your file here</p>
+            <p className="text-sm text-gray-500">ICS, JSON, or image files</p>
+          </div>
+        </div>
+      )}
+      
       <div className="max-w-4xl mx-auto">
         <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
           <h1 className="text-2xl font-bold text-gray-900">Cohort Schedule Builder</h1>
@@ -175,7 +298,7 @@ export function PlanList() {
             <input
               ref={jsonInputRef}
               type="file"
-              accept=".json"
+              accept=".json,application/json"
               onChange={handleJSONImport}
               className="hidden"
               data-testid="import-json-input"
@@ -188,9 +311,25 @@ export function PlanList() {
               className="hidden"
               data-testid="import-ocr-home-input"
             />
+            <input
+              ref={icsInputRef}
+              type="file"
+              accept=".ics,.ical,text/calendar,application/ics"
+              onChange={handleICSFileSelect}
+              className="hidden"
+              data-testid="import-ics-home-input"
+            />
+            <button
+              onClick={() => icsInputRef.current?.click()}
+              className="px-4 py-2 border rounded hover:bg-gray-50 flex items-center gap-2 bg-white"
+              data-testid="import-ics-button"
+            >
+              <Upload className="w-4 h-4" />
+              Import ICS
+            </button>
             <button
               onClick={() => jsonInputRef.current?.click()}
-              className="px-4 py-2 border rounded hover:bg-gray-50 flex items-center gap-2"
+              className="px-4 py-2 border rounded hover:bg-gray-50 flex items-center gap-2 bg-white"
               data-testid="import-json-button"
             >
               <Upload className="w-4 h-4" />
@@ -198,11 +337,11 @@ export function PlanList() {
             </button>
             <button
               onClick={() => ocrInputRef.current?.click()}
-              className="px-4 py-2 border rounded hover:bg-gray-50 flex items-center gap-2"
+              className="px-4 py-2 border rounded hover:bg-gray-50 flex items-center gap-2 bg-white"
               data-testid="import-screenshot-button"
             >
               <Camera className="w-4 h-4" />
-              Import Screenshot
+              Screenshot
             </button>
             <button
               onClick={() => setShowCreate(true)}
@@ -214,10 +353,23 @@ export function PlanList() {
           </div>
         </div>
         
+        <div className="mb-6 p-4 border-2 border-dashed border-gray-300 rounded-lg bg-white text-center">
+          <FileUp className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+          <p className="text-sm text-gray-600">Drag & drop ICS, JSON, or image files here</p>
+          <p className="text-xs text-gray-400 mt-1">or use the buttons above</p>
+        </div>
+        
         {importError && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm" data-testid="home-import-error">
             {importError}
             <button onClick={() => setImportError(null)} className="ml-2 underline">Dismiss</button>
+          </div>
+        )}
+        
+        {importSuccess && (
+          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded text-green-700 text-sm" data-testid="home-import-success">
+            {importSuccess}
+            <button onClick={() => setImportSuccess(null)} className="ml-2 underline">Dismiss</button>
           </div>
         )}
 
@@ -415,6 +567,88 @@ export function PlanList() {
                 data-testid="create-plan-from-ocr"
               >
                 Create Plan Anyway
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {pendingICSBlocks.length > 0 && (
+        <Modal open={true} onClose={() => { setPendingICSBlocks([]); setIcsImportPlanName(''); }} title="Import Calendar Events">
+          <div className="space-y-4">
+            <div className="bg-green-50 border border-green-200 rounded p-3 text-sm">
+              <p className="text-green-800">
+                Found {pendingICSBlocks.length} events in the calendar file!
+              </p>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium mb-1">Plan Name *</label>
+              <input
+                type="text"
+                value={icsImportPlanName}
+                onChange={e => setIcsImportPlanName(e.target.value)}
+                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g. Imported Schedule"
+                data-testid="ics-plan-name-input"
+              />
+            </div>
+            
+            <div>
+              <p className="text-sm text-gray-600 mb-2">Preview of events:</p>
+              <div className="max-h-48 overflow-auto border rounded text-xs">
+                <table className="w-full">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="p-2 text-left">Week</th>
+                      <th className="p-2 text-left">Day</th>
+                      <th className="p-2 text-left">Time</th>
+                      <th className="p-2 text-left">Title</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingICSBlocks.slice(0, 20).map(block => {
+                      const template = state.templates.find(t => t.id === block.templateId);
+                      const title = block.titleOverride || template?.title || 'Event';
+                      const startHour = Math.floor(block.startMinutes / 60);
+                      const startMin = block.startMinutes % 60;
+                      const endMinutes = block.startMinutes + block.durationMinutes;
+                      const endHour = Math.floor(endMinutes / 60);
+                      const endMin = endMinutes % 60;
+                      return (
+                        <tr key={block.id}>
+                          <td className="p-2">{block.week}</td>
+                          <td className="p-2">{block.day}</td>
+                          <td className="p-2">
+                            {startHour % 12 || 12}:{startMin.toString().padStart(2, '0')} {startHour >= 12 ? 'PM' : 'AM'} - 
+                            {endHour % 12 || 12}:{endMin.toString().padStart(2, '0')} {endHour >= 12 ? 'PM' : 'AM'}
+                          </td>
+                          <td className="p-2 truncate max-w-[120px]" title={title}>{title}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {pendingICSBlocks.length > 20 && (
+                  <p className="p-2 text-center text-gray-500">...and {pendingICSBlocks.length - 20} more events</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => { setPendingICSBlocks([]); setIcsImportPlanName(''); }}
+                className="px-4 py-2 text-sm border rounded hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreatePlanFromICS}
+                disabled={!icsImportPlanName.trim()}
+                className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                data-testid="create-plan-from-ics"
+              >
+                Create Plan
               </button>
             </div>
           </div>
