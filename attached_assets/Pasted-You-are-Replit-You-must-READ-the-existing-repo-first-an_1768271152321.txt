@@ -1,0 +1,209 @@
+You are Replit. You must READ the existing repo first and then MODIFY it. Do NOT rewrite from scratch. Do NOT remove existing features. Do NOT invent requirements, budgets, or data. Do NOT leave anything out. Do NOT use placeholders like “TODO” or “stub.” If something is unclear, implement a reasonable default that matches the screenshots and document it in code comments (do not skip it).
+
+OVERALL GOAL
+Build a schedule-building app that is easier than a normal calendar:
+- Users schedule training weeks using drag/drop “jigsaw” blocks.
+- Blocks snap to 15-minute increments.
+- The calendar grid runs from 6:30 AM to 3:30 PM.
+- Golden Rule Totals must update live (scheduled vs budget) and show over/under.
+- Must support comparing calendars (resource conflicts: classrooms, shop, transportation).
+- Must support partner invites (tours, worksite tours, speakers) with contact details and custom block templates.
+- Must support importing existing schedule sources (ICS/CSV/XLSX) AND screenshot recognition import (images/PDF screenshots) to help rebuild schedules quickly.
+
+NON-NEGOTIABLE CONSTRAINTS
+1) Time grid
+- Start time: 6:30 AM
+- End time: 3:30 PM
+- Snap interval: 15 minutes
+- Drag/drop must NOT “jump” when moved to later times (2:00 PM etc.). Fix the math so pointer → time mapping is stable.
+- Events must always store start/end as exact 15-min boundaries.
+
+2) Block Library behavior
+- Left side library must effectively be 15-minute building blocks so lessons can be split.
+- Allow either:
+  A) Dragging a 15-min “tile” repeatedly, OR
+  B) Dragging a template and then setting duration in 15-min increments in the edit panel,
+  but the UI must make “split into 15-min pieces” practical (fast).
+- When blocks are placed/resized, Golden Rule Totals update immediately.
+
+3) Golden Rule Totals (do not invent)
+Use the Golden Rule hour budgets exactly (convert to minutes in code). Show Scheduled / Budget and Over/Under:
+- Introduction to Pre-Apprenticeship: 3h (180m)
+- Professional Development Principles (Intro/Mid/Final total): 3h (180m)
+- Grit/Growth Mindset: 1h (60m)
+- How to be a Successful Apprentice: 1h (60m)
+- Elevator Pitch: 2h (120m)
+- Resumes: 4h (240m)
+- Interviews (Interview Skills + Group Interviews + Mock Interview Prep): 10h (600m)
+- Applying for Apprenticeships & Job Search: 3h (180m)
+- Financial Education: 3h (180m)
+- Emotional Intelligence: 2h (120m)
+- RISE Up Advocacy & Bystander Intervention: 2h (120m)
+- Workers Comp / Unemployment Insurance: 2h (120m)
+- Apprenticeship Portfolio: 4h (240m)
+- Individual Career Plan: 3h (180m)
+- Application Prep: 2h (120m)
+- Apprenticeship Tours: 20h (1200m)
+- Worksite Tours: 8h (480m)
+- Speaker Presentations: 4h (240m)
+(If the repo already has these somewhere, use the existing constants; do not duplicate. If not present, add them once in a single source of truth file.)
+
+4) Compare calendars (must exist)
+We need to compare two or more calendars so scheduling constraints are visible:
+- If Calendar A uses Classroom 1 at a time, Calendar B must avoid Classroom 1 and use Classroom 2 or move.
+- If a class is in Shop, someone else may need to move out depending on resource capacity rules.
+- Conflicts must be detected and shown clearly (visual highlight + list).
+- Resources to support at minimum: Classroom 1, Classroom 2, Shop, Transportation (van/bus) as capacity-1 resources.
+- Compare mode must support selecting which calendars to compare and show conflicts by time slot.
+
+5) Partner invites + custom blocks (must exist)
+We must store partner/org contact details and quickly create a scheduled block:
+- Tours, Worksite Tours, Speaker Presentations need structured details: org, contact, address, PPE, instructions, student limits, parking, etc.
+- The scheduled calendar block must link back to this partner engagement record.
+- These blocks must count toward the correct Golden Rule buckets (Tours / Worksite Tours / Speaker Presentations).
+- User must be able to create reusable “templates” from partner invites and place them across multiple days/weeks.
+
+6) Recurrence + multi-week placement (must exist)
+- When editing a scheduled block, user must be able to:
+  - Apply it to multiple days (ex: Tue+Thu)
+  - Apply it to multiple weeks (ex: Weeks 2–4)
+  - Mark it as recurring and define recurrence pattern
+- Must include “Copy to Next Week” and “Reset Week” (if already exists, fix it; if not, implement).
+
+7) Import from existing schedules (must exist)
+We already have calendars built in other systems. We need help rebuilding them:
+- Import ICS into a selected calendar and map events to blocks/resources/categories.
+- Import CSV/XLSX (the uploaded schedule files are examples of the format we need to support).
+- Screenshot recognition import:
+  - User uploads an image/PDF screenshot of an existing calendar (like the screenshots provided).
+  - The app extracts event blocks (title, day, start/end) as best as possible and creates “draft events” the user can review before placing/confirming.
+  - Implement this with a practical OCR approach (client-side or server-side). Do not pretend it works—actually implement it:
+    - Option A: Tesseract.js in the browser for images.
+    - Option B: Server OCR with a Node library, if available.
+  - Provide a “Review Imported Items” UI that lists detected events with editable fields (day, start, end, title, location/resource).
+  - User can click “Apply” to place them on the calendar.
+  - If OCR confidence is low, mark the row as “Needs review” (do not silently drop it).
+
+CURRENT UI MUST MATCH THE SCREENSHOTS
+Match the structure shown in the screenshots:
+- Left panel: Block Library with search + category filter + New button.
+- Center: Week calendar grid with days as columns, time as rows.
+- Right panel: Golden Rule Totals (and when an event is selected, an Edit panel like the screenshot with title override, duration in 15-min increments, location, notes, and extended partner fields for partner events).
+- Buttons: Copy to Next Week, Reset Week, Export, Print View, Edit Settings.
+Keep the look/function close to what exists already—improve functionality, don’t redesign.
+
+IMPLEMENTATION REQUIREMENTS (DO THIS WITH THE EXISTING CODEBASE)
+Step 1: Inspect repo
+- Identify framework (likely React/Next), current data storage (local storage / DB), and drag-drop library.
+- List existing files/components responsible for:
+  - Calendar grid
+  - Drag/drop
+  - Block templates
+  - Event editing sidebar
+  - Totals panel
+  - Export/print
+
+Step 2: Fix time snapping + “jumping” bug
+- Implement a single source of truth for time calculations:
+  - rowHeightPer15Min
+  - gridStartMinutes = 6*60 + 30
+  - gridEndMinutes = 15*60 + 30
+  - snapMinutes = 15
+- Pointer → minutes conversion must use container bounding rect + scroll offset.
+- Dragging must update start time by snapped increments only.
+- Resizing must snap and preserve minimum duration of 15 minutes.
+
+Step 3: 15-minute block library workflow
+- Ensure every template has a default duration that is a multiple of 15.
+- In the edit panel, duration selector must be in 15-minute increments, up to the max range allowed by the grid.
+- Add “Split into 15-min tiles” helper action for any scheduled block (optional but recommended):
+  - This creates contiguous 15-min child blocks (or a visual segmentation) without losing the parent category mapping.
+
+Step 4: Golden Rule Totals integration
+- Every template/event must have a GoldenRuleBucketId/category.
+- Totals panel computes scheduled minutes per bucket for the selected calendar (and optionally for compare mode).
+- Show Under/Over by minutes and also hours (clean formatting).
+- Status threshold: +/- 15 minutes = “On target”; otherwise Under/Over.
+(Implement as plain text labels; no icons.)
+
+Step 5: Resources + compare mode
+- Implement resources as capacity-based constraints.
+- EventInstance stores resourceIds[].
+- Compare mode:
+  - User selects 2+ calendars to compare.
+  - Conflicts are computed by overlapping time ranges where the same capacity-1 resource is double-booked.
+  - Display: highlight conflicted blocks and show a “Conflicts” list with time/day/resource and involved calendars.
+
+Step 6: Partner invites + engagement templates
+Implement these entities (use existing persistence approach; if DB exists, add migrations; if local storage, add structured storage with versioning):
+- PartnerOrg
+- PartnerContact
+- PartnerEngagement
+- BlockTemplate (extend existing)
+- EventInstance (extend existing)
+UI:
+- Add “Partners” section: manage orgs/contacts, search.
+- Add “Engagements” section: create tour/speaker invites and generate templates.
+- In Block Library, include category “Tours & Speakers” and show engagement templates there.
+- When a partner engagement block is scheduled, the edit panel must show:
+  - Org name, address, contact(s), phone/email
+  - Engagement type/status
+  - PPE, arrival instructions, parking, student limit, notes
+  - Attachments
+Mapping:
+- Apprenticeship Tour -> Golden Rule “Apprenticeship Tours”
+- Worksite Tour -> Golden Rule “Worksite Tours”
+- Speaker Presentation -> Golden Rule “Speaker Presentations”
+
+Step 7: Import (ICS/CSV/XLSX) + Screenshot recognition
+- Add an Import button/flow (can be under Export or Edit Settings).
+- Support:
+  - ICS: parse events into draft items; map by matching title keywords to existing templates when possible; otherwise create a draft custom template.
+  - CSV/XLSX: parse into draft items. Provide a mapping screen if columns don’t match.
+  - Screenshot/PDF screenshot OCR:
+    - Upload image or PDF pages (if PDF, convert page to image for OCR).
+    - Run OCR and attempt to detect:
+      - Day column
+      - Start/end time
+      - Title
+      - Location (if present)
+    - Create draft events list -> user review -> apply.
+- Add “Review Imported Items” screen/modal:
+  - Editable rows: week, day, start, end, title, location, resources, golden rule bucket
+  - Button “Apply All” and “Apply Selected”
+  - Show warnings when events exceed grid hours or don’t snap to 15 minutes (auto-fix with a notice).
+
+Step 8: Export/Print
+- Print view: weekly schedule with block title + location; for partner blocks also include contact + PPE + address.
+- Export CSV: include partner/org/contact fields when applicable.
+- Export ICS (optional but strongly preferred): allow pushing the created schedule back out.
+
+COMPATIBILITY REQUIREMENT
+All changes must work with what already exists:
+- Keep current file structure.
+- Do not break current calendar creation/edit flows.
+- If you add persistence fields, include migration/version handling so old saved calendars still load.
+- If there is already an “Edit Block” sidebar (like the screenshot), extend it—do not replace it.
+
+DELIVERABLES (NO SHORTCUTS)
+1) Implement the above features fully in code.
+2) Provide a list of all files changed/added.
+3) Provide a brief “How to use” section in the README (only what’s necessary).
+4) Add a minimal test plan or automated tests for:
+   - snap-to-15
+   - no jumping bug
+   - totals math
+   - compare conflict detection
+   - partner engagement scheduling
+   - import flows produce draft items
+
+ACCEPTANCE TESTS (MUST PASS)
+1) Grid shows 6:30 AM through 3:30 PM. Dragging to 2:00 PM does not jump.
+2) Library supports 15-min increments and scheduled totals update immediately.
+3) Golden Rule Totals correctly shows scheduled/budget and under/over for each bucket.
+4) Compare Mode flags Classroom 1 conflicts between two calendars.
+5) Partner Engagement created -> template generated -> scheduled -> edit panel shows contact details -> counts toward correct bucket.
+6) Import ICS creates draft items -> review -> apply -> events appear snapped.
+7) Screenshot OCR import creates draft items from a calendar screenshot -> user can correct -> apply.
+
+Start now by inspecting the repo and implementing fixes incrementally, but do not stop early—complete all deliverables in this prompt.

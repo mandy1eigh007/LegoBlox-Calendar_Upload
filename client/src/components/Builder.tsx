@@ -10,6 +10,7 @@ import { GoldenRuleTotals } from './GoldenRuleTotals';
 import { PlanEditor } from './PlanEditor';
 import { ExportImportPanel } from './ExportImportPanel';
 import { PrintView } from './PrintView';
+import { CompareMode } from './CompareMode';
 import { ConfirmModal } from './Modal';
 import { findTimeConflicts, wouldFitInDay } from '@/lib/collision';
 import { 
@@ -35,6 +36,7 @@ export function Builder() {
   const [showSettings, setShowSettings] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
+  const [showCompare, setShowCompare] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [draggedItem, setDraggedItem] = useState<{ type: 'template' | 'placed-block'; data: BlockTemplate | PlacedBlock } | null>(null);
@@ -325,6 +327,16 @@ export function Builder() {
     );
   }
 
+  if (showCompare) {
+    return (
+      <CompareMode
+        currentPlanId={plan.id}
+        currentWeek={currentWeek}
+        onClose={() => setShowCompare(false)}
+      />
+    );
+  }
+
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="h-screen flex flex-col bg-gray-50">
@@ -392,6 +404,13 @@ export function Builder() {
               data-testid="print-view-button"
             >
               Print View
+            </button>
+            <button
+              onClick={() => setShowCompare(true)}
+              className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+              data-testid="compare-calendars-button"
+            >
+              Compare
             </button>
             <button
               onClick={() => setShowSettings(true)}
