@@ -62,6 +62,7 @@ interface TemplateFormData {
   defaultLocation: string;
   defaultNotes: string;
   defaultResource: string;
+  matchKeywords: string;
 }
 
 const DEFAULT_FORM: TemplateFormData = {
@@ -74,6 +75,7 @@ const DEFAULT_FORM: TemplateFormData = {
   defaultLocation: '',
   defaultNotes: '',
   defaultResource: '',
+  matchKeywords: '',
 };
 
 const DURATION_OPTIONS = Array.from({ length: 36 }, (_, i) => (i + 1) * 15);
@@ -107,6 +109,10 @@ export function BlockLibrary() {
       return;
     }
     
+    const keywords = formData.matchKeywords.trim()
+      ? formData.matchKeywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean)
+      : undefined;
+    
     const template: BlockTemplate = {
       id: uuidv4(),
       title: formData.title.trim(),
@@ -120,6 +126,7 @@ export function BlockLibrary() {
       defaultLocation: formData.defaultLocation,
       defaultNotes: formData.defaultNotes,
       defaultResource: formData.defaultResource || undefined,
+      matchKeywords: keywords,
     };
     
     dispatch({ type: 'ADD_TEMPLATE', payload: template });
@@ -134,6 +141,10 @@ export function BlockLibrary() {
       return;
     }
     
+    const keywords = formData.matchKeywords.trim()
+      ? formData.matchKeywords.split(',').map(k => k.trim().toLowerCase()).filter(Boolean)
+      : undefined;
+    
     const template: BlockTemplate = {
       id: editingId,
       title: formData.title.trim(),
@@ -147,6 +158,7 @@ export function BlockLibrary() {
       defaultLocation: formData.defaultLocation,
       defaultNotes: formData.defaultNotes,
       defaultResource: formData.defaultResource || undefined,
+      matchKeywords: keywords,
     };
     
     dispatch({ type: 'UPDATE_TEMPLATE', payload: template });
@@ -180,6 +192,7 @@ export function BlockLibrary() {
       defaultLocation: template.defaultLocation,
       defaultNotes: template.defaultNotes,
       defaultResource: template.defaultResource || '',
+      matchKeywords: template.matchKeywords?.join(', ') || '',
     });
     setEditingId(template.id);
   };
@@ -318,6 +331,19 @@ export function BlockLibrary() {
           rows={2}
           data-testid="template-notes-input"
         />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">Match Keywords</label>
+        <input
+          type="text"
+          value={formData.matchKeywords}
+          onChange={e => setFormData({ ...formData, matchKeywords: e.target.value })}
+          className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="e.g. resume, cv, cover letter"
+          data-testid="template-keywords-input"
+        />
+        <p className="text-xs text-gray-500 mt-1">Comma-separated keywords to help match imported events</p>
       </div>
 
       <div>

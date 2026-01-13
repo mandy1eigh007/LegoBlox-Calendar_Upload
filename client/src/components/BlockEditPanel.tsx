@@ -36,6 +36,14 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
   const [goldenRuleBucketId, setGoldenRuleBucketId] = useState<GoldenRuleBucketId | ''>(block.goldenRuleBucketId || '');
   const [resource, setResource] = useState(block.resource || '');
   const [category, setCategory] = useState<Category | ''>(block.category || template?.category || '');
+  const [partnerOrg, setPartnerOrg] = useState(block.partnerOrg || '');
+  const [partnerContact, setPartnerContact] = useState(block.partnerContact || '');
+  const [partnerEmail, setPartnerEmail] = useState(block.partnerEmail || '');
+  const [partnerPhone, setPartnerPhone] = useState(block.partnerPhone || '');
+  const [partnerAddress, setPartnerAddress] = useState(block.partnerAddress || '');
+  const [partnerPPE, setPartnerPPE] = useState(block.partnerPPE || '');
+  const [partnerParking, setPartnerParking] = useState(block.partnerParking || '');
+  const [showPartnerInfo, setShowPartnerInfo] = useState(Boolean(block.partnerOrg || block.partnerContact));
   
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showRecurrence, setShowRecurrence] = useState(false);
@@ -59,6 +67,14 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
     setGoldenRuleBucketId(block.goldenRuleBucketId || '');
     setResource(block.resource || '');
     setCategory(block.category || template?.category || '');
+    setPartnerOrg(block.partnerOrg || '');
+    setPartnerContact(block.partnerContact || '');
+    setPartnerEmail(block.partnerEmail || '');
+    setPartnerPhone(block.partnerPhone || '');
+    setPartnerAddress(block.partnerAddress || '');
+    setPartnerPPE(block.partnerPPE || '');
+    setPartnerParking(block.partnerParking || '');
+    setShowPartnerInfo(Boolean(block.partnerOrg || block.partnerContact));
     setRecurrenceDays([block.day]);
     setRecurrenceStartWeek(block.week);
   }, [block, template]);
@@ -106,6 +122,13 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
       goldenRuleBucketId: countsTowardGoldenRule && goldenRuleBucketId ? goldenRuleBucketId : null,
       resource: resource || undefined,
       category: category || undefined,
+      partnerOrg: partnerOrg || undefined,
+      partnerContact: partnerContact || undefined,
+      partnerEmail: partnerEmail || undefined,
+      partnerPhone: partnerPhone || undefined,
+      partnerAddress: partnerAddress || undefined,
+      partnerPPE: partnerPPE || undefined,
+      partnerParking: partnerParking || undefined,
     }, scope);
   };
   
@@ -310,6 +333,104 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
               rows={3}
               data-testid="block-notes-input"
             />
+          </div>
+
+          <div className="border-t pt-3">
+            <button
+              onClick={() => setShowPartnerInfo(!showPartnerInfo)}
+              className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900 w-full"
+              data-testid="toggle-partner-info"
+            >
+              <span className={`transition-transform ${showPartnerInfo ? 'rotate-90' : ''}`}>▶</span>
+              Partner Information
+              {partnerOrg && <span className="text-xs text-gray-500 ml-2">({partnerOrg})</span>}
+            </button>
+            
+            {showPartnerInfo && (
+              <div className="mt-3 space-y-3 pl-4 border-l-2 border-gray-200">
+                <div>
+                  <label className="block text-xs font-medium mb-1">Organization</label>
+                  <input
+                    type="text"
+                    value={partnerOrg}
+                    onChange={e => setPartnerOrg(e.target.value)}
+                    className="w-full px-2 py-1 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Partner organization name"
+                    data-testid="partner-org-input"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Contact</label>
+                    <input
+                      type="text"
+                      value={partnerContact}
+                      onChange={e => setPartnerContact(e.target.value)}
+                      className="w-full px-2 py-1 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Contact name"
+                      data-testid="partner-contact-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Phone</label>
+                    <input
+                      type="tel"
+                      value={partnerPhone}
+                      onChange={e => setPartnerPhone(e.target.value)}
+                      className="w-full px-2 py-1 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Phone number"
+                      data-testid="partner-phone-input"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={partnerEmail}
+                    onChange={e => setPartnerEmail(e.target.value)}
+                    className="w-full px-2 py-1 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="email@example.com"
+                    data-testid="partner-email-input"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1">Address / Site Location</label>
+                  <input
+                    type="text"
+                    value={partnerAddress}
+                    onChange={e => setPartnerAddress(e.target.value)}
+                    className="w-full px-2 py-1 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Full address"
+                    data-testid="partner-address-input"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-medium mb-1">PPE Required</label>
+                    <input
+                      type="text"
+                      value={partnerPPE}
+                      onChange={e => setPartnerPPE(e.target.value)}
+                      className="w-full px-2 py-1 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="e.g. Hard hat, boots"
+                      data-testid="partner-ppe-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Parking Notes</label>
+                    <input
+                      type="text"
+                      value={partnerParking}
+                      onChange={e => setPartnerParking(e.target.value)}
+                      className="w-full px-2 py-1 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="e.g. Lot B"
+                      data-testid="partner-parking-input"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div>

@@ -121,6 +121,7 @@ export interface BlockTemplate {
   defaultNotes: string;
   engagementId?: string | null;
   defaultResource?: string;
+  matchKeywords?: string[];
 }
 
 export interface PlacedBlock {
@@ -140,6 +141,13 @@ export interface PlacedBlock {
   engagementId?: string | null;
   resource?: string;
   category?: Category;
+  partnerOrg?: string;
+  partnerContact?: string;
+  partnerEmail?: string;
+  partnerPhone?: string;
+  partnerAddress?: string;
+  partnerPPE?: string;
+  partnerParking?: string;
 }
 
 export interface RecurrenceSeries {

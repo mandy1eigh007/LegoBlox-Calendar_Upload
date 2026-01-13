@@ -157,12 +157,35 @@ function scoreTemplateMatch(inputTitle: string, template: BlockTemplate): number
   
   const overlapScore = matchCount / Math.max(stemmedTemplate.length, 1);
   
+  let keywordBonus = 0;
+  if (template.matchKeywords && template.matchKeywords.length > 0) {
+    const inputLower = inputNorm.toLowerCase();
+    for (const keyword of template.matchKeywords) {
+      if (inputLower.includes(keyword.toLowerCase())) {
+        keywordBonus = Math.max(keywordBonus, 0.85);
+        break;
+      }
+    }
+    if (keywordBonus === 0) {
+      let keywordMatches = 0;
+      for (const keyword of template.matchKeywords) {
+        const keywordStemmed = stem(keyword);
+        if (stemmedInput.some(si => si.includes(keywordStemmed) || keywordStemmed.includes(si))) {
+          keywordMatches++;
+        }
+      }
+      if (keywordMatches > 0) {
+        keywordBonus = (keywordMatches / template.matchKeywords.length) * 0.6;
+      }
+    }
+  }
+  
   let bucketBonus = 0;
   if (template.goldenRuleBucketId) {
     bucketBonus = scoreBucketMatch(inputTokens, template.goldenRuleBucketId) * 0.3;
   }
   
-  return Math.min(overlapScore * 0.7 + bucketBonus, 1.0);
+  return Math.min(Math.max(overlapScore * 0.7, keywordBonus) + bucketBonus, 1.0);
 }
 
 export function findBestBucketMatch(title: string): { bucketId: GoldenRuleBucketId; score: number } | null {
