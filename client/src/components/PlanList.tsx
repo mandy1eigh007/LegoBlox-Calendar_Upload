@@ -347,11 +347,13 @@ export function PlanList() {
             <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm">
               <p className="font-medium text-amber-800 mb-1">Limited Results</p>
               <p className="text-amber-700">
-                Screenshot scanning has difficulty with calendar grids. For better results, export your calendar as ICS or CSV file.
+                Screenshot scanning has difficulty with calendar grids. For better results, export your calendar as ICS file:
               </p>
-              <p className="text-amber-600 text-xs mt-1">
-                Google Calendar: Settings → Import & export → Export
-              </p>
+              <div className="text-amber-600 text-xs mt-2 space-y-1">
+                <p><strong>Google Calendar:</strong> Settings → Import & export → Export</p>
+                <p><strong>Outlook Desktop:</strong> File → Save Calendar → Save as ICS</p>
+                <p><strong>Outlook Web:</strong> Calendar → Share → Publish Calendar → Copy ICS link</p>
+              </div>
             </div>
             
             <div>
