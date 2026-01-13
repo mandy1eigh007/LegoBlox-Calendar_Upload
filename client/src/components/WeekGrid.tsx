@@ -16,6 +16,7 @@ interface WeekGridProps {
   currentWeek: number;
   templates: BlockTemplate[];
   onBlockClick: (block: PlacedBlock) => void;
+  onBlockDoubleClick?: (block: PlacedBlock) => void;
   onBlockResize: (blockId: string, newDuration: number) => void;
   selectedBlockId: string | null;
 }
@@ -29,6 +30,7 @@ interface DayColumnProps {
   dayStartMinutes: number;
   dayEndMinutes: number;
   onBlockClick: (block: PlacedBlock) => void;
+  onBlockDoubleClick?: (block: PlacedBlock) => void;
   onBlockResize: (blockId: string, newDuration: number) => void;
   selectedBlockId: string | null;
 }
@@ -39,6 +41,7 @@ function DraggablePlacedBlock({
   dayStartMinutes,
   dayEndMinutes,
   onClick,
+  onDoubleClick,
   onResize,
   isSelected,
   hasConflict
@@ -48,6 +51,7 @@ function DraggablePlacedBlock({
   dayStartMinutes: number;
   dayEndMinutes: number;
   onClick: () => void;
+  onDoubleClick?: () => void;
   onResize: (newDuration: number) => void;
   isSelected: boolean;
   hasConflict: boolean;
@@ -122,6 +126,10 @@ function DraggablePlacedBlock({
           e.stopPropagation();
           onClick();
         }}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          onDoubleClick?.();
+        }}
         className="px-2 py-1 cursor-grab active:cursor-grabbing h-full"
       >
         {isUnassigned && (
@@ -156,6 +164,7 @@ function DayColumn({
   dayStartMinutes,
   dayEndMinutes,
   onBlockClick,
+  onBlockDoubleClick,
   onBlockResize,
   selectedBlockId
 }: DayColumnProps) {
@@ -201,6 +210,7 @@ function DayColumn({
             dayStartMinutes={dayStartMinutes}
             dayEndMinutes={dayEndMinutes}
             onClick={() => onBlockClick(block)}
+            onDoubleClick={() => onBlockDoubleClick?.(block)}
             onResize={(newDuration) => onBlockResize(block.id, newDuration)}
             isSelected={selectedBlockId === block.id}
             hasConflict={hasConflict}
@@ -211,7 +221,7 @@ function DayColumn({
   );
 }
 
-export function WeekGrid({ plan, currentWeek, templates, onBlockClick, onBlockResize, selectedBlockId }: WeekGridProps) {
+export function WeekGrid({ plan, currentWeek, templates, onBlockClick, onBlockDoubleClick, onBlockResize, selectedBlockId }: WeekGridProps) {
   const { settings } = plan;
   const timeSlots: number[] = [];
   for (let m = settings.dayStartMinutes; m < settings.dayEndMinutes; m += 15) {
@@ -260,6 +270,7 @@ export function WeekGrid({ plan, currentWeek, templates, onBlockClick, onBlockRe
             dayStartMinutes={settings.dayStartMinutes}
             dayEndMinutes={settings.dayEndMinutes}
             onBlockClick={onBlockClick}
+            onBlockDoubleClick={onBlockDoubleClick}
             onBlockResize={onBlockResize}
             selectedBlockId={selectedBlockId}
           />

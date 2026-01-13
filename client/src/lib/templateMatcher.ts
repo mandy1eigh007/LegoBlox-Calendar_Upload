@@ -1,5 +1,6 @@
 import { BlockTemplate, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId } from '@/state/types';
 import { matchTitleToTemplateViaAlias } from './titleAliases';
+import { getPersistedTemplateId } from './assignmentPersistence';
 
 export interface TemplateMatchResult {
   templateId: string | null;
@@ -185,6 +186,26 @@ export function resolveTemplateForImportedTitle(
 ): TemplateMatchResult {
   if (!title || templates.length === 0) {
     return { templateId: null, bucketId: null, matchedBy: 'none', confidence: 0, candidates: [] };
+  }
+  
+  const persistedId = getPersistedTemplateId(title);
+  if (persistedId) {
+    const template = templates.find(t => t.id === persistedId);
+    if (template) {
+      return {
+        templateId: template.id,
+        bucketId: template.goldenRuleBucketId,
+        matchedBy: 'exact',
+        confidence: 1,
+        candidates: [{
+          templateId: template.id,
+          templateTitle: template.title,
+          bucketId: template.goldenRuleBucketId,
+          score: 1,
+          matchReason: 'Previously assigned by you'
+        }]
+      };
+    }
   }
   
   const normalizedInput = normalizeText(title);

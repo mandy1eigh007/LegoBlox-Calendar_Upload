@@ -16,6 +16,7 @@ import { ConfirmModal } from './Modal';
 import { ScheduleSuggestionPanel } from './ScheduleSuggestionPanel';
 import { SuggestedBlock } from '@/lib/predictiveScheduler';
 import { UnassignedReviewPanel } from './UnassignedReviewPanel';
+import { TemplateReassignDialog } from './TemplateReassignDialog';
 import { generatePublicId, getStudentUrl } from '@/lib/publish';
 import { findTimeConflicts, wouldFitInDay } from '@/lib/collision';
 import { 
@@ -51,6 +52,7 @@ export function Builder() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showUnassigned, setShowUnassigned] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [reassignBlock, setReassignBlock] = useState<PlacedBlock | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(
@@ -554,6 +556,7 @@ export function Builder() {
             currentWeek={currentWeek}
             templates={state.templates}
             onBlockClick={(block) => setSelectedBlockId(block.id)}
+            onBlockDoubleClick={(block) => setReassignBlock(block)}
             onBlockResize={handleBlockResize}
             selectedBlockId={selectedBlockId}
           />
@@ -643,6 +646,18 @@ export function Builder() {
         onAssignBlock={handleAssignBlock}
         onAssignMultiple={handleAssignMultiple}
       />
+      
+      {reassignBlock && (
+        <TemplateReassignDialog
+          open={!!reassignBlock}
+          onClose={() => setReassignBlock(null)}
+          block={reassignBlock}
+          templates={state.templates}
+          allBlocks={plan.blocks}
+          onAssign={handleAssignBlock}
+          onAssignMultiple={handleAssignMultiple}
+        />
+      )}
       
       <ConfirmModal
         open={showResetConfirm}
