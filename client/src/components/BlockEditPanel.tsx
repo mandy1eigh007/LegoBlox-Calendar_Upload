@@ -13,6 +13,7 @@ interface BlockEditPanelProps {
   onDuplicate: () => void;
   onClose: () => void;
   onCreateRecurrence?: (blocks: PlacedBlock[], series?: RecurrenceSeries) => void;
+  onUpdateRecurrence?: (seriesId: string, blocks: PlacedBlock[], series: RecurrenceSeries) => void;
 }
 
 const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180, 240, 300, 360, 420, 480, 540];
@@ -25,7 +26,7 @@ function generateTimeOptions(startMinutes: number, endMinutes: number): number[]
   return options;
 }
 
-export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDuplicate, onClose, onCreateRecurrence }: BlockEditPanelProps) {
+export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDuplicate, onClose, onCreateRecurrence, onUpdateRecurrence }: BlockEditPanelProps) {
   const [titleOverride, setTitleOverride] = useState(block.titleOverride);
   const [startMinutes, setStartMinutes] = useState(block.startMinutes);
   const [durationMinutes, setDurationMinutes] = useState(block.durationMinutes);
@@ -42,6 +43,10 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
   const [recurrenceEndWeek, setRecurrenceEndWeek] = useState(plan.settings.weeks);
   const [applyScopeAction, setApplyScopeAction] = useState<'save' | 'delete' | null>(null);
 
+  const existingSeries = block.recurrenceSeriesId 
+    ? plan.recurrenceSeries.find(s => s.id === block.recurrenceSeriesId)
+    : null;
+
   useEffect(() => {
     setTitleOverride(block.titleOverride);
     setStartMinutes(block.startMinutes);
@@ -53,6 +58,21 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
     setRecurrenceDays([block.day]);
     setRecurrenceStartWeek(block.week);
   }, [block]);
+
+  const openRecurrenceModal = () => {
+    if (existingSeries) {
+      setRecurrenceType(existingSeries.pattern.type);
+      setRecurrenceDays(existingSeries.pattern.daysOfWeek);
+      setRecurrenceStartWeek(existingSeries.pattern.startWeek);
+      setRecurrenceEndWeek(existingSeries.pattern.endWeek);
+    } else {
+      setRecurrenceType('none');
+      setRecurrenceDays([block.day]);
+      setRecurrenceStartWeek(block.week);
+      setRecurrenceEndWeek(plan.settings.weeks);
+    }
+    setShowRecurrence(true);
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -89,7 +109,7 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
   };
 
   const handleApplyRecurrence = () => {
-    if (recurrenceType === 'none' || !onCreateRecurrence) {
+    if (recurrenceType === 'none') {
       setShowRecurrence(false);
       return;
     }
@@ -112,8 +132,14 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
       goldenRuleBucketId: countsTowardGoldenRule && goldenRuleBucketId ? goldenRuleBucketId : null,
     };
 
-    const { series, blocks } = createRecurringBlocks(currentBlock, pattern, plan);
-    onCreateRecurrence(blocks, series);
+    if (existingSeries && onUpdateRecurrence) {
+      const { series, blocks } = createRecurringBlocks(currentBlock, pattern, plan);
+      onUpdateRecurrence(existingSeries.id, blocks, series);
+    } else if (onCreateRecurrence) {
+      const { series, blocks } = createRecurringBlocks(currentBlock, pattern, plan);
+      onCreateRecurrence(blocks, series);
+    }
+    
     setShowRecurrence(false);
     onClose();
   };
@@ -249,16 +275,30 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
             </div>
           )}
 
-          {isRecurring && (
-            <div className="p-2 bg-blue-50 rounded text-xs">
-              This block is part of a recurring series.
+          {isRecurring && existingSeries && (
+            <div className="p-3 bg-blue-50 rounded text-xs space-y-2">
+              <p className="font-medium">Recurring Series</p>
+              <p className="text-gray-600">
+                {existingSeries.pattern.type === 'weekly' 
+                  ? `Every ${existingSeries.pattern.daysOfWeek[0]}`
+                  : existingSeries.pattern.daysOfWeek.map(d => d.slice(0, 3)).join(', ')
+                }
+                {' '}from Week {existingSeries.pattern.startWeek} to Week {existingSeries.pattern.endWeek}
+              </p>
+              <button
+                onClick={openRecurrenceModal}
+                className="text-blue-600 hover:underline"
+                data-testid="edit-recurrence-button"
+              >
+                Edit recurrence...
+              </button>
             </div>
           )}
 
           {!isRecurring && (
             <div>
               <button
-                onClick={() => setShowRecurrence(true)}
+                onClick={openRecurrenceModal}
                 className="text-sm text-blue-600 hover:underline"
                 data-testid="setup-recurrence-button"
               >
@@ -374,7 +414,7 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
         </div>
       </Modal>
 
-      <Modal open={showRecurrence} onClose={() => setShowRecurrence(false)} title="Set Up Recurrence">
+      <Modal open={showRecurrence} onClose={() => setShowRecurrence(false)} title={existingSeries ? "Edit Recurrence" : "Set Up Recurrence"}>
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Repeat</label>

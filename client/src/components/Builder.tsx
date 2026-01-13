@@ -283,6 +283,18 @@ export function Builder() {
     setSelectedBlockId(null);
   };
 
+  const handleUpdateRecurrence = (oldSeriesId: string, blocks: PlacedBlock[], newSeries: RecurrenceSeries) => {
+    dispatch({ type: 'DELETE_RECURRENCE_SERIES', payload: { planId: plan.id, seriesId: oldSeriesId } });
+    
+    dispatch({ type: 'ADD_RECURRENCE_SERIES', payload: { planId: plan.id, series: newSeries } });
+    
+    for (const block of blocks) {
+      dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
+    }
+    
+    setSelectedBlockId(null);
+  };
+
   const handleCopyWeek = () => {
     if (currentWeek >= settings.weeks) {
       setErrorMessage('Cannot copy to next week - already at last week.');
@@ -428,6 +440,7 @@ export function Builder() {
               onDuplicate={handleBlockDuplicate}
               onClose={() => setSelectedBlockId(null)}
               onCreateRecurrence={handleCreateRecurrence}
+              onUpdateRecurrence={handleUpdateRecurrence}
             />
           ) : (
             <div className="w-72 flex-shrink-0">
