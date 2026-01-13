@@ -141,6 +141,8 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
       notes,
       countsTowardGoldenRule,
       goldenRuleBucketId: countsTowardGoldenRule && goldenRuleBucketId ? goldenRuleBucketId : null,
+      resource: resource || undefined,
+      category: category || undefined,
     };
 
     if (existingSeries && onUpdateRecurrence) {
