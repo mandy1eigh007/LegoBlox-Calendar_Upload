@@ -348,9 +348,23 @@ export function Builder() {
   };
 
   const handlePublish = () => {
-    const publicId = plan.publicId || generatePublicId();
-    const timestamp = new Date().toISOString();
-    dispatch({ type: 'PUBLISH_PLAN', payload: { planId: plan.id, publicId, timestamp } });
+    (async () => {
+      const publicId = plan.publicId || generatePublicId();
+      const timestamp = new Date().toISOString();
+      try {
+        const res = await fetch(`/api/plans/${plan.id}/publish`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plan: { ...plan, publicId, isPublished: true, publishedAt: timestamp } }),
+        });
+        if (!res.ok) throw new Error('publish failed');
+        const json = await res.json();
+        const slug = json.slug || publicId;
+        dispatch({ type: 'PUBLISH_PLAN', payload: { planId: plan.id, publicId: slug, timestamp } });
+      } catch (e) {
+        setErrorMessage('Failed to publish plan to server.');
+      }
+    })();
   };
 
   const handleUnpublish = () => {
