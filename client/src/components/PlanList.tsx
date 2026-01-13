@@ -655,25 +655,25 @@ export function PlanList() {
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-semibold text-foreground">{plan.settings.name}</h3>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           isPredictive 
-                            ? 'bg-purple-500/20 text-purple-300' 
-                            : 'bg-blue-500/20 text-blue-300'
+                            ? 'bg-purple-100 text-purple-700 border border-purple-300' 
+                            : 'bg-blue-100 text-blue-700 border border-blue-300'
                         }`}>
                           {isPredictive ? 'Predictive' : 'Manual'}
                         </span>
                         {plan.isPublished && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-300">
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700 border border-green-300">
                             Published
                           </span>
                         )}
                         {!plan.isPublished && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-500/20 text-gray-400">
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600 border border-gray-300">
                             Draft
                           </span>
                         )}
                         {unassignedCount > 0 && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300">
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700 border border-amber-300">
                             {unassignedCount} unassigned
                           </span>
                         )}
