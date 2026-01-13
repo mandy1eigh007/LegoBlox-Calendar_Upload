@@ -27,18 +27,18 @@ export function Modal({ open, onClose, title, children }: ModalProps) {
       data-testid="modal-overlay"
     >
       <div 
-        className="absolute inset-0 bg-black/50"
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
         onClick={onClose}
       />
       <div 
-        className="relative bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-auto"
+        className="relative glass-panel rounded-xl shadow-2xl max-w-lg w-full mx-4 max-h-[90vh] overflow-auto neon-border"
         data-testid="modal-content"
       >
-        <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="text-lg font-semibold">{title}</h2>
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <h2 className="text-lg font-semibold text-foreground">{title}</h2>
           <button
             onClick={onClose}
-            className="px-3 py-1 text-sm hover:bg-gray-100 rounded"
+            className="px-3 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded transition-all"
             data-testid="modal-close"
           >
             Close
@@ -75,11 +75,11 @@ export function ConfirmModal({
 
   return (
     <Modal open={open} onClose={onClose} title={title}>
-      <p className="mb-6 text-gray-700">{message}</p>
+      <p className="mb-6 text-muted-foreground">{message}</p>
       <div className="flex justify-end gap-3">
         <button
           onClick={onClose}
-          className="px-4 py-2 text-sm border rounded hover:bg-gray-50"
+          className="px-4 py-2 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
           data-testid="confirm-modal-cancel"
         >
           {cancelText}
@@ -89,7 +89,7 @@ export function ConfirmModal({
             onConfirm();
             onClose();
           }}
-          className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+          className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 glow-primary transition-all"
           data-testid="confirm-modal-confirm"
         >
           {confirmText}

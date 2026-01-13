@@ -185,12 +185,12 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
   const isRecurring = !!block.recurrenceSeriesId;
 
   return (
-    <div className="w-80 bg-white border-l h-full flex flex-col">
-      <div className="p-4 border-b flex items-center justify-between">
-        <h3 className="font-semibold">Edit Block</h3>
+    <div className="w-80 glass-panel border-l border-border h-full flex flex-col">
+      <div className="p-4 border-b border-border flex items-center justify-between">
+        <h3 className="font-semibold text-foreground">Edit Block</h3>
         <button
           onClick={onClose}
-          className="px-2 py-1 text-sm hover:bg-gray-100 rounded"
+          className="px-2 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-lg transition-all"
           data-testid="close-edit-panel"
         >
           Close
@@ -200,29 +200,29 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
       <div className="flex-1 overflow-auto p-4 scrollbar-thin">
         <div className="space-y-4">
           <div>
-            <p className="text-sm text-gray-500">Template</p>
-            <p className="font-medium">{title}</p>
+            <p className="text-sm text-muted-foreground">Template</p>
+            <p className="font-medium text-foreground">{title}</p>
             {template && (
-              <p className="text-xs text-gray-500">{template.category}</p>
+              <p className="text-xs text-muted-foreground">{template.category}</p>
             )}
           </div>
 
           <div>
-            <p className="text-sm text-gray-500">Placement</p>
-            <p className="text-sm">Week {block.week}, {block.day}</p>
-            <p className="text-sm">
+            <p className="text-sm text-muted-foreground">Placement</p>
+            <p className="text-sm text-foreground">Week {block.week}, {block.day}</p>
+            <p className="text-sm text-foreground">
               {minutesToTimeDisplay(block.startMinutes)} - {minutesToTimeDisplay(getEndMinutes(block.startMinutes, block.durationMinutes))}
             </p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Title Override</label>
+            <label className="block text-sm font-medium text-foreground mb-1">Title Override</label>
             <input
               type="text"
               value={titleOverride}
               onChange={e => setTitleOverride(e.target.value)}
               placeholder={title}
-              className="w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 bg-input border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               data-testid="block-title-override-input"
             />
           </div>

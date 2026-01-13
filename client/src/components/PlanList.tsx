@@ -502,38 +502,38 @@ export function PlanList() {
 
   return (
     <div 
-      className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 p-8"
+      className="min-h-screen p-8"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       {isDragging && (
-        <div className="fixed inset-0 bg-blue-500/20 border-4 border-dashed border-blue-500 z-50 flex items-center justify-center pointer-events-none">
-          <div className="bg-white rounded-lg p-8 shadow-lg text-center">
-            <p className="text-lg font-medium">Drop your file here</p>
-            <p className="text-sm text-gray-500">ICS, JSON, or image files</p>
+        <div className="fixed inset-0 bg-purple-500/20 border-4 border-dashed border-purple-500 z-50 flex items-center justify-center pointer-events-none">
+          <div className="glass-card rounded-lg p-8 shadow-lg text-center">
+            <p className="text-lg font-medium text-foreground">Drop your file here</p>
+            <p className="text-sm text-muted-foreground">ICS, JSON, or image files</p>
           </div>
         </div>
       )}
       
       <div className="max-w-4xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Cohort Schedule Builder</h1>
-          <p className="text-gray-600 mt-1">Plan and manage pre-apprenticeship training schedules with Golden Rule hour tracking</p>
+          <h1 className="text-3xl font-bold gradient-text">Cohort Schedule Builder</h1>
+          <p className="text-muted-foreground mt-1">Plan and manage pre-apprenticeship training schedules with Golden Rule hour tracking</p>
         </div>
         
         <div className="mb-6">
           <button
             onClick={() => setShowCreate(true)}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-sm"
+            className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium glow-primary transition-all"
             data-testid="create-plan-button"
           >
             Create New Plan
           </button>
         </div>
         
-        <div className="bg-white rounded-xl border shadow-sm p-6 mb-6">
-          <h2 className="font-semibold text-gray-900 mb-4">Import Schedule</h2>
+        <div className="glass-card rounded-xl p-6 mb-6">
+          <h2 className="font-semibold text-foreground mb-4">Import Schedule</h2>
           <div className="flex flex-wrap gap-2 mb-4">
             <input
               ref={jsonInputRef}
@@ -574,68 +574,68 @@ export function PlanList() {
             />
             <button
               onClick={() => icsInputRef.current?.click()}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white text-sm font-medium"
+              className="px-4 py-2 border border-border rounded-lg hover:bg-secondary/50 text-foreground text-sm font-medium transition-all"
               data-testid="import-ics-button"
             >
               Import ICS
             </button>
             <button
               onClick={() => setShowPasteICS(true)}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white text-sm font-medium"
+              className="px-4 py-2 border border-border rounded-lg hover:bg-secondary/50 text-foreground text-sm font-medium transition-all"
               data-testid="paste-ics-button"
             >
               Paste ICS
             </button>
             <button
               onClick={() => ocrInputRef.current?.click()}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white text-sm font-medium"
+              className="px-4 py-2 border border-border rounded-lg hover:bg-secondary/50 text-foreground text-sm font-medium transition-all"
               data-testid="import-screenshot-button"
             >
               Screenshot (OCR)
             </button>
             <button
               onClick={() => jsonInputRef.current?.click()}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 bg-white text-sm font-medium"
+              className="px-4 py-2 border border-border rounded-lg hover:bg-secondary/50 text-foreground text-sm font-medium transition-all"
               data-testid="import-json-button"
             >
               Import Backup
             </button>
           </div>
-          <div className="p-4 border-2 border-dashed border-gray-200 rounded-lg bg-gray-50/50 text-center">
-            <p className="text-sm text-gray-600">Drag and drop files here</p>
-            <p className="text-xs text-gray-400 mt-1">Supports: .ics (calendar), .json (backup), .csv (spreadsheet), images (OCR)</p>
+          <div className="p-4 border-2 border-dashed border-purple-500/30 rounded-lg bg-purple-500/5 text-center">
+            <p className="text-sm text-muted-foreground">Drag and drop files here</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">Supports: .ics (calendar), .json (backup), .csv (spreadsheet), images (OCR)</p>
           </div>
         </div>
         
         {importError && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm" data-testid="home-import-error">
+          <div className="mb-4 p-3 bg-red-900/30 border border-red-500/50 rounded-lg text-red-300 text-sm" data-testid="home-import-error">
             {importError}
             <button onClick={() => setImportError(null)} className="ml-2 underline">Dismiss</button>
           </div>
         )}
         
         {importSuccess && (
-          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded text-green-700 text-sm" data-testid="home-import-success">
+          <div className="mb-4 p-3 bg-green-900/30 border border-green-500/50 rounded-lg text-green-300 text-sm" data-testid="home-import-success">
             {importSuccess}
             <button onClick={() => setImportSuccess(null)} className="ml-2 underline">Dismiss</button>
           </div>
         )}
 
         <div className="mb-6">
-          <h2 className="font-semibold text-gray-900 mb-4">Your Plans</h2>
+          <h2 className="font-semibold text-foreground mb-4">Your Plans</h2>
           
           {state.plans.length === 0 ? (
-            <div className="bg-white rounded-xl border shadow-sm p-8 text-center">
-              <p className="text-lg font-medium text-gray-900 mb-2">Create your first plan</p>
-              <p className="text-gray-500 mb-6 text-sm">Get started in three easy steps:</p>
+            <div className="glass-card rounded-xl p-8 text-center">
+              <p className="text-lg font-medium text-foreground mb-2">Create your first plan</p>
+              <p className="text-muted-foreground mb-6 text-sm">Get started in three easy steps:</p>
               <div className="max-w-md mx-auto text-left mb-6">
-                <p className="text-sm text-gray-600 mb-2">1. Create a new plan with your cohort name</p>
-                <p className="text-sm text-gray-600 mb-2">2. Add blocks from the template library</p>
-                <p className="text-sm text-gray-600">3. Publish the schedule for your students</p>
+                <p className="text-sm text-muted-foreground mb-2">1. Create a new plan with your cohort name</p>
+                <p className="text-sm text-muted-foreground mb-2">2. Add blocks from the template library</p>
+                <p className="text-sm text-muted-foreground">3. Publish the schedule for your students</p>
               </div>
               <button
                 onClick={() => setShowCreate(true)}
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+                className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium glow-primary transition-all"
                 data-testid="create-first-plan-button"
               >
                 Create Your First Plan
@@ -649,36 +649,36 @@ export function PlanList() {
                 return (
                   <div
                     key={plan.id}
-                    className="bg-white rounded-xl border shadow-sm p-5 flex items-center justify-between transition-all hover:shadow-md"
+                    className="glass-card rounded-xl p-5 flex items-center justify-between transition-all hover:glow-primary"
                     data-testid={`plan-card-${plan.id}`}
                   >
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-semibold text-gray-900">{plan.settings.name}</h3>
+                        <h3 className="font-semibold text-foreground">{plan.settings.name}</h3>
                         <span className={`text-xs px-2 py-0.5 rounded-full ${
                           isPredictive 
-                            ? 'bg-purple-100 text-purple-700' 
-                            : 'bg-blue-100 text-blue-700'
+                            ? 'bg-purple-500/20 text-purple-300' 
+                            : 'bg-blue-500/20 text-blue-300'
                         }`}>
                           {isPredictive ? 'Predictive' : 'Manual'}
                         </span>
                         {plan.isPublished && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-300">
                             Published
                           </span>
                         )}
                         {!plan.isPublished && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-500/20 text-gray-400">
                             Draft
                           </span>
                         )}
                         {unassignedCount > 0 && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300">
                             {unassignedCount} unassigned
                           </span>
                         )}
                       </div>
-                      <p className="text-sm text-gray-500 mt-1">
+                      <p className="text-sm text-muted-foreground mt-1">
                         {plan.settings.weeks} weeks | {plan.blocks.length} blocks
                         {plan.updatedAt && ` | Updated ${new Date(plan.updatedAt).toLocaleDateString()}`}
                       </p>
@@ -686,14 +686,14 @@ export function PlanList() {
                     <div className="flex gap-2">
                       <button
                         onClick={() => navigate(`/plan/${plan.id}`)}
-                        className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+                        className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 font-medium glow-primary transition-all"
                         data-testid={`open-plan-${plan.id}`}
                       >
                         Open
                       </button>
                       <button
                         onClick={() => setDeleteId(plan.id)}
-                        className="px-3 py-2 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50"
+                        className="px-3 py-2 text-sm border border-red-500/30 text-red-400 rounded-lg hover:bg-red-500/10 transition-all"
                         data-testid={`delete-plan-${plan.id}`}
                       >
                         Delete
@@ -710,58 +710,58 @@ export function PlanList() {
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create New Plan">
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Plan Name *</label>
+            <label className="block text-sm font-medium text-foreground mb-1">Plan Name *</label>
             <input
               type="text"
               value={formData.name}
               onChange={e => setFormData({ ...formData, name: e.target.value })}
-              className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 bg-input border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               placeholder="e.g. Cohort Spring 2025"
               data-testid="plan-name-input"
             />
           </div>
           
           <div>
-            <label className="block text-sm font-medium mb-1">Number of Weeks</label>
+            <label className="block text-sm font-medium text-foreground mb-1">Number of Weeks</label>
             <input
               type="number"
               min={1}
               max={52}
               value={formData.weeks}
               onChange={e => setFormData({ ...formData, weeks: parseInt(e.target.value) || 1 })}
-              className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               data-testid="plan-weeks-input"
             />
           </div>
           
           <div>
-            <label className="block text-sm font-medium mb-1">Scheduler Mode</label>
+            <label className="block text-sm font-medium text-foreground mb-1">Scheduler Mode</label>
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => setFormData({ ...formData, schedulerMode: 'manual' })}
-                className={`p-3 border-2 rounded-lg text-left transition-colors ${
+                className={`p-3 border-2 rounded-lg text-left transition-all ${
                   formData.schedulerMode === 'manual' 
-                    ? 'border-blue-500 bg-blue-50' 
-                    : 'border-gray-200 hover:border-gray-300'
+                    ? 'border-primary bg-primary/10 glow-primary' 
+                    : 'border-border hover:border-primary/50'
                 }`}
                 data-testid="mode-manual-button"
               >
-                <div className="font-medium text-sm">Manual Builder</div>
-                <div className="text-xs text-gray-500 mt-1">Drag-and-drop schedule creation</div>
+                <div className="font-medium text-sm text-foreground">Manual Builder</div>
+                <div className="text-xs text-muted-foreground mt-1">Drag-and-drop schedule creation</div>
               </button>
               <button
                 type="button"
                 onClick={() => setFormData({ ...formData, schedulerMode: 'predictive' })}
-                className={`p-3 border-2 rounded-lg text-left transition-colors ${
+                className={`p-3 border-2 rounded-lg text-left transition-all ${
                   formData.schedulerMode === 'predictive' 
-                    ? 'border-purple-500 bg-purple-50' 
-                    : 'border-gray-200 hover:border-gray-300'
+                    ? 'border-accent bg-accent/10 glow-accent' 
+                    : 'border-border hover:border-accent/50'
                 }`}
                 data-testid="mode-predictive-button"
               >
-                <div className="font-medium text-sm">Predictive Builder</div>
-                <div className="text-xs text-gray-500 mt-1">AI-powered schedule suggestions</div>
+                <div className="font-medium text-sm text-foreground">Predictive Builder</div>
+                <div className="text-xs text-muted-foreground mt-1">AI-powered schedule suggestions</div>
               </button>
             </div>
           </div>
@@ -769,7 +769,7 @@ export function PlanList() {
           <div className="flex justify-end gap-3 pt-4">
             <button
               onClick={() => setShowCreate(false)}
-              className="px-4 py-2 text-sm border rounded hover:bg-gray-50"
+              className="px-4 py-2 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
               data-testid="cancel-create-plan"
             >
               Cancel
@@ -777,7 +777,7 @@ export function PlanList() {
             <button
               onClick={handleCreate}
               disabled={!formData.name.trim()}
-              className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 glow-primary disabled:opacity-50 transition-all"
               data-testid="submit-create-plan"
             >
               Create Plan
@@ -798,13 +798,13 @@ export function PlanList() {
       {ocrProcessing && (
         <Modal open={true} onClose={() => {}} title="Processing Screenshot...">
           <div className="py-8 text-center space-y-4">
-            <Loader2 className="w-8 h-8 animate-spin mx-auto text-blue-600" />
-            <p className="text-sm text-gray-600">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
+            <p className="text-sm text-muted-foreground">
               Analyzing image with OCR... {ocrProgress}%
             </p>
-            <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="w-full bg-secondary rounded-full h-2">
               <div 
-                className="bg-blue-600 h-2 rounded-full transition-all"
+                className="bg-primary h-2 rounded-full transition-all"
                 style={{ width: `${ocrProgress}%` }}
               />
             </div>

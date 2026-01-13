@@ -368,14 +368,14 @@ export function BlockLibrary() {
           <div className="flex gap-2">
             <button
               onClick={() => setDeleteId(editingId)}
-              className="px-4 py-2 text-sm border border-red-300 text-red-600 rounded hover:bg-red-50"
+              className="px-4 py-2 text-sm border border-red-500/30 text-red-400 rounded-lg hover:bg-red-500/10 transition-all"
               data-testid="delete-template-button"
             >
               Delete
             </button>
             <button
               onClick={handleDuplicate}
-              className="px-4 py-2 text-sm border rounded hover:bg-gray-50"
+              className="px-4 py-2 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
               data-testid="duplicate-template-button"
             >
               Duplicate
@@ -389,7 +389,7 @@ export function BlockLibrary() {
               setEditingId(null);
               setFormData(DEFAULT_FORM);
             }}
-            className="px-4 py-2 text-sm border rounded hover:bg-gray-50"
+            className="px-4 py-2 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
             data-testid="cancel-template-button"
           >
             Cancel
@@ -397,7 +397,7 @@ export function BlockLibrary() {
           <button
             onClick={isEdit ? handleEdit : handleCreate}
             disabled={!formData.title.trim() || (formData.countsTowardGoldenRule && !formData.goldenRuleBucketId)}
-            className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+            className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 glow-primary disabled:opacity-50 transition-all"
             data-testid="save-template-button"
           >
             {isEdit ? 'Save Changes' : 'Create Template'}
@@ -408,21 +408,21 @@ export function BlockLibrary() {
   );
 
   return (
-    <div className="h-full flex flex-col bg-white border-r">
-      <div className="p-4 border-b">
+    <div className="h-full flex flex-col glass-panel border-r border-border">
+      <div className="p-4 border-b border-border">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold">Block Library</h2>
+          <h2 className="font-semibold text-foreground">Block Library</h2>
           <div className="flex gap-2">
             <button
               onClick={() => setShowResetConfirm(true)}
-              className="px-2 py-1 text-xs border rounded hover:bg-gray-50"
+              className="px-2 py-1 text-xs border border-border rounded-lg text-muted-foreground hover:bg-secondary/50 transition-all"
               data-testid="reset-templates-button"
             >
               Reset
             </button>
             <button
               onClick={() => setShowCreate(true)}
-              className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+              className="px-3 py-1 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 glow-primary transition-all"
               data-testid="create-template-button"
             >
               New
@@ -435,14 +435,14 @@ export function BlockLibrary() {
           placeholder="Search templates..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full px-3 py-2 border rounded text-sm mb-2"
+          className="w-full px-3 py-2 bg-input border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground mb-2"
           data-testid="template-search-input"
         />
         
         <select
           value={categoryFilter}
           onChange={e => setCategoryFilter(e.target.value as Category | 'all')}
-          className="w-full px-3 py-2 border rounded text-sm"
+          className="w-full px-3 py-2 bg-input border border-border rounded-lg text-sm text-foreground"
           data-testid="template-category-filter"
         >
           <option value="all">All Categories</option>
@@ -454,7 +454,7 @@ export function BlockLibrary() {
 
       <div className="flex-1 overflow-auto p-4 scrollbar-thin">
         {filteredTemplates.length === 0 ? (
-          <p className="text-sm text-gray-500 text-center py-8">No templates found</p>
+          <p className="text-sm text-muted-foreground text-center py-8">No templates found</p>
         ) : (
           <div className="space-y-2">
             {filteredTemplates.map(template => (

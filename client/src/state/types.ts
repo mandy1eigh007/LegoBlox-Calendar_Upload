@@ -164,6 +164,13 @@ export interface RecurrenceSeries {
 
 export type SchedulerMode = 'manual' | 'predictive';
 
+export interface HardDate {
+  id: string;
+  week: number;
+  day: Day;
+  description: string;
+}
+
 export interface PlanSettings {
   name: string;
   weeks: number;
@@ -174,6 +181,7 @@ export interface PlanSettings {
   allowOverlaps: boolean;
   showNotesOnPrint: boolean;
   schedulerMode: SchedulerMode;
+  hardDates?: HardDate[];
 }
 
 export interface Plan {

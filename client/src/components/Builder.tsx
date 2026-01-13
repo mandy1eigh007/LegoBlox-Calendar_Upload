@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useLocation, useParams } from 'wouter';
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import { useStore } from '@/state/store';
-import { BlockTemplate, PlacedBlock, Day, DAYS, ApplyScope, RecurrenceSeries } from '@/state/types';
+import { BlockTemplate, PlacedBlock, Day, DAYS, ApplyScope, RecurrenceSeries, HardDate } from '@/state/types';
 import { BlockLibrary } from './BlockLibrary';
 import { WeekGrid } from './WeekGrid';
 import { BlockEditPanel } from './BlockEditPanel';
@@ -19,6 +19,7 @@ import { UnassignedReviewPanel } from './UnassignedReviewPanel';
 import { TemplateReassignDialog } from './TemplateReassignDialog';
 import { generatePublicId, getStudentUrl } from '@/lib/publish';
 import { findTimeConflicts, wouldFitInDay } from '@/lib/collision';
+import { findAlternativeResource } from '@/lib/calendarCompare';
 import { 
   SLOT_HEIGHT_PX, 
   SLOT_MINUTES,
@@ -46,6 +47,7 @@ export function Builder() {
   const [showPartners, setShowPartners] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [conflictSuggestion, setConflictSuggestion] = useState<{ blockId: string; alternateResource: string } | null>(null);
   const [draggedItem, setDraggedItem] = useState<{ type: 'template' | 'placed-block'; data: BlockTemplate | PlacedBlock } | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [hoverMinutes, setHoverMinutes] = useState<number | null>(null);
@@ -65,7 +67,10 @@ export function Builder() {
 
   useEffect(() => {
     if (errorMessage) {
-      const timer = setTimeout(() => setErrorMessage(null), 5000);
+      const timer = setTimeout(() => {
+        setErrorMessage(null);
+        setConflictSuggestion(null);
+      }, 8000);
       return () => clearTimeout(timer);
     }
   }, [errorMessage]);
@@ -196,6 +201,18 @@ export function Builder() {
     if (conflicts.length > 0 && !settings.allowOverlaps) {
       const conflictTitle = state.templates.find(t => t.id === conflicts[0].templateId)?.title || 'Unknown';
       setErrorMessage(`Cannot move. Conflicts with: ${conflictTitle}`);
+      
+      // Check for alternate resource suggestion
+      const tempBlock: PlacedBlock = { ...block, week: currentWeek, day: newDay, startMinutes: newStartMinutes };
+      const availableResources = plan.settings.resources && plan.settings.resources.length > 0 
+        ? plan.settings.resources 
+        : ['Room A', 'Room B', 'Room C', 'Lab 1', 'Lab 2'];
+      const alternate = findAlternativeResource(tempBlock, plan, availableResources);
+      if (alternate) {
+        setConflictSuggestion({ blockId: block.id, alternateResource: alternate });
+      } else {
+        setConflictSuggestion(null);
+      }
       return;
     }
     
@@ -390,26 +407,26 @@ export function Builder() {
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div className="h-screen flex flex-col bg-gray-50">
-        <header className="bg-white border-b px-4 py-3 flex items-center justify-between flex-wrap gap-2">
+      <div className="h-screen flex flex-col">
+        <header className="glass-panel border-b border-border px-4 py-3 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-4">
             <button
               onClick={() => navigate('/')}
-              className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+              className="px-3 py-1 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
               data-testid="back-to-plans"
             >
               Back
             </button>
-            <h1 className="font-semibold text-lg">{plan.settings.name}</h1>
+            <h1 className="font-semibold text-lg gradient-text">{plan.settings.name}</h1>
           </div>
           
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center gap-2">
-              <span className="text-sm">Week:</span>
+              <span className="text-sm text-muted-foreground">Week:</span>
               <select
                 value={currentWeek}
                 onChange={e => setCurrentWeek(parseInt(e.target.value))}
-                className="px-3 py-1 border rounded text-sm"
+                className="px-3 py-1 bg-input border border-border rounded-lg text-sm text-foreground"
                 data-testid="week-selector"
               >
                 {Array.from({ length: settings.weeks }, (_, i) => i + 1).map(week => (
@@ -418,11 +435,12 @@ export function Builder() {
               </select>
             </div>
             
-            <label className="flex items-center gap-1 text-sm">
+            <label className="flex items-center gap-1 text-sm text-foreground">
               <input
                 type="checkbox"
                 checked={autoPlace}
                 onChange={e => setAutoPlace(e.target.checked)}
+                className="accent-primary"
                 data-testid="auto-place-toggle"
               />
               Auto-place
@@ -430,49 +448,49 @@ export function Builder() {
             
             <button
               onClick={handleCopyWeek}
-              className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+              className="px-3 py-1 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
               data-testid="copy-week-button"
             >
               Copy to Next Week
             </button>
             <button
               onClick={() => setShowResetConfirm(true)}
-              className="px-3 py-1 text-sm border border-red-300 text-red-600 rounded hover:bg-red-50"
+              className="px-3 py-1 text-sm border border-red-500/30 text-red-400 rounded-lg hover:bg-red-500/10 transition-all"
               data-testid="reset-week-button"
             >
               Reset Week
             </button>
             <button
               onClick={() => setShowExport(true)}
-              className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+              className="px-3 py-1 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
               data-testid="export-button"
             >
               Export / Import
             </button>
             <button
               onClick={() => setShowPrint(true)}
-              className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+              className="px-3 py-1 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
               data-testid="print-view-button"
             >
               Print View
             </button>
             <button
               onClick={() => setShowCompare(true)}
-              className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+              className="px-3 py-1 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
               data-testid="compare-calendars-button"
             >
               Compare
             </button>
             <button
               onClick={() => setShowPartners(true)}
-              className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+              className="px-3 py-1 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
               data-testid="partners-button"
             >
               Partners
             </button>
             <button
               onClick={() => setShowSettings(true)}
-              className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+              className="px-3 py-1 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
               data-testid="edit-settings-button"
             >
               Edit Settings
@@ -480,7 +498,7 @@ export function Builder() {
             {plan.settings.schedulerMode === 'predictive' && (
               <button
                 onClick={() => setShowSuggestions(true)}
-                className="px-3 py-1 text-sm bg-purple-600 text-white rounded hover:bg-purple-700"
+                className="px-3 py-1 text-sm bg-accent text-accent-foreground rounded-lg hover:opacity-90 glow-accent transition-all"
                 data-testid="suggest-schedule-button"
               >
                 Suggest Schedule
@@ -490,7 +508,7 @@ export function Builder() {
             {plan.isPublished ? (
               <button
                 onClick={handleUnpublish}
-                className="px-3 py-1 text-sm bg-amber-100 text-amber-800 border border-amber-300 rounded hover:bg-amber-200"
+                className="px-3 py-1 text-sm bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg hover:bg-amber-500/30 transition-all"
                 data-testid="unpublish-button"
               >
                 Unpublish
@@ -498,7 +516,7 @@ export function Builder() {
             ) : (
               <button
                 onClick={handlePublish}
-                className="px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
+                className="px-3 py-1 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all"
                 data-testid="publish-button"
               >
                 Publish for Students
@@ -508,34 +526,56 @@ export function Builder() {
         </header>
         
         {plan.isPublished && plan.publicId && (
-          <div className="bg-green-50 border-b border-green-200 px-4 py-2 text-sm" data-testid="published-banner">
+          <div className="bg-green-900/30 border-b border-green-500/30 px-4 py-2 text-sm" data-testid="published-banner">
             <div className="flex items-center gap-3">
-              <span className="text-green-700 font-medium">Published</span>
-              <span className="text-green-600 text-xs truncate flex-1">{getStudentUrl(plan.publicId)}</span>
+              <span className="text-green-300 font-medium">Published</span>
+              <span className="text-green-400 text-xs truncate flex-1">{getStudentUrl(plan.publicId)}</span>
               <button
                 onClick={handleCopyLink}
-                className="px-2 py-1 text-xs border border-green-300 rounded hover:bg-green-100"
+                className="px-2 py-1 text-xs border border-green-500/30 rounded-lg text-green-300 hover:bg-green-500/10 transition-all"
                 data-testid="copy-link-button"
               >
                 {linkCopied ? 'Copied!' : 'Copy Link'}
               </button>
             </div>
-            <p className="text-xs text-green-600 mt-1">
+            <p className="text-xs text-green-400 mt-1">
               Link works on this device. For other devices, export a JSON backup from Export/Import panel.
             </p>
           </div>
         )}
         
         {plan.settings.schedulerMode === 'predictive' && (
-          <div className="bg-purple-50 border-b border-purple-200 px-4 py-2 text-sm text-purple-700 flex items-center gap-2" data-testid="predictive-mode-banner">
+          <div className="bg-accent/10 border-b border-accent/30 px-4 py-2 text-sm text-accent flex items-center gap-2" data-testid="predictive-mode-banner">
             <span className="font-medium">Predictive Mode:</span>
             <span>Click "Suggest Schedule" to auto-generate blocks based on Golden Rule budgets.</span>
           </div>
         )}
 
         {errorMessage && (
-          <div className="bg-red-50 border-b border-red-200 px-4 py-2 text-sm text-red-700" data-testid="error-message">
-            {errorMessage}
+          <div className="bg-red-900/30 border-b border-red-500/30 px-4 py-2 text-sm text-red-300 flex items-center justify-between gap-2" data-testid="error-message">
+            <span>{errorMessage}</span>
+            {conflictSuggestion && (
+              <button
+                onClick={() => {
+                  const block = plan.blocks.find(b => b.id === conflictSuggestion.blockId);
+                  if (block) {
+                    dispatch({
+                      type: 'UPDATE_BLOCK',
+                      payload: {
+                        planId: plan.id,
+                        block: { ...block, resource: conflictSuggestion.alternateResource }
+                      }
+                    });
+                    setErrorMessage(null);
+                    setConflictSuggestion(null);
+                  }
+                }}
+                className="px-3 py-1 text-xs bg-accent text-accent-foreground rounded-lg hover:opacity-90 whitespace-nowrap transition-all"
+                data-testid="apply-resource-suggestion"
+              >
+                Use {conflictSuggestion.alternateResource}
+              </button>
+            )}
           </div>
         )}
 
@@ -635,6 +675,15 @@ export function Builder() {
           open={showSuggestions}
           onClose={() => setShowSuggestions(false)}
           onAccept={handleAcceptSuggestions}
+          onUpdateHardDates={(hardDates: HardDate[]) => {
+            dispatch({
+              type: 'UPDATE_PLAN_SETTINGS',
+              payload: {
+                planId: plan.id,
+                settings: { ...plan.settings, hardDates }
+              }
+            });
+          }}
         />
       )}
       
