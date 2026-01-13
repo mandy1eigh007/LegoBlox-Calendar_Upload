@@ -482,6 +482,18 @@ function reducer(state: AppState, action: Action): AppState {
         }),
       };
     }
+
+    case 'UPDATE_PLAN_SETTINGS': {
+      const { planId, settings } = action.payload;
+      return {
+        ...state,
+        plans: state.plans.map(p =>
+          p.id === planId
+            ? { ...p, settings: { ...p.settings, ...settings } }
+            : p
+        ),
+      };
+    }
       
     default:
       return state;

@@ -17,16 +17,21 @@ import { ScheduleSuggestionPanel } from './ScheduleSuggestionPanel';
 import { SuggestedBlock } from '@/lib/predictiveScheduler';
 import { UnassignedReviewPanel } from './UnassignedReviewPanel';
 import { TemplateReassignDialog } from './TemplateReassignDialog';
-import { generatePublicId, getStudentUrl } from '@/lib/publish';
+import { CustomEventBuilder, CustomEventData } from './CustomEventBuilder';
+import { generatePublicId, getStudentUrl, getPublishedUrl, publishPlanToServer, unpublishPlanFromServer } from '@/lib/publish';
 import { findTimeConflicts, wouldFitInDay } from '@/lib/collision';
 import { findAlternativeResource } from '@/lib/calendarCompare';
 import { 
   SLOT_HEIGHT_PX, 
   SLOT_MINUTES,
+  DAY_START_MIN,
+  DAY_END_MIN,
   minutesToTimeDisplay,
   getEndMinutes,
   snapToSlot,
-  clampMinutes
+  clampMinutes,
+  clampToDay,
+  pxToMinutes
 } from '@/lib/time';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -55,6 +60,7 @@ export function Builder() {
   const [showUnassigned, setShowUnassigned] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [reassignBlock, setReassignBlock] = useState<PlacedBlock | null>(null);
+  const [showCustomEvent, setShowCustomEvent] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(
@@ -96,14 +102,9 @@ export function Builder() {
 
   const calculateDropMinutes = (clientY: number, gridElement: Element): number => {
     const rect = gridElement.getBoundingClientRect();
-    const headerHeight = 41;
     const scrollTop = gridElement.scrollTop;
-    const yWithinGrid = (clientY - rect.top - headerHeight) + scrollTop;
-    const slotIndex = Math.round(yWithinGrid / SLOT_HEIGHT_PX);
-    const minutesFromStart = slotIndex * SLOT_MINUTES;
-    const rawMinutes = settings.dayStartMinutes + minutesFromStart;
-    const snappedMinutes = snapToSlot(rawMinutes, SLOT_MINUTES);
-    return clampMinutes(snappedMinutes, settings.dayStartMinutes, settings.dayEndMinutes - 15);
+    const minutes = pxToMinutes(clientY, rect, scrollTop, settings.dayStartMinutes);
+    return clampToDay(minutes, settings.dayStartMinutes, settings.dayEndMinutes - 15);
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -348,25 +349,38 @@ export function Builder() {
     }
   };
 
-  const handlePublish = () => {
-    const publicId = plan.publicId || generatePublicId();
+  const handlePublish = async () => {
+    const slug = plan.publicId || generatePublicId();
     const timestamp = new Date().toISOString();
-    dispatch({ type: 'PUBLISH_PLAN', payload: { planId: plan.id, publicId, timestamp } });
+    
+    // Publish to server
+    const result = await publishPlanToServer(plan.id, plan, slug);
+    
+    if (result.success) {
+      dispatch({ type: 'PUBLISH_PLAN', payload: { planId: plan.id, publicId: slug, timestamp } });
+    } else {
+      setErrorMessage(result.error || 'Failed to publish plan');
+    }
   };
 
-  const handleUnpublish = () => {
+  const handleUnpublish = async () => {
     const timestamp = new Date().toISOString();
+    
+    if (plan.publicId) {
+      await unpublishPlanFromServer(plan.publicId);
+    }
+    
     dispatch({ type: 'UNPUBLISH_PLAN', payload: { planId: plan.id, timestamp } });
   };
 
   const handleCopyLink = async () => {
     if (plan.publicId) {
       try {
-        await navigator.clipboard.writeText(getStudentUrl(plan.publicId));
+        await navigator.clipboard.writeText(getPublishedUrl(plan.publicId));
         setLinkCopied(true);
         setTimeout(() => setLinkCopied(false), 2000);
       } catch {
-        alert(`Copy this link: ${getStudentUrl(plan.publicId)}`);
+        alert(`Copy this link: ${getPublishedUrl(plan.publicId)}`);
       }
     }
   };
@@ -379,6 +393,32 @@ export function Builder() {
   const handleAssignMultiple = (blockIds: string[], templateId: string) => {
     const timestamp = new Date().toISOString();
     dispatch({ type: 'ASSIGN_MULTIPLE_BLOCKS_TEMPLATE', payload: { planId: plan.id, blockIds, templateId, timestamp } });
+  };
+
+  const handleCreateCustomEvent = (eventData: CustomEventData) => {
+    const block: PlacedBlock = {
+      id: uuidv4(),
+      templateId: null,
+      week: eventData.week,
+      day: eventData.day,
+      startMinutes: eventData.startMinutes,
+      durationMinutes: eventData.durationMinutes,
+      titleOverride: eventData.title,
+      location: eventData.address,
+      notes: `${eventData.eventType.replace('_', ' ').toUpperCase()}\n\nOrganization: ${eventData.organization}\nContact: ${eventData.contactName}\nEmail: ${eventData.contactEmail}\nPhone: ${eventData.contactPhone}\n\n${eventData.notes}`,
+      countsTowardGoldenRule: eventData.countsTowardGoldenRule,
+      goldenRuleBucketId: eventData.goldenRuleBucketId,
+      recurrenceSeriesId: null,
+      isRecurrenceException: false,
+      resource: eventData.resource === 'other' ? eventData.resourceOther : eventData.resource,
+      partnerOrg: eventData.organization,
+      partnerContact: eventData.contactName,
+      partnerEmail: eventData.contactEmail,
+      partnerPhone: eventData.contactPhone,
+      partnerAddress: eventData.address,
+    };
+
+    dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
   };
 
   const selectedBlock = selectedBlockId ? plan.blocks.find(b => b.id === selectedBlockId) : null;
@@ -468,6 +508,13 @@ export function Builder() {
               Export / Import
             </button>
             <button
+              onClick={() => setShowCustomEvent(true)}
+              className="px-3 py-1 text-sm border border-green-500/30 text-green-400 rounded-lg hover:bg-green-500/10 transition-all"
+              data-testid="create-event-button"
+            >
+              Create Event
+            </button>
+            <button
               onClick={() => setShowPrint(true)}
               className="px-3 py-1 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
               data-testid="print-view-button"
@@ -529,7 +576,7 @@ export function Builder() {
           <div className="bg-green-900/30 border-b border-green-500/30 px-4 py-2 text-sm" data-testid="published-banner">
             <div className="flex items-center gap-3">
               <span className="text-green-300 font-medium">Published</span>
-              <span className="text-green-400 text-xs truncate flex-1">{getStudentUrl(plan.publicId)}</span>
+              <span className="text-green-400 text-xs truncate flex-1">{getPublishedUrl(plan.publicId)}</span>
               <button
                 onClick={handleCopyLink}
                 className="px-2 py-1 text-xs border border-green-500/30 rounded-lg text-green-300 hover:bg-green-500/10 transition-all"
@@ -539,7 +586,7 @@ export function Builder() {
               </button>
             </div>
             <p className="text-xs text-green-400 mt-1">
-              Link works on this device. For other devices, export a JSON backup from Export/Import panel.
+              Published plans are accessible from any device using this link.
             </p>
           </div>
         )}
@@ -707,6 +754,15 @@ export function Builder() {
           onAssignMultiple={handleAssignMultiple}
         />
       )}
+      
+      <CustomEventBuilder
+        open={showCustomEvent}
+        onClose={() => setShowCustomEvent(false)}
+        onCreate={handleCreateCustomEvent}
+        maxWeeks={settings.weeks}
+        dayStartMinutes={settings.dayStartMinutes}
+        dayEndMinutes={settings.dayEndMinutes}
+      />
       
       <ConfirmModal
         open={showResetConfirm}

@@ -61,6 +61,15 @@ export type GoldenRuleBucketId = typeof GOLDEN_RULE_BUCKETS[number]['id'];
 
 export const DEFAULT_RESOURCES = ['Classroom 1', 'Classroom 2', 'Shop', 'Offsite', 'Administration'] as const;
 
+export type ResourceType = 'classroom_1' | 'classroom_2' | 'shop' | 'other';
+
+export const RESOURCE_TYPES: { value: ResourceType; label: string }[] = [
+  { value: 'classroom_1', label: 'Classroom 1' },
+  { value: 'classroom_2', label: 'Classroom 2' },
+  { value: 'shop', label: 'Shop' },
+  { value: 'other', label: 'Other' },
+];
+
 export type RecurrenceType = 'none' | 'weekly' | 'custom';
 
 export interface RecurrencePattern {
@@ -242,7 +251,8 @@ export type Action =
   | { type: 'UNPUBLISH_PLAN'; payload: { planId: string; timestamp: string } }
   | { type: 'REGENERATE_PUBLIC_ID'; payload: { planId: string; newPublicId: string; timestamp: string } }
   | { type: 'ASSIGN_BLOCK_TEMPLATE'; payload: { planId: string; blockId: string; templateId: string; timestamp: string } }
-  | { type: 'ASSIGN_MULTIPLE_BLOCKS_TEMPLATE'; payload: { planId: string; blockIds: string[]; templateId: string; timestamp: string } };
+  | { type: 'ASSIGN_MULTIPLE_BLOCKS_TEMPLATE'; payload: { planId: string; blockIds: string[]; templateId: string; timestamp: string } }
+  | { type: 'UPDATE_PLAN_SETTINGS'; payload: { planId: string; settings: Partial<PlanSettings> } };
 
 export function minutesToTimeString(minutes: number): string {
   const hours = Math.floor(minutes / 60);
