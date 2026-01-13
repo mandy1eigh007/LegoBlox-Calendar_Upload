@@ -1,0 +1,258 @@
+STOP. READ THIS TWICE BEFORE YOU TOUCH CODE.
+
+This is a DO-OR-DIE build. If any item below is missing, partially implemented, “not in scope,” or replaced with a shortcut, the feature is NOT DONE. Do NOT claim completion unless every checkbox passes with real files and real interactions.
+
+You are NOT allowed to:
+- invent requirements I didn’t ask for
+- remove or downgrade any requirement “to simplify”
+- silently default/guess/match data without showing me what you did
+- ship “good enough” OCR or “best effort” imports without clear warnings + confirmation steps
+- mark tasks as done without proof (screenshots + test steps + a small recorded demo if possible)
+
+GOAL (NON-NEGOTIABLE)
+Build a cohort schedule builder that is easier than using Google/Outlook calendars.
+It must support two workflows:
+1) Human build-out: drag/drop 15-minute blocks and edit quickly
+2) Predictive build-out: the app suggests the rest of the schedule using probabilities from uploaded historical calendars AND the Golden Rule hour budgets
+Both workflows must stay within Golden Rule budgets and must handle real-world constraints (rooms/resources, guest speakers, tours, certifications).
+
+PRIMARY CONSTRAINTS (HARD RULES)
+1) The schedule grid must be 15-minute increments. Everywhere. No exceptions.
+2) Schedule time window must be 6:30 AM to 3:30 PM (configurable per plan).
+3) Golden Rule budgets are the source of truth. Minutes only (no float hours). Totals must be exact.
+4) Imported events must NEVER default to the first template. EVER.
+   - If unmatched: mark UNASSIGNED + not counting toward Golden Rule until assigned.
+5) “Unsure? Ask.” If confidence is low, the app must ask me before committing.
+
+CURRENT STATE (DO NOT BREAK)
+We already have:
+- Home page with Import ICS, Paste ICS, Screenshot OCR, Backup, Create New Plan
+- Drag/drop import area (ICS/JSON/CSV/images)
+- In-plan calendar grid + Block Library + right-side Edit panel
+You must improve/extend this WITHOUT breaking existing imports/exports/backups.
+
+DELIVERABLES (REQUIRED)
+- Working code (not pseudo-code) fully integrated into the current app
+- All new UI must be functional (not placeholders)
+- No “TODO” or “later” items shipped
+- Acceptance tests executed with my uploaded files:
+  - multiple .ics calendars
+  - csv/xlsx-derived csv
+  - screenshot images
+- A “How to test” section with exact steps + expected results
+
+------------------------------------------------------------
+MUST-HAVE FEATURES CHECKLIST (PASS/FAIL)
+------------------------------------------------------------
+
+A) GRID + DRAGGING + RESIZING (15-MINUTE ENGINE)
+A1. Day start = 6:30 AM. Day end = 3:30 PM. Configurable per plan.
+A2. Every placement snaps to 15 minutes.
+A3. Every resize snaps to 15 minutes.
+A4. Edit duration dropdown is 15-minute increments only.
+A5. Dragging does NOT jump when scrolling (fix scrollTop/offset math).
+A6. Events clamp to schedule window (cannot fall outside).
+A7. Collision behavior is defined and consistent (either prevent overlaps in same lane OR allow overlaps but visually stack—choose one and implement fully).
+
+B) BLOCK LIBRARY (TEMPLATES) + CUSTOM BLOCK CREATION
+B1. Templates store:
+- title
+- category (PD/Shop/Math/Admin/Other/etc.)
+- default duration (minutes)
+- countsTowardGoldenRule (boolean)
+- goldenRuleKey (string; maps to budgets)
+- default location (optional)
+- notes (optional)
+- tags/keywords for matching (required)
+B2. Create Block tool exists (template creation) from the left library.
+B3. Edit Block updates template without corrupting existing scheduled events.
+   - Existing events must either:
+     option 1) snapshot values at time of placement
+     option 2) “sync to template” toggle (explicit)
+No silent retroactive changes.
+
+C) RIGHT-SIDE EDIT PANEL (MUST BE POWERFUL)
+C1. Edit panel can modify:
+- Title override
+- Template assignment (including UNASSIGNED)
+- Duration (15-minute increments)
+- Location (classroom/shop/offsite + specific room)
+- Notes
+- Partner info for tours/speakers:
+  - organization
+  - contact name
+  - email
+  - phone
+  - address / site location
+  - logistics notes (PPE, check-in, parking)
+C2. Buttons:
+- Save
+- Duplicate
+- Delete
+- Apply to multiple weeks/days (see section E)
+C3. Double-click an event opens “Quick Assign Template” modal.
+C4. Quick Assign shows top suggestions + search + UNASSIGNED.
+C5. Every assignment instantly updates Golden Rule totals.
+
+D) IMPORTS (ICS/CSV/JSON/SCREENSHOT OCR) — MUST BE TRUSTWORTHY
+D1. ICS import reads exact title text from VEVENT SUMMARY. No garbage mapping.
+D2. If imported title doesn’t match:
+- event becomes UNASSIGNED
+- countsTowardGoldenRule = false
+- clearly labeled “Needs assignment”
+D3. Import flow includes date-range picker BEFORE plan creation (start/end).
+D4. Import preview screen shows:
+- total events detected
+- unmatched events count
+- conflicts count (if any)
+- sample mapping results
+D5. CSV import requires column mapping UI. No guessing silently.
+D6. Screenshot OCR:
+- must show raw OCR text output
+- must create DRAFT events only
+- must warn clearly: “calendar screenshots are unreliable”
+- user must confirm time + title before scheduling
+D7. Drag-and-drop import must work on BOTH home screen and in-plan screen.
+D8. Import must not mutate existing plans unless user explicitly chooses “merge.”
+
+E) MULTI-WEEK / RECURRING EVENTS + COPY TO NEXT WEEK
+E1. From Edit panel, I can apply an event to:
+- multiple weeks (checkbox list)
+- multiple days (checkbox list)
+- recurrence patterns:
+  - weekly
+  - selected weekdays
+  - every N weeks
+E2. Copy to Next Week:
+- preserves time, duration, template assignment, location, notes, partner fields
+E3. Reset Week resets only that week. Not entire plan.
+
+F) GOLDEN RULE TOTALS (BUDGET ENFORCEMENT)
+F1. Budgets stored in minutes. Display can show hours, but math is minutes.
+F2. Totals panel shows Scheduled / Budget per goldenRuleKey:
+- scheduled minutes
+- budget minutes
+- delta minutes (over/under)
+F3. UNASSIGNED and countsTowardGoldenRule=false events do NOT count.
+F4. Over/under status thresholds:
+- On target: within +/- 15 min
+- Over: exceeds by > 15 min
+- Under: below by > 15 min
+F5. If user drags/resizes, totals update immediately without refresh.
+
+G) SMART MATCHING (NO MORE “EVERYTHING BECOMES INTRO TO PRE-APP”)
+G1. Implement keyword scoring matcher for templates.
+G2. Each imported event gets:
+- top 3 template suggestions
+- confidence score
+- “reason” (matched keywords)
+G3. If confidence below threshold:
+- do NOT auto-assign
+- keep UNASSIGNED and prompt me in a review step
+G4. Add template keyword/tag editor so I can improve matching over time.
+
+H) CALENDAR COMPARISON (ROOM/RESOURCE CONFLICTS)
+H1. Compare two plans (or two calendars) to detect conflicts:
+- overlap in time AND same location/resource (Classroom 1, Classroom 2, Shop, Offsite)
+H2. Conflict report must show:
+- which plan A + plan B
+- week/day/time range
+- event titles
+- resource causing conflict
+H3. Visual highlight conflicts on the grid.
+H4. Provide “suggest fix” action (optional) that proposes alternate room if available.
+
+I) STUDENT-FACING PUBLISH (READ-ONLY)
+I1. Each plan can be “Published” as a read-only view for students.
+I2. Publish generates a stable share link OR a student view route.
+I3. Student view shows:
+- week selector
+- daily schedule
+- title + time + location
+- tours/speakers contact block (if present)
+I4. Students cannot edit anything. No drag. No templates. No admin controls.
+I5. When staff updates the plan, student view reflects changes (on refresh at minimum).
+
+J) UI/STYLE — MAKE IT NOT BORING
+J1. Do NOT use ANEW branding.
+J2. Apply a modern dark theme similar to the reference:
+- deep violet/black gradient background
+- card panels with soft borders
+- high contrast readable text
+- clean typography (Inter/system)
+- rounded corners, consistent spacing
+J3. Keep it functional first: no style that reduces readability.
+
+------------------------------------------------------------
+PREDICTIVE SCHEDULER (NEW FEATURE — MUST IMPLEMENT)
+------------------------------------------------------------
+
+K) PREDICTIVE / PROBABILITY BUILD-OUT MODE
+K1. Add a “Predict Schedule” workflow that:
+- asks me for hard dates FIRST (OSHA 10, mock interviews, forklift, flaggers, tours, guest speakers, tryouts, graduation, etc.)
+- locks those events into the plan
+- then auto-suggests the rest of the schedule using probability patterns from imported calendars
+K2. Predictive mode must:
+- respect Golden Rule budgets (never exceed; show remaining minutes per key)
+- respect schedule window (6:30–3:30)
+- respect resource constraints (rooms/shop)
+- propose a draft schedule (nothing final until I approve)
+K3. Output must include:
+- suggested events placed with confidence
+- “why” explanation (based on historical trend: week/day/time patterns)
+- list of remaining unfilled budget minutes
+K4. Before committing, show a review step:
+- accept/reject suggestions
+- adjust placement
+- confirm resource conflicts resolved
+K5. Trainable over time:
+- when I adjust suggestions, store that feedback to improve future predictions.
+
+K6. DATA INPUTS FOR PREDICTION
+- Use my uploaded ICS calendars as the primary training signal.
+- Also support CSV-derived schedules.
+- Build a simple internal “pattern model”:
+  - frequency of each template by week number
+  - frequency by day-of-week
+  - preferred time blocks
+  - typical sequences (e.g., topic clusters)
+No fake ML claims. If it’s heuristics, call it heuristics.
+
+------------------------------------------------------------
+QUALITY GATES (YOU MUST PROVE IT WORKS)
+------------------------------------------------------------
+
+L) REQUIRED ACCEPTANCE TESTS (WITH PROOF)
+L1. ICS import test:
+- import my ICS
+- confirm titles are read correctly
+- confirm unmatched = UNASSIGNED (not mapped to first template)
+L2. Place event at 2:00 PM:
+- it must not jump; must land exactly in 15-min grid
+L3. Split a 3-hour topic into twelve 15-min blocks:
+- Golden Rule totals must update correctly
+L4. Compare two plans:
+- conflict in Classroom 1 must be detected and listed
+L5. Publish plan:
+- open student link in incognito and verify read-only
+
+L6. Provide evidence:
+- screenshots of each test result
+- brief “how to reproduce” steps
+- note any known limitations honestly (no pretending)
+
+------------------------------------------------------------
+IMPLEMENTATION NOTES (DO NOT SKIP)
+------------------------------------------------------------
+- All time math in minutes.
+- Snap logic must use a single source of truth helper.
+- Avoid duplicating time conversion code.
+- Use stable IDs for templates/events.
+- Never silently coerce imported text. Always show what happened.
+
+FINAL INSTRUCTION
+If anything above is unclear, ASK ME BEFORE CODING.
+If you think a requirement is “hard,” do it anyway — that’s the point of this app.
+If you leave something out, I will treat the entire build as failed.
+
+Now implement ALL of it and provide the updated code + tests.
