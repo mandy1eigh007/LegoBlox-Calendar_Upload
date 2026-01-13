@@ -12,7 +12,7 @@ interface TemplateReassignDialogProps {
   block: PlacedBlock;
   templates: BlockTemplate[];
   allBlocks: PlacedBlock[];
-  onAssign: (blockId: string, templateId: string) => void;
+  onAssign: (blockId: string, templateId: string, countsOverride?: boolean) => void;
   onAssignMultiple: (blockIds: string[], templateId: string) => void;
 }
 
@@ -27,6 +27,7 @@ export function TemplateReassignDialog({
 }: TemplateReassignDialogProps) {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [applyToAll, setApplyToAll] = useState(false);
+  const [countsOverride, setCountsOverride] = useState<boolean | null>(null);
   const [candidates, setCandidates] = useState<TemplateCandidate[]>([]);
 
   const currentTemplate = templates.find(t => t.id === block.templateId);
@@ -57,6 +58,7 @@ export function TemplateReassignDialog({
       const result = resolveTemplateForImportedTitle(title, templates);
       setCandidates(result.candidates.slice(0, 5));
       setSelectedTemplateId(null);
+      setCountsOverride(null);
       setApplyToAll(false);
     }
   }, [open, title, templates]);
@@ -76,7 +78,7 @@ export function TemplateReassignDialog({
       const allIdsSet = new Set([block.id, ...matchingIds]);
       onAssignMultiple(Array.from(allIdsSet), selectedTemplateId);
     } else {
-      onAssign(block.id, selectedTemplateId);
+      onAssign(block.id, selectedTemplateId, countsOverride === null ? undefined : countsOverride);
     }
 
     onClose();
@@ -188,6 +190,28 @@ export function TemplateReassignDialog({
               })}
             </div>
           </div>
+
+          {selectedTemplateId && (
+            <div className="p-2 border rounded bg-gray-50">
+              <p className="text-sm font-medium mb-1">Assignment Options</p>
+              {(() => {
+                const t = templates.find(tt => tt.id === selectedTemplateId);
+                if (!t) return null;
+                return (
+                  <div className="text-sm">
+                    {t.countsTowardGoldenRule ? (
+                      <label className="flex items-center gap-2">
+                        <input type="checkbox" checked={countsOverride ?? true} onChange={(e) => setCountsOverride(e.target.checked)} />
+                        <span>Counts toward Golden Rule</span>
+                      </label>
+                    ) : (
+                      <p className="text-xs text-gray-600">This template does not count toward Golden Rule totals.</p>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
 
           {similarBlockCount > 0 && (
             <label className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg cursor-pointer">

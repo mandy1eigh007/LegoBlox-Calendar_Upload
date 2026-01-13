@@ -62,7 +62,8 @@ export function findNextAvailableSlot(
   dayStartMinutes: number,
   dayEndMinutes: number,
   slotMinutes: number = 15,
-  excludeBlockId?: string
+  excludeBlockId?: string,
+  resource?: string
 ): number | null {
   for (let currentMin = startMinutes; currentMin + durationMinutes <= dayEndMinutes; currentMin += slotMinutes) {
     const conflicts = findTimeConflicts(
@@ -71,7 +72,8 @@ export function findNextAvailableSlot(
       day,
       currentMin,
       durationMinutes,
-      excludeBlockId
+      excludeBlockId,
+      resource
     );
     
     if (conflicts.length === 0) {
@@ -88,16 +90,25 @@ export function findTimeConflicts(
   day: Day,
   startMinutes: number,
   durationMinutes: number,
-  excludeBlockId?: string
+  excludeBlockId?: string,
+  resource?: string
 ): PlacedBlock[] {
   const endMinutes = getEndMinutes(startMinutes, durationMinutes);
-  
+
   return blocks.filter(block => {
     if (excludeBlockId && block.id === excludeBlockId) return false;
     if (block.week !== week || block.day !== day) return false;
-    
+
     const blockEnd = getEndMinutes(block.startMinutes, block.durationMinutes);
-    return checkOverlap(startMinutes, endMinutes, block.startMinutes, blockEnd);
+    if (!checkOverlap(startMinutes, endMinutes, block.startMinutes, blockEnd)) return false;
+
+    // Resource-aware conflict: if both sides have a resource defined, require equality to conflict.
+    // If either side does not define resource, treat as a conflict (conservative).
+    if (resource && block.resource) {
+      if (resource !== block.resource) return false;
+    }
+
+    return true;
   });
 }
 

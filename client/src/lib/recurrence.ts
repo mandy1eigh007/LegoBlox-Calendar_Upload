@@ -10,7 +10,7 @@ export function createRecurringBlocks(
   
   const series: RecurrenceSeries = {
     id: seriesId,
-    templateId: baseBlock.templateId,
+    templateId: baseBlock.templateId ?? 'UNASSIGNED',
     pattern,
     baseStartMinutes: baseBlock.startMinutes,
     baseDurationMinutes: baseBlock.durationMinutes,

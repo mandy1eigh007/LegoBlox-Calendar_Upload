@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plan, BlockTemplate, Day, DAYS, HardDate } from '@/state/types';
 import { generateScheduleSuggestions, SchedulerResult, SuggestedBlock } from '@/lib/predictiveScheduler';
 import { minutesToTimeDisplay } from '@/lib/time';
@@ -59,7 +59,8 @@ export function ScheduleSuggestionPanel({
     setIsGenerating(true);
     
     setTimeout(() => {
-      const suggestions = generateScheduleSuggestions(plan, templates, {
+      // First run local analysis to compute deficits and coverage
+      const local = generateScheduleSuggestions(plan, templates, {
         targetWeek: currentWeek,
         totalWeeks: plan.settings.weeks,
         dayStartMinutes: plan.settings.dayStartMinutes,
@@ -68,10 +69,97 @@ export function ScheduleSuggestionPanel({
         distributeAcrossWeeks: scope === 'all',
         hardDates: hardDates.map(hd => ({ week: hd.week, day: hd.day })),
       });
-      
-      setResult(suggestions);
-      setSelectedBlocks(new Set(suggestions.suggestions.map(s => s.id)));
-      setIsGenerating(false);
+
+      // Build a toPlace list from coverage gaps
+      const toPlace: { templateId: string | null; durationMinutes: number; count?: number }[] = [];
+      for (const cov of local.coverage) {
+        if (cov.gap > 0) {
+          const template = templates.find(t => t.goldenRuleBucketId === cov.bucketId && t.countsTowardGoldenRule);
+          if (template) {
+            const count = Math.ceil(cov.gap / template.defaultDurationMinutes);
+            toPlace.push({ templateId: template.id, durationMinutes: template.defaultDurationMinutes, count });
+          } else {
+            const count = Math.ceil(cov.gap / 60);
+            toPlace.push({ templateId: null, durationMinutes: 60, count });
+          }
+        }
+      }
+
+      // fetch predictive models (if any), then call server solver for placements
+      fetch('/api/predictive/models')
+        .then(r => r.ok ? r.json() : Promise.resolve(null))
+        .then((m) => {
+          const models = m?.models || null;
+
+          return fetch('/api/predictive/solve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              toPlace,
+              week: currentWeek,
+              existingBlocks: plan.blocks.filter(b => b.week === currentWeek).map(b => ({ id: b.id, templateId: b.templateId, week: b.week, day: b.day, startMinutes: b.startMinutes, durationMinutes: b.durationMinutes })),
+              dayStartMinutes: plan.settings.dayStartMinutes,
+              dayEndMinutes: plan.settings.dayEndMinutes,
+              slotMinutes: plan.settings.slotMinutes,
+            }),
+          }).then(r => r.json()).then((solverResult) => ({ solverResult, models }));
+        })
+        .then(({ solverResult, models }: any) => {
+          // solverResult.placed -> map to SuggestedBlock[] and compute confidence from models
+          const mapped: SuggestedBlock[] = (solverResult.placed || []).map((p: any) => {
+            const slotIndex = p.startMinutes != null ? Math.round((p.startMinutes - plan.settings.dayStartMinutes) / plan.settings.slotMinutes) : -1;
+            let confidence: number | undefined = undefined;
+            if (models) {
+              const modelFor = models.find((x: any) => x.templateId === (p.templateId || 'UNASSIGNED')) || models.find((x: any) => x.templateId === 'UNASSIGNED');
+              if (modelFor && Array.isArray(modelFor.topSlots)) {
+                const match = modelFor.topSlots.find((s: any) => s.slotIndex === slotIndex);
+                if (match) confidence = match.probability;
+              }
+            }
+
+            return {
+              id: p.id,
+              templateId: p.templateId,
+              week: p.week,
+              day: p.day,
+              startMinutes: p.startMinutes,
+              durationMinutes: p.durationMinutes,
+              titleOverride: '',
+              location: p.location || '',
+              notes: '',
+              countsTowardGoldenRule: !!p.templateId,
+              goldenRuleBucketId: null,
+              recurrenceSeriesId: null,
+              isRecurrenceException: false,
+              resource: undefined,
+              isNew: true,
+              bucketLabel: p.templateId ? (templates.find(t => t.id === p.templateId)?.title || '') : 'Unassigned',
+              confidence,
+              reason: p.templateId ? 'Server-suggested' : 'Server-unassigned',
+            } as SuggestedBlock;
+          });
+
+          const out: SchedulerResult = {
+            suggestions: mapped,
+            coverage: local.coverage,
+            conflicts: (solverResult.unplaced || []).map((u: any) => typeof u === 'string' ? u : JSON.stringify(u)),
+            stats: {
+              totalBlocks: mapped.length,
+              totalMinutes: mapped.reduce((s, b) => s + b.durationMinutes, 0),
+              filledSlots: mapped.reduce((s, b) => s + (b.durationMinutes / plan.settings.slotMinutes), 0),
+              emptySlots: 0,
+            }
+          };
+
+          setResult(out);
+          setSelectedBlocks(new Set(out.suggestions.map(s => s.id)));
+          setIsGenerating(false);
+        })
+        .catch(() => {
+          setResult(local);
+          setSelectedBlocks(new Set(local.suggestions.map(s => s.id)));
+          setIsGenerating(false);
+        });
     }, 500);
   };
 
@@ -330,8 +418,11 @@ export function ScheduleSuggestionPanel({
                             style={{ backgroundColor: template?.colorHex || '#6366f1' }}
                           />
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-foreground truncate">
-                              {block.bucketLabel}
+                            <div className="flex items-center gap-2">
+                              <div className="text-sm font-medium text-foreground truncate">{block.bucketLabel}</div>
+                              {typeof block.confidence === 'number' && (
+                                <div className="text-xs px-2 py-0.5 bg-accent/10 text-accent rounded-full">{Math.round(block.confidence * 100)}%</div>
+                              )}
                             </div>
                             <div className="text-xs text-muted-foreground">
                               {block.day} {minutesToTimeDisplay(block.startMinutes)} - {minutesToTimeDisplay(block.startMinutes + block.durationMinutes)} ({formatDuration(block.durationMinutes)})

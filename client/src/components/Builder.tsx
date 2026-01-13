@@ -17,6 +17,8 @@ import { ScheduleSuggestionPanel } from './ScheduleSuggestionPanel';
 import { SuggestedBlock } from '@/lib/predictiveScheduler';
 import { UnassignedReviewPanel } from './UnassignedReviewPanel';
 import { TemplateReassignDialog } from './TemplateReassignDialog';
+import { ComparePlans } from './ComparePlans';
+import { CreateEventDialog } from './CreateEventDialog';
 import { generatePublicId, getStudentUrl } from '@/lib/publish';
 import { findTimeConflicts, wouldFitInDay } from '@/lib/collision';
 import { findAlternativeResource } from '@/lib/calendarCompare';
@@ -50,6 +52,7 @@ export function Builder() {
   const [conflictSuggestion, setConflictSuggestion] = useState<{ blockId: string; alternateResource: string } | null>(null);
   const [draggedItem, setDraggedItem] = useState<{ type: 'template' | 'placed-block'; data: BlockTemplate | PlacedBlock } | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [showCreateEvent, setShowCreateEvent] = useState(false);
   const [hoverMinutes, setHoverMinutes] = useState<number | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showUnassigned, setShowUnassigned] = useState(false);
@@ -137,11 +140,9 @@ export function Builder() {
     
     const gridElement = document.querySelector('[data-testid="week-grid"]');
     if (!gridElement) return;
-    
-    const pointerY = (event.activatorEvent as PointerEvent)?.clientY || 0;
-    const deltaY = event.delta.y;
-    const finalY = pointerY + deltaY;
-    
+    // Use the original activator event Y to avoid large drag "jumps"
+    const activatorClientY = (event.activatorEvent as PointerEvent)?.clientY;
+    const finalY = typeof activatorClientY === 'number' ? activatorClientY : 0;
     const dropMinutes = calculateDropMinutes(finalY, gridElement);
     
     if (activeData?.type === 'template') {
@@ -161,7 +162,7 @@ export function Builder() {
       return;
     }
     
-    const conflicts = findTimeConflicts(plan.blocks, currentWeek, day, startMinutes, duration);
+    const conflicts = findTimeConflicts(plan.blocks, currentWeek, day, startMinutes, duration, undefined, template.defaultResource || template.defaultLocation || undefined);
     
     if (conflicts.length > 0 && !settings.allowOverlaps) {
       const conflictTitle = state.templates.find(t => t.id === conflicts[0].templateId)?.title || 'Unknown';
@@ -196,7 +197,7 @@ export function Builder() {
       return;
     }
     
-    const conflicts = findTimeConflicts(plan.blocks, currentWeek, newDay, newStartMinutes, duration, block.id);
+    const conflicts = findTimeConflicts(plan.blocks, currentWeek, newDay, newStartMinutes, duration, block.id, block.resource || block.location || undefined);
     
     if (conflicts.length > 0 && !settings.allowOverlaps) {
       const conflictTitle = state.templates.find(t => t.id === conflicts[0].templateId)?.title || 'Unknown';
@@ -238,7 +239,7 @@ export function Builder() {
     
     const conflicts = findTimeConflicts(
       plan.blocks, block.week, block.day,
-      block.startMinutes, newDuration, block.id
+      block.startMinutes, newDuration, block.id, block.resource || block.location || undefined
     );
     
     if (conflicts.length > 0 && !settings.allowOverlaps) {
@@ -262,7 +263,7 @@ export function Builder() {
     
     const conflicts = findTimeConflicts(
       plan.blocks, updatedBlock.week, updatedBlock.day, 
-      updatedBlock.startMinutes, updatedBlock.durationMinutes, updatedBlock.id
+      updatedBlock.startMinutes, updatedBlock.durationMinutes, updatedBlock.id, updatedBlock.resource || updatedBlock.location || undefined
     );
     
     if (conflicts.length > 0 && !settings.allowOverlaps) {
@@ -349,9 +350,23 @@ export function Builder() {
   };
 
   const handlePublish = () => {
-    const publicId = plan.publicId || generatePublicId();
-    const timestamp = new Date().toISOString();
-    dispatch({ type: 'PUBLISH_PLAN', payload: { planId: plan.id, publicId, timestamp } });
+    (async () => {
+      const publicId = plan.publicId || generatePublicId();
+      const timestamp = new Date().toISOString();
+      try {
+        const res = await fetch(`/api/plans/${plan.id}/publish`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plan: { ...plan, publicId, isPublished: true, publishedAt: timestamp } }),
+        });
+        if (!res.ok) throw new Error('publish failed');
+        const json = await res.json();
+        const slug = json.slug || publicId;
+        dispatch({ type: 'PUBLISH_PLAN', payload: { planId: plan.id, publicId: slug, timestamp } });
+      } catch (e) {
+        setErrorMessage('Failed to publish plan to server.');
+      }
+    })();
   };
 
   const handleUnpublish = () => {
@@ -375,7 +390,26 @@ export function Builder() {
     const timestamp = new Date().toISOString();
     dispatch({ type: 'ASSIGN_BLOCK_TEMPLATE', payload: { planId: plan.id, blockId, templateId, timestamp } });
   };
+  
+  // Assign with optional countsTowardGoldenRule override (single block)
+  const handleAssignBlockWithFlags = (blockId: string, templateId: string, countsOverride?: boolean) => {
+    const timestamp = new Date().toISOString();
+    const template = state.templates.find(t => t.id === templateId);
+    if (typeof countsOverride === 'boolean') {
+      const block = plan.blocks.find(b => b.id === blockId);
+      if (!block) return;
+      const updated = {
+        ...block,
+        templateId,
+        countsTowardGoldenRule: countsOverride,
+        goldenRuleBucketId: countsOverride ? (template?.goldenRuleBucketId ?? null) : null,
+      };
+      dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updated } });
+      return;
+    }
 
+    dispatch({ type: 'ASSIGN_BLOCK_TEMPLATE', payload: { planId: plan.id, blockId, templateId, timestamp } });
+  };
   const handleAssignMultiple = (blockIds: string[], templateId: string) => {
     const timestamp = new Date().toISOString();
     dispatch({ type: 'ASSIGN_MULTIPLE_BLOCKS_TEMPLATE', payload: { planId: plan.id, blockIds, templateId, timestamp } });
@@ -489,6 +523,13 @@ export function Builder() {
               Partners
             </button>
             <button
+              onClick={() => setShowCreateEvent(true)}
+              className="px-3 py-1 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
+              data-testid="create-event-button"
+            >
+              Create Event
+            </button>
+            <button
               onClick={() => setShowSettings(true)}
               className="px-3 py-1 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
               data-testid="edit-settings-button"
@@ -600,6 +641,16 @@ export function Builder() {
             onBlockResize={handleBlockResize}
             selectedBlockId={selectedBlockId}
           />
+
+          <div className="absolute top-4 right-4 z-50 flex gap-2">
+            <button
+              className="px-3 py-1 bg-white border rounded"
+              onClick={() => setShowCompare(true)}
+              data-testid="open-compare"
+            >
+              Compare Plans
+            </button>
+          </div>
           
           {selectedBlock ? (
             <BlockEditPanel
@@ -657,6 +708,21 @@ export function Builder() {
 
       <PlanEditor plan={plan} open={showSettings} onClose={() => setShowSettings(false)} onToggleDiagnostics={() => setShowDiagnostics(!showDiagnostics)} showDiagnostics={showDiagnostics} />
       <ExportImportPanel plan={plan} open={showExport} onClose={() => setShowExport(false)} />
+
+      <CreateEventDialog
+        open={showCreateEvent}
+        onClose={() => setShowCreateEvent(false)}
+        templates={state.templates}
+        onCreate={(block: any, newTemplate?: any) => {
+          // add optional template first
+          if (newTemplate) {
+            dispatch({ type: 'ADD_TEMPLATE', payload: newTemplate });
+          }
+          // ensure block id and plan
+          const b = { ...block, id: block.id || uuidv4() };
+          dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block: b } });
+        }}
+      />
       
       {showPartners && (
         <PartnersPanel
@@ -677,12 +743,12 @@ export function Builder() {
           onAccept={handleAcceptSuggestions}
           onUpdateHardDates={(hardDates: HardDate[]) => {
             dispatch({
-              type: 'UPDATE_PLAN_SETTINGS',
+              type: 'UPDATE_PLAN',
               payload: {
                 planId: plan.id,
-                settings: { ...plan.settings, hardDates }
+                updates: { settings: { ...plan.settings, hardDates } }
               }
-            });
+            } as any);
           }}
         />
       )}
@@ -703,8 +769,38 @@ export function Builder() {
           block={reassignBlock}
           templates={state.templates}
           allBlocks={plan.blocks}
-          onAssign={handleAssignBlock}
+          onAssign={handleAssignBlockWithFlags}
           onAssignMultiple={handleAssignMultiple}
+        />
+      )}
+
+      {showCompare && (
+        <ComparePlans
+          open={showCompare}
+          onClose={() => setShowCompare(false)}
+          plans={state.plans}
+          onOpenConflictInBuilder={(planId, blockId) => {
+            // navigate to plan and open the block in builder
+            if (planId !== plan.id) {
+              navigate(`/plan/${planId}`);
+            }
+            // find the plan and block and set selected
+            const p = state.plans.find(pl => pl.id === planId);
+            if (!p) return;
+            const b = p.blocks.find(bl => bl.id === blockId);
+            if (!b) return;
+            setSelectedBlockId(b.id);
+            setShowCompare(false);
+          }}
+          onResolveConflict={(planId, blockId, newResource) => {
+            const p = state.plans.find(pl => pl.id === planId);
+            if (!p) return;
+            const b = p.blocks.find(bl => bl.id === blockId);
+            if (!b) return;
+            const updated = { ...b, resource: newResource };
+            dispatch({ type: 'UPDATE_BLOCK', payload: { planId: p.id, block: updated } });
+            setShowCompare(false);
+          }}
         />
       )}
       

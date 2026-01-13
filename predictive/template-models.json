@@ -1,0 +1,31 @@
+{
+  "generatedAt": "2026-01-13T22:04:55.270Z",
+  "models": [
+    {
+      "templateId": "OSHA_10",
+      "totalCount": 1,
+      "weekCounts": {
+        "1": 1
+      },
+      "dayCounts": {
+        "0": 1
+      },
+      "slotCounts": {
+        "0": 1
+      },
+      "durationCounts": {
+        "300": 1
+      },
+      "locationCounts": {
+        "Classroom 1": 1
+      },
+      "topSlots": [
+        {
+          "slotIndex": 0,
+          "probability": 1,
+          "count": 1
+        }
+      ]
+    }
+  ]
+}

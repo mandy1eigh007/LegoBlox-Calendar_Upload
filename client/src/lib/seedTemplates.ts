@@ -120,10 +120,19 @@ const CATEGORY_COLORS: Record<Category, string> = {
 };
 
 export function createSeedTemplates(): BlockTemplate[] {
-  const allTemplates = [...createGoldenRuleTemplates(), ...ADMIN_TEMPLATES];
-  
-  return allTemplates.map(seed => ({
-    id: uuidv4(),
+  const unassignedSeed: SeedTemplate = {
+    title: 'Unassigned',
+    category: 'Other',
+    defaultDurationMinutes: 15,
+    countsTowardGoldenRule: false,
+    goldenRuleBucketId: null,
+    defaultLocation: '',
+    defaultNotes: '',
+  };
+  const allTemplates = [unassignedSeed, ...createGoldenRuleTemplates(), ...ADMIN_TEMPLATES];
+
+  return allTemplates.map((seed, idx) => ({
+    id: seed.title === 'Unassigned' ? 'UNASSIGNED' : uuidv4(),
     title: seed.title,
     category: seed.category,
     colorHex: CATEGORY_COLORS[seed.category],
