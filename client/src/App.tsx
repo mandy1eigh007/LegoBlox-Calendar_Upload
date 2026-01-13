@@ -3,6 +3,7 @@ import { StoreProvider } from "@/state/store";
 import { PlanList } from "@/components/PlanList";
 import { Builder } from "@/components/Builder";
 import { StudentView } from "@/components/StudentView";
+import { PublishedView } from "@/components/PublishedView";
 
 function Router() {
   return (
@@ -10,6 +11,7 @@ function Router() {
       <Route path="/" component={PlanList} />
       <Route path="/plan/:planId" component={Builder} />
       <Route path="/student/:publicId" component={StudentView} />
+      <Route path="/p/:slug" component={PublishedView} />
       <Route>
         <div className="min-h-screen flex items-center justify-center">
           <p className="text-gray-500">Page not found</p>
