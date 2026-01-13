@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { PlacedBlock, BlockTemplate, Plan, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId, ApplyScope, DAYS, Day, RecurrenceType, RecurrencePattern, RecurrenceSeries } from '@/state/types';
+import { PlacedBlock, BlockTemplate, Plan, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId, ApplyScope, DAYS, Day, RecurrenceType, RecurrencePattern, RecurrenceSeries, CATEGORIES, Category, DEFAULT_RESOURCES } from '@/state/types';
 import { formatDuration, minutesToTimeDisplay, getEndMinutes } from '@/lib/time';
 import { ConfirmModal, Modal } from './Modal';
 import { createRecurringBlocks } from '@/lib/recurrence';
@@ -34,6 +34,8 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
   const [notes, setNotes] = useState(block.notes);
   const [countsTowardGoldenRule, setCountsTowardGoldenRule] = useState(block.countsTowardGoldenRule);
   const [goldenRuleBucketId, setGoldenRuleBucketId] = useState<GoldenRuleBucketId | ''>(block.goldenRuleBucketId || '');
+  const [resource, setResource] = useState(block.resource || '');
+  const [category, setCategory] = useState<Category | ''>(block.category || template?.category || '');
   
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showRecurrence, setShowRecurrence] = useState(false);
@@ -55,9 +57,11 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
     setNotes(block.notes);
     setCountsTowardGoldenRule(block.countsTowardGoldenRule);
     setGoldenRuleBucketId(block.goldenRuleBucketId || '');
+    setResource(block.resource || '');
+    setCategory(block.category || template?.category || '');
     setRecurrenceDays([block.day]);
     setRecurrenceStartWeek(block.week);
-  }, [block]);
+  }, [block, template]);
 
   const openRecurrenceModal = () => {
     if (existingSeries) {
@@ -100,7 +104,14 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
       notes,
       countsTowardGoldenRule,
       goldenRuleBucketId: countsTowardGoldenRule && goldenRuleBucketId ? goldenRuleBucketId : null,
+      resource: resource || undefined,
+      category: category || undefined,
     }, scope);
+  };
+  
+  const adjustDuration = (delta: number) => {
+    const newDuration = Math.max(15, Math.min(durationMinutes + delta, 540));
+    setDurationMinutes(newDuration);
   };
 
   const handleDelete = (scope?: ApplyScope) => {
@@ -218,6 +229,59 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
                 ))}
               </select>
             </div>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => adjustDuration(-15)}
+              disabled={durationMinutes <= 15}
+              className="px-3 py-1 text-sm border rounded hover:bg-gray-50 disabled:opacity-50"
+              data-testid="duration-minus-15"
+            >
+              -15 min
+            </button>
+            <span className="text-sm text-gray-600 flex-1 text-center">{formatDuration(durationMinutes)}</span>
+            <button
+              onClick={() => adjustDuration(15)}
+              disabled={durationMinutes >= 540}
+              className="px-3 py-1 text-sm border rounded hover:bg-gray-50 disabled:opacity-50"
+              data-testid="duration-plus-15"
+            >
+              +15 min
+            </button>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium mb-1">Category</label>
+            <select
+              value={category}
+              onChange={e => setCategory(e.target.value as Category | '')}
+              className="w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              data-testid="block-category-select"
+            >
+              <option value="">Use template default</option>
+              {CATEGORIES.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium mb-1">Resource/Room</label>
+            <select
+              value={resource}
+              onChange={e => setResource(e.target.value)}
+              className="w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              data-testid="block-resource-select"
+            >
+              <option value="">No resource assigned</option>
+              {DEFAULT_RESOURCES.map(r => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+              {plan.settings.resources.filter(r => !DEFAULT_RESOURCES.includes(r as any)).map(r => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
           </div>
 
           <div>

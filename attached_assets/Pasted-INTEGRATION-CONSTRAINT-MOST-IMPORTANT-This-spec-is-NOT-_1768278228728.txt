@@ -1,0 +1,40 @@
+INTEGRATION CONSTRAINT (MOST IMPORTANT)
+This spec is NOT a greenfield rebuild. It must be added to the app that already exists and is already partially built. Keep all current behavior working (export/import modal, existing plan storage, existing UI layout, existing blocks/templates). Only extend and refactor where required to meet the requirements. If any requirement conflicts with existing implementation, implement it behind a feature flag first, migrate safely, and preserve old plans via a backward-compatible migration.
+
+DECISION: MANUAL (HUMAN) BUILD OUT vs PREDICTIVE BUILD OUT MODEL
+The app must support two scheduling modes that can be switched at any time per plan:
+
+Mode 1: Manual Builder (Human Build Out)
+- User places blocks manually (drag/drop, edit panel, recurrence, template builder).
+- Golden Rule totals enforce budgets and show over/under.
+- Compare calendars, resource conflicts, imports/exports all work.
+- No predictive engine required to use the app effectively.
+
+Mode 2: Predictive Builder (Probability Model)
+- Uses the same underlying manual builder UI and data model.
+- Adds the “Predict Schedule” wizard and probability-based draft generation.
+- Predictive mode must NEVER auto-commit changes; it proposes and asks for confirmation.
+
+IMPLEMENTATION REQUIREMENTS FOR MODE SWITCHING
+1) Add a per-plan setting: schedulerMode = "manual" | "predictive" (default "manual").
+2) Add a simple UI selector in “Edit Settings” (text-only) to switch modes.
+3) All features outside predictive scheduling are always available in both modes.
+4) Predictive features are only visible/enabled when schedulerMode="predictive".
+5) If training data is insufficient, predictive mode must clearly state “insufficient training data” and fall back to rule-based drafting (still requiring confirmation).
+6) Do not duplicate two apps. One app, two modes.
+
+ROLL-OUT RULE (TO AVOID BREAKING WHAT WE ALREADY HAVE)
+Implement in this order, preserving functionality at each step:
+Phase 1: Fix 15-minute grid snapping + no jumping + 6:30–3:30 day bounds.
+Phase 2: Upgrade Edit Panel + recurrence/multi-apply + template builder + Golden Rule totals enforcement.
+Phase 3: Imports (ICS/CSV/XLSX/OCR) normalized into one model + saved mappings.
+Phase 4: Calendar comparison + resource conflict rules.
+Phase 5 (optional / only if predictive mode selected): Predictive scheduler + training model + proposal UI.
+
+NON-NEGOTIABLE “ADD-ON” RULE
+This spec must be implemented as additions to the existing repository:
+- Reuse existing components/pages where possible.
+- Do not rewrite the app architecture unless required for correctness (15-min grid math, unified event model, safe migration).
+- Provide exact file diffs and ensure old saved plans still load.
+
+END OF ADDENDUM. KEEP EVERYTHING BELOW EXACTLY AS-IS.

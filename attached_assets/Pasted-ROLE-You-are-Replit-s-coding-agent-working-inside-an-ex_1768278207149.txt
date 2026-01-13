@@ -1,0 +1,282 @@
+ROLE: You are Replit’s coding agent working inside an existing scheduling web app (already has: Block Library on the left, week selector, Auto-place toggle, Copy to Next Week, Reset Week, Export / Import, Print View, Edit Settings, and an “Edit Block” side panel when a block is placed). Your job is to upgrade it so it actually solves the real scheduling problem described below. Do NOT invent features I didn’t ask for. Do NOT leave out any requirement. Do NOT add placeholders. Write the exact code changes needed and keep the current project working.
+
+HARD RULES (NON-NEGOTIABLE)
+1) Time grid and placement must be EXACTLY 15-minute increments everywhere (library blocks, calendar grid, resizing, editing, totals).
+2) Calendar day must start at 6:30 AM and go through 3:30 PM (configurable later, but default must be 6:30–3:30).
+3) Golden Rule hour budgets must be enforced and tracked live. The app must show scheduled minutes vs budget minutes, and over/under (with a tolerance of 15 minutes).
+4) Program length must support 9 weeks (default), but allow switching to 12 for historical calendars.
+5) “Clean Up 30 minutes” is counted as part of “Skills Project” (not its own budget category). Some cohorts do it once/week. Keep this configurable.
+6) No icons in UI labels/buttons (text-only UI is fine).
+7) Do not break current features that already work (export, copy week, etc.). Extend, don’t wreck.
+
+OVERALL GOAL
+I need a “calendar builder” that’s easier than using Google/Outlook calendar:
+- I drag blocks like puzzle pieces (15-min units) onto a weekly schedule grid.
+- The app tracks Golden Rule totals automatically (scheduled vs budget).
+- I can create/edit blocks (especially tours/worksite visits/speakers) and store contact details.
+- I can import existing calendars (ICS/CSV/Excel) and also try screenshots (OCR) with honest limitations.
+- I can compare calendars/plans against each other for room/resource conflicts.
+- MOST IMPORTANT: A predictive/probability scheduler that can finish a schedule draft based on trends learned from imported calendars, while staying within Golden Rule budgets and asking me before committing.
+
+REQUIRED FEATURES TO IMPLEMENT
+
+A) FIX THE CORE SCHEDULER (15-MIN GRID + NO JUMPING)
+- The calendar grid must be a 15-minute snap grid from 6:30 to 3:30.
+- Dragging a block to a time must NOT “jump around.”
+- Placement should snap precisely to the nearest 15-min slot based on pointer position.
+- Resizing must snap in 15-min increments.
+- A block dropped at 2:00 PM must land at 2:00 PM, period.
+Implementation requirements:
+- Use a consistent internal time representation (minutes-from-day-start).
+  - Day start = 6:30 AM => 0 minutes.
+  - 6:45 AM => 15 minutes, etc.
+  - Day end = 3:30 PM => 540 minutes.
+- All calculations use integers in minutes (multiples of 15).
+- Rendering converts minutes to pixel positions with a fixed “px per 15-min” scale.
+- Fix drag math: compute target slot index from (pointerY - gridTop) / slotHeight, then clamp to [0..lastSlot], then multiply by 15.
+
+B) BLOCK LIBRARY MUST BE 15-MIN “ATOMS”
+- Library blocks must be placeable as:
+  1) A template with a default duration (like 1h), AND
+  2) The app can split/extend in 15-min increments easily.
+- Add a “Quick Add 15 min” control in the editor (and “Remove 15 min”) that adjusts duration by exactly 15 minutes.
+- Ensure when I add +15 minutes to a block, the Golden Rule totals update immediately.
+
+C) EDIT PANEL MUST BE MORE POWERFUL
+Current “Edit Block” panel exists; extend it with:
+- Title Override (already exists)
+- Duration (15-min increments) (already exists but must be reliable)
+- Location (keep)
+- Notes (keep)
+Add NEW fields:
+- Category (select) (ex: PD, Shop, Math, Admin, Certification, Tours, etc.)
+- Golden Rule Budget Category (select from the Golden Rule list below; optional for “Admin” blocks that do not count)
+- Resource/Room assignment (select: Classroom 1, Classroom 2, Shop, Offsite, Other)
+- Contact card (only visible when block type is Tours/Worksite/Speaker or “has contact” toggled):
+  - Organization
+  - Contact name
+  - Email
+  - Phone
+  - Address
+  - Extra notes
+
+Add RECURRING + MULTI-APPLY (this is required):
+- “Apply to” options:
+  - This block only
+  - This day for all weeks
+  - This week for selected days
+  - All weeks (selected days)
+- “Repeat pattern” options:
+  - Weekly (every week)
+  - Every other week
+  - Custom list of weeks (checkboxes)
+- When applying recurrence, it must respect resource conflicts and warn before placing overlaps.
+
+D) CUSTOM BLOCK CREATION TOOL (BLOCK TEMPLATE BUILDER)
+- Left library needs a real “New” template builder (not fake).
+- Template fields:
+  - Template name
+  - Default duration (15-min increments)
+  - Category
+  - Default Golden Rule budget category (optional)
+  - Default room/resource
+  - Color/style (simple, but consistent)
+  - Default contact fields optional
+- Templates can be edited and saved.
+- Templates can be dragged onto calendar.
+
+E) GOLDEN RULE TOTALS (RIGHT PANEL) MUST BE REAL AND STRICT
+Right panel must show “Scheduled / Budget” for each Golden Rule category and over/under:
+- Scheduled minutes must sum blocks that are mapped to that Golden Rule category.
+- Budget minutes come from the Golden Rule list below.
+- Over/under shown in minutes and hours.
+- Status rules:
+  - “On target” if within +/- 15 minutes
+  - “Over” if exceeds budget by > 15 minutes
+  - “Under” if below budget by > 15 minutes
+- Clicking a category should highlight all blocks contributing to it on the grid.
+
+Golden Rule Budget Categories (use this exact list and minutes):
+- Introduction to Pre-Apprenticeship: 180
+- Professional Development Principles (Intro/Mid/Final combined): 180
+- Grit/Growth Mindset: 60
+- How to be a Successful Apprentice: 60
+- Elevator Pitch: 120
+- Resumes: 240
+- Interviews (Interview Skills + Group Interview + Mock Prep/Process): 600
+- Applying for Apprenticeships & Job Search: 180
+- Financial Education: 180
+- Emotional Intelligence: 120
+- RISE Up Advocacy & Bystander Intervention: 120
+- Workers Compensation / Unemployment Insurance: 120
+- Apprenticeship Portfolio: 240
+- Individual Career Plan: 180
+- Application Prep: 120
+- ACE Instruction: 240
+- ACEs: 2160
+- Shop Introduction: 60
+- Introduction to the Construction Trades: 120
+- Construction Trade Awareness + Poster Project: 240
+- Labor History: 60
+- Hand Tools: 180
+- Power Tools: 180
+- Materials Knowledge: 60
+- Intro to Measuring Tape + Measuring Tape Exercises: 120
+- Skills Project (includes Clean Up time): 2520
+- Intro to Scaffolding: 120
+- Ladder Safety: 60
+- Intro to Clean Energy: 120
+- Apprenticeship Tours: 1200
+- Worksite Tours: 480
+- Speaker Presentations: 240
+- OSHA 10: 600
+- Forklift Certification: 480
+- Flagger Certification: 480
+- Physical Fitness: 1920
+- Nutrition: 60
+
+F) IMPORT/EXPORT MUST SUPPORT REAL WORKFLOWS (AND BE EASY TO FIND)
+- Keep existing Export / Import modal.
+- ALSO add Import on the Home screen (top-level) like we discussed.
+- Drag-and-drop upload zone on Home screen AND inside a plan:
+  - Accept: .ics, .csv, .xlsx, .json, and images (png/jpg) for OCR.
+- ICS import must:
+  - Show a date range picker BEFORE import (start date / end date).
+  - Preview detected events (title, date, start time, duration, location).
+  - Ask which “plan” to import into OR create a new plan.
+  - Provide mapping of imported events to:
+    - Category
+    - Golden Rule budget category
+    - Room/resource
+  - Save that mapping so it learns over time.
+- CSV import must support column mapping (already started): keep it, but ensure it maps to the same internal event model.
+- Excel import: detect sheets, allow selecting sheet, then map columns like CSV.
+- Screenshot OCR import:
+  - Keep it, but be honest: show extracted raw OCR text and a “confidence” score.
+  - Provide a manual correction step: user can click “Create draft blocks from OCR text” and then manually place them.
+  - Do NOT silently fabricate times. If times aren’t detected reliably, import them as “unscheduled drafts” into a “Drafts” list.
+
+G) MULTI-CALENDAR COMPARISON + RESOURCE CONFLICTS (CRITICAL)
+I need to compare calendars/plans so rooms don’t collide.
+Implement:
+- A “Compare” view where I pick:
+  - Calendar A (Plan)
+  - Calendar B (Plan)
+- Show them side-by-side OR overlay mode (toggle).
+- The app must detect conflicts by time overlap and resource:
+  - Classroom 1 conflict
+  - Classroom 2 conflict
+  - Shop conflict
+  - Any custom resource I define in settings
+- Conflicts must be listed in a panel:
+  - Conflict type (resource)
+  - Date/time
+  - Blocks involved
+  - Suggested fix buttons:
+    - Move block to alternate room (if available)
+    - Move block to nearest open slot (same day)
+    - Move block to next available day
+- Add a “Resource Rules” settings screen:
+  - Define resources (Classroom 1, Classroom 2, Shop, Offsite…)
+  - Set max concurrent usage (usually 1)
+  - Optional “preferred resource” per category
+- When placing or auto-placing blocks, the scheduler must block illegal placements OR require a confirmation dialog (“Place anyway”) with a reason note.
+
+H) PREDICTIVE / PROBABILITY SCHEDULER (MOST IMPORTANT)
+Build a feature called “Predict Schedule” that drafts a schedule based on patterns learned from imported calendars.
+Requirements:
+1) TRAINING DATA
+- The model uses imported calendars/events as training examples.
+- It learns probabilities like:
+  - In Week N, what categories typically occur
+  - Typical day-of-week placement
+  - Typical time ranges
+  - Typical room/resource assignments
+  - Typical durations for each block type
+- Store learned model per cohort type (PACE vs TRP) and location if available.
+- If not enough data, it must say “insufficient training data” and fall back to a simple rule-based draft.
+
+2) WIZARD: ASK ME FOR ANCHORS FIRST (NO GUESSING)
+When I click “Predict Schedule”, it must ask:
+- Program type: PACE / TRP / Custom
+- Weeks: default 9
+- Days active (checkboxes)
+- Daily start/end (default 6:30–3:30)
+- Known fixed-date anchors (enter what I have):
+  - OSHA 10 dates (if known)
+  - Forklift date(s)
+  - Flagger date(s)
+  - Mock interview week(s) or date(s)
+  - Graduation date
+  - Tours/worksite visits/speakers already scheduled (with contact info)
+- Room availability rules (what rooms exist and are shared)
+- “Do you want to prioritize scheduling around: rooms, instructors, or partner availability?” (simple dropdown)
+
+3) DRAFT GENERATION (PROBABILISTIC BUT CONSTRAINED)
+- After anchors are placed, generate the rest:
+  - Fill remaining Golden Rule budget minutes across weeks.
+  - Use learned probabilities to choose week/day/time slots.
+  - Must respect:
+    - 15-min increments
+    - Resource conflicts
+    - Daily boundaries
+    - Golden Rule budgets (cannot exceed unless user allows)
+- Output must be a PROPOSAL, not auto-committed.
+- Show a “Proposed Changes” list:
+  - What it placed
+  - Confidence score per placement (0–100)
+  - Why it chose that placement (brief, factual: “Most common in Week 2 at 10:30”)
+- Provide controls:
+  - Accept all
+  - Accept selected
+  - Reject and regenerate
+  - Lock certain blocks and regenerate only the rest
+
+4) LIVE ADJUSTMENT
+- If I manually place blocks, the predictive engine should re-calc remaining budgets and suggest what’s left.
+- Add a “Finish this week” button: proposes blocks to complete the selected week based on remaining budgets and patterns.
+
+I) SETTINGS THAT MATCH REAL LIFE (CHAOS-FRIENDLY)
+- Weeks can shift; allow me to drag a whole day’s schedule to another day.
+- Allow “unscheduled items” list:
+  - Blocks not yet placed but budget remaining
+- Allow tagging “external constraints”:
+  - Guest speaker availability window
+  - Classroom unavailable
+  - Instructor unavailable
+These constraints should influence predictive scheduling.
+
+DATA MODEL REQUIREMENTS (DO THIS CLEANLY)
+Unify all imports/placements into one model:
+- Plan { id, name, programType, weeks, activeDays, dayStartMin, dayEndMin, resources[], blocks[], templates[], learnedModel? }
+- BlockInstance { id, templateId?, title, weekIndex, dayIndex, startMin, durationMin, category, goldenRuleKey?, resourceId?, location?, notes?, contact?, seriesId? }
+- BlockTemplate { id, name, defaultDurationMin, category, defaultGoldenRuleKey?, defaultResourceId?, style?, defaultContact? }
+- Series { id, recurrenceRule, applyScope, instances[] }
+
+Also:
+- Provide migrations if the existing app already stores blocks differently. Do not break existing saved plans—migrate them.
+
+ACCEPTANCE TESTS (YOU MUST RUN/VERIFY IN YOUR RESPONSE)
+1) Drag a 1h block to 2:00 PM. It lands at exactly 2:00 PM (no jumping).
+2) Resize block by +15 minutes. Totals update immediately.
+3) Week length set to 9. Can switch to 12.
+4) Import ICS with date range. Preview shows events. Import creates blocks.
+5) Compare Plan A vs Plan B shows resource conflicts for Classroom 1/2/Shop.
+6) Predict Schedule wizard:
+   - Ask for anchors
+   - Place anchors
+   - Generate proposal that stays within Golden Rule budgets
+   - Requires confirmation before committing
+
+DELIVERABLES
+- Implement all features above in the existing codebase.
+- Provide the exact files changed and why.
+- Do not skip UI wiring. Do not leave TODOs. Do not leave placeholder functions.
+- Keep performance reasonable (15-min grid is not huge; optimize rendering with memoization if needed).
+
+START NOW:
+- Inspect the current code structure.
+- Fix the 15-minute grid snapping/jumping first (core).
+- Then recurrence + template builder.
+- Then resource compare.
+- Then predictive scheduler + model training using imported calendars.

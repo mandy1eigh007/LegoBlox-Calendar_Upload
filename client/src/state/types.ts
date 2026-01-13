@@ -137,6 +137,8 @@ export interface PlacedBlock {
   recurrenceSeriesId: string | null;
   isRecurrenceException: boolean;
   engagementId?: string | null;
+  resource?: string;
+  category?: Category;
 }
 
 export interface RecurrenceSeries {
