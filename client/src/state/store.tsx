@@ -153,11 +153,31 @@ function reducer(state: AppState, action: Action): AppState {
           }
           
           if (scope === 'thisAndFuture' && block.recurrenceSeriesId) {
+            const remainingSeriesBlocks = p.blocks.filter(b => 
+              b.recurrenceSeriesId === block.recurrenceSeriesId && b.week < block.week
+            );
+            
+            const shouldRemoveSeries = remainingSeriesBlocks.length === 0;
+            
             return {
               ...p,
               blocks: p.blocks.filter(b => 
                 !(b.recurrenceSeriesId === block.recurrenceSeriesId && b.week >= block.week)
               ),
+              recurrenceSeries: shouldRemoveSeries 
+                ? p.recurrenceSeries.filter(s => s.id !== block.recurrenceSeriesId)
+                : p.recurrenceSeries.map(s => {
+                    if (s.id === block.recurrenceSeriesId) {
+                      return {
+                        ...s,
+                        pattern: {
+                          ...s.pattern,
+                          endWeek: block.week - 1,
+                        },
+                      };
+                    }
+                    return s;
+                  }),
             };
           }
           
