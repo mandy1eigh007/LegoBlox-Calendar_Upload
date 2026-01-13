@@ -17,6 +17,7 @@ import { ScheduleSuggestionPanel } from './ScheduleSuggestionPanel';
 import { SuggestedBlock } from '@/lib/predictiveScheduler';
 import { UnassignedReviewPanel } from './UnassignedReviewPanel';
 import { TemplateReassignDialog } from './TemplateReassignDialog';
+import { CustomEventBuilder, CustomEventData } from './CustomEventBuilder';
 import { generatePublicId, getStudentUrl, getPublishedUrl, publishPlanToServer, unpublishPlanFromServer } from '@/lib/publish';
 import { findTimeConflicts, wouldFitInDay } from '@/lib/collision';
 import { findAlternativeResource } from '@/lib/calendarCompare';
@@ -59,6 +60,7 @@ export function Builder() {
   const [showUnassigned, setShowUnassigned] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [reassignBlock, setReassignBlock] = useState<PlacedBlock | null>(null);
+  const [showCustomEvent, setShowCustomEvent] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(
@@ -393,6 +395,32 @@ export function Builder() {
     dispatch({ type: 'ASSIGN_MULTIPLE_BLOCKS_TEMPLATE', payload: { planId: plan.id, blockIds, templateId, timestamp } });
   };
 
+  const handleCreateCustomEvent = (eventData: CustomEventData) => {
+    const block: PlacedBlock = {
+      id: uuidv4(),
+      templateId: null,
+      week: eventData.week,
+      day: eventData.day,
+      startMinutes: eventData.startMinutes,
+      durationMinutes: eventData.durationMinutes,
+      titleOverride: eventData.title,
+      location: eventData.address,
+      notes: `${eventData.eventType.replace('_', ' ').toUpperCase()}\n\nOrganization: ${eventData.organization}\nContact: ${eventData.contactName}\nEmail: ${eventData.contactEmail}\nPhone: ${eventData.contactPhone}\n\n${eventData.notes}`,
+      countsTowardGoldenRule: eventData.countsTowardGoldenRule,
+      goldenRuleBucketId: eventData.goldenRuleBucketId,
+      recurrenceSeriesId: null,
+      isRecurrenceException: false,
+      resource: eventData.resource === 'other' ? eventData.resourceOther : eventData.resource,
+      partnerOrg: eventData.organization,
+      partnerContact: eventData.contactName,
+      partnerEmail: eventData.contactEmail,
+      partnerPhone: eventData.contactPhone,
+      partnerAddress: eventData.address,
+    };
+
+    dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
+  };
+
   const selectedBlock = selectedBlockId ? plan.blocks.find(b => b.id === selectedBlockId) : null;
   const selectedTemplate = selectedBlock ? state.templates.find(t => t.id === selectedBlock.templateId) : undefined;
 
@@ -478,6 +506,13 @@ export function Builder() {
               data-testid="export-button"
             >
               Export / Import
+            </button>
+            <button
+              onClick={() => setShowCustomEvent(true)}
+              className="px-3 py-1 text-sm border border-green-500/30 text-green-400 rounded-lg hover:bg-green-500/10 transition-all"
+              data-testid="create-event-button"
+            >
+              Create Event
             </button>
             <button
               onClick={() => setShowPrint(true)}
@@ -719,6 +754,15 @@ export function Builder() {
           onAssignMultiple={handleAssignMultiple}
         />
       )}
+      
+      <CustomEventBuilder
+        open={showCustomEvent}
+        onClose={() => setShowCustomEvent(false)}
+        onCreate={handleCreateCustomEvent}
+        maxWeeks={settings.weeks}
+        dayStartMinutes={settings.dayStartMinutes}
+        dayEndMinutes={settings.dayEndMinutes}
+      />
       
       <ConfirmModal
         open={showResetConfirm}
