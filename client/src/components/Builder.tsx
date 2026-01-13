@@ -18,6 +18,7 @@ import { SuggestedBlock } from '@/lib/predictiveScheduler';
 import { UnassignedReviewPanel } from './UnassignedReviewPanel';
 import { TemplateReassignDialog } from './TemplateReassignDialog';
 import { ComparePlans } from './ComparePlans';
+import { CreateEventDialog } from './CreateEventDialog';
 import { generatePublicId, getStudentUrl } from '@/lib/publish';
 import { findTimeConflicts, wouldFitInDay } from '@/lib/collision';
 import { findAlternativeResource } from '@/lib/calendarCompare';
@@ -51,6 +52,7 @@ export function Builder() {
   const [conflictSuggestion, setConflictSuggestion] = useState<{ blockId: string; alternateResource: string } | null>(null);
   const [draggedItem, setDraggedItem] = useState<{ type: 'template' | 'placed-block'; data: BlockTemplate | PlacedBlock } | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [showCreateEvent, setShowCreateEvent] = useState(false);
   const [hoverMinutes, setHoverMinutes] = useState<number | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showUnassigned, setShowUnassigned] = useState(false);
@@ -521,6 +523,13 @@ export function Builder() {
               Partners
             </button>
             <button
+              onClick={() => setShowCreateEvent(true)}
+              className="px-3 py-1 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
+              data-testid="create-event-button"
+            >
+              Create Event
+            </button>
+            <button
               onClick={() => setShowSettings(true)}
               className="px-3 py-1 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
               data-testid="edit-settings-button"
@@ -699,6 +708,21 @@ export function Builder() {
 
       <PlanEditor plan={plan} open={showSettings} onClose={() => setShowSettings(false)} onToggleDiagnostics={() => setShowDiagnostics(!showDiagnostics)} showDiagnostics={showDiagnostics} />
       <ExportImportPanel plan={plan} open={showExport} onClose={() => setShowExport(false)} />
+
+      <CreateEventDialog
+        open={showCreateEvent}
+        onClose={() => setShowCreateEvent(false)}
+        templates={state.templates}
+        onCreate={(block: any, newTemplate?: any) => {
+          // add optional template first
+          if (newTemplate) {
+            dispatch({ type: 'ADD_TEMPLATE', payload: newTemplate });
+          }
+          // ensure block id and plan
+          const b = { ...block, id: block.id || uuidv4() };
+          dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block: b } });
+        }}
+      />
       
       {showPartners && (
         <PartnersPanel
