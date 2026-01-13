@@ -33,7 +33,7 @@ function DraggableTemplate({ template, onEdit }: DraggableTemplateProps) {
         <div className="flex-1 min-w-0">
           <p className="font-medium text-sm truncate">{template.title}</p>
           <p className="text-xs text-gray-500">{template.category}</p>
-          <p className="text-xs text-gray-400 mt-1">15m block</p>
+          <p className="text-xs text-gray-400 mt-1">{formatDuration(template.defaultDurationMin)}</p>
         </div>
         <button
           onClick={(e) => {
