@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { PlacedBlock, BlockTemplate, Plan, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId, ApplyScope, DAYS, Day, RecurrenceType } from '@/state/types';
+import { PlacedBlock, BlockTemplate, Plan, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId, ApplyScope, DAYS, Day, RecurrenceType, RecurrencePattern } from '@/state/types';
 import { formatDuration, minutesToTimeDisplay, getEndMinutes } from '@/lib/time';
 import { ConfirmModal, Modal } from './Modal';
+import { createRecurringBlocks } from '@/lib/recurrence';
 
 interface BlockEditPanelProps {
   block: PlacedBlock;
@@ -11,6 +12,7 @@ interface BlockEditPanelProps {
   onDelete: (scope?: ApplyScope) => void;
   onDuplicate: () => void;
   onClose: () => void;
+  onCreateRecurrence?: (blocks: PlacedBlock[]) => void;
 }
 
 const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180, 240, 300, 360, 420, 480, 540];
@@ -23,7 +25,7 @@ function generateTimeOptions(startMinutes: number, endMinutes: number): number[]
   return options;
 }
 
-export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDuplicate, onClose }: BlockEditPanelProps) {
+export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDuplicate, onClose, onCreateRecurrence }: BlockEditPanelProps) {
   const [titleOverride, setTitleOverride] = useState(block.titleOverride);
   const [startMinutes, setStartMinutes] = useState(block.startMinutes);
   const [durationMinutes, setDurationMinutes] = useState(block.durationMinutes);
@@ -48,6 +50,8 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
     setNotes(block.notes);
     setCountsTowardGoldenRule(block.countsTowardGoldenRule);
     setGoldenRuleBucketId(block.goldenRuleBucketId || '');
+    setRecurrenceDays([block.day]);
+    setRecurrenceStartWeek(block.week);
   }, [block]);
 
   useEffect(() => {
@@ -82,6 +86,36 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
   const handleDelete = (scope?: ApplyScope) => {
     onDelete(scope);
     setShowDeleteConfirm(false);
+  };
+
+  const handleApplyRecurrence = () => {
+    if (recurrenceType === 'none' || !onCreateRecurrence) {
+      setShowRecurrence(false);
+      return;
+    }
+
+    const pattern: RecurrencePattern = {
+      type: recurrenceType,
+      daysOfWeek: recurrenceType === 'weekly' ? [block.day] : recurrenceDays,
+      startWeek: recurrenceStartWeek,
+      endWeek: recurrenceEndWeek,
+    };
+
+    const currentBlock: PlacedBlock = {
+      ...block,
+      titleOverride,
+      startMinutes,
+      durationMinutes,
+      location,
+      notes,
+      countsTowardGoldenRule,
+      goldenRuleBucketId: countsTowardGoldenRule && goldenRuleBucketId ? goldenRuleBucketId : null,
+    };
+
+    const { blocks } = createRecurringBlocks(currentBlock, pattern, plan);
+    onCreateRecurrence(blocks);
+    setShowRecurrence(false);
+    onClose();
   };
 
   const title = template?.title || 'Unknown Block';
@@ -221,15 +255,17 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
             </div>
           )}
 
-          <div>
-            <button
-              onClick={() => setShowRecurrence(true)}
-              className="text-sm text-blue-600 hover:underline"
-              data-testid="setup-recurrence-button"
-            >
-              Set up recurrence...
-            </button>
-          </div>
+          {!isRecurring && (
+            <div>
+              <button
+                onClick={() => setShowRecurrence(true)}
+                className="text-sm text-blue-600 hover:underline"
+                data-testid="setup-recurrence-button"
+              >
+                Set up recurrence...
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -275,18 +311,21 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
             <button
               onClick={() => handleDelete('this')}
               className="w-full px-4 py-2 text-sm border rounded hover:bg-gray-50 text-left"
+              data-testid="delete-this-only"
             >
               This instance only
             </button>
             <button
               onClick={() => handleDelete('thisAndFuture')}
               className="w-full px-4 py-2 text-sm border rounded hover:bg-gray-50 text-left"
+              data-testid="delete-this-and-future"
             >
               This and future occurrences
             </button>
             <button
               onClick={() => handleDelete('all')}
               className="w-full px-4 py-2 text-sm border border-red-300 text-red-600 rounded hover:bg-red-50 text-left"
+              data-testid="delete-all-occurrences"
             >
               All occurrences
             </button>
@@ -307,18 +346,21 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
             <button
               onClick={() => { handleSave('this'); setApplyScopeAction(null); }}
               className="w-full px-4 py-2 text-sm border rounded hover:bg-gray-50 text-left"
+              data-testid="save-this-only"
             >
               This instance only
             </button>
             <button
               onClick={() => { handleSave('thisAndFuture'); setApplyScopeAction(null); }}
               className="w-full px-4 py-2 text-sm border rounded hover:bg-gray-50 text-left"
+              data-testid="save-this-and-future"
             >
               This and future occurrences
             </button>
             <button
               onClick={() => { handleSave('all'); setApplyScopeAction(null); }}
               className="w-full px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 text-left"
+              data-testid="save-all-occurrences"
             >
               All occurrences
             </button>
@@ -340,6 +382,7 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
               value={recurrenceType}
               onChange={e => setRecurrenceType(e.target.value as RecurrenceType)}
               className="w-full px-3 py-2 border rounded text-sm"
+              data-testid="recurrence-type-select"
             >
               <option value="none">None</option>
               <option value="weekly">Weekly (same day each week)</option>
@@ -365,6 +408,7 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
                               setRecurrenceDays(recurrenceDays.filter(d => d !== day));
                             }
                           }}
+                          data-testid={`recurrence-day-${day}`}
                         />
                         {day.slice(0, 3)}
                       </label>
@@ -380,6 +424,7 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
                     value={recurrenceStartWeek}
                     onChange={e => setRecurrenceStartWeek(parseInt(e.target.value))}
                     className="w-full px-3 py-2 border rounded text-sm"
+                    data-testid="recurrence-start-week"
                   >
                     {Array.from({ length: plan.settings.weeks }, (_, i) => i + 1).map(w => (
                       <option key={w} value={w}>Week {w}</option>
@@ -392,12 +437,29 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
                     value={recurrenceEndWeek}
                     onChange={e => setRecurrenceEndWeek(parseInt(e.target.value))}
                     className="w-full px-3 py-2 border rounded text-sm"
+                    data-testid="recurrence-end-week"
                   >
                     {Array.from({ length: plan.settings.weeks }, (_, i) => i + 1).map(w => (
                       <option key={w} value={w}>Week {w}</option>
                     ))}
                   </select>
                 </div>
+              </div>
+
+              <div className="p-3 bg-gray-50 rounded text-sm">
+                <p className="font-medium mb-1">Preview:</p>
+                <p className="text-gray-600">
+                  {recurrenceType === 'weekly' 
+                    ? `Every ${block.day} from Week ${recurrenceStartWeek} to Week ${recurrenceEndWeek}`
+                    : `${recurrenceDays.map(d => d.slice(0, 3)).join(', ')} from Week ${recurrenceStartWeek} to Week ${recurrenceEndWeek}`
+                  }
+                </p>
+                <p className="text-gray-500 text-xs mt-1">
+                  This will create {recurrenceType === 'weekly' 
+                    ? recurrenceEndWeek - recurrenceStartWeek + 1 
+                    : (recurrenceEndWeek - recurrenceStartWeek + 1) * recurrenceDays.length
+                  } block occurrences.
+                </p>
               </div>
             </>
           )}
@@ -410,10 +472,10 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
               Cancel
             </button>
             <button
-              onClick={() => {
-                setShowRecurrence(false);
-              }}
-              className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+              onClick={handleApplyRecurrence}
+              disabled={recurrenceType !== 'none' && recurrenceType === 'custom' && recurrenceDays.length === 0}
+              className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              data-testid="apply-recurrence-button"
             >
               Apply
             </button>
