@@ -398,7 +398,7 @@ export function Builder() {
               className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
               data-testid="export-button"
             >
-              Export
+              Export / Import
             </button>
             <button
               onClick={() => setShowPrint(true)}
