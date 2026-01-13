@@ -754,6 +754,15 @@ export function Builder() {
             setSelectedBlockId(b.id);
             setShowCompare(false);
           }}
+          onResolveConflict={(planId, blockId, newResource) => {
+            const p = state.plans.find(pl => pl.id === planId);
+            if (!p) return;
+            const b = p.blocks.find(bl => bl.id === blockId);
+            if (!b) return;
+            const updated = { ...b, resource: newResource };
+            dispatch({ type: 'UPDATE_BLOCK', payload: { planId: p.id, block: updated } });
+            setShowCompare(false);
+          }}
         />
       )}
       
