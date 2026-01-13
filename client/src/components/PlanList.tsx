@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useLocation } from 'wouter';
 import { useStore } from '@/state/store';
-import { Plan, PlanSettings, DEFAULT_RESOURCES, AppState, PlacedBlock } from '@/state/types';
+import { Plan, PlanSettings, DEFAULT_RESOURCES, AppState, PlacedBlock, Day, DAYS } from '@/state/types';
 import { Modal, ConfirmModal } from './Modal';
 import { createDefaultPlanSettings } from '@/lib/storage';
 import { v4 as uuidv4 } from 'uuid';
@@ -23,6 +23,9 @@ export function PlanList() {
   const [ocrProgress, setOCRProgress] = useState(0);
   const [ocrEvents, setOCREvents] = useState<OCREvent[]>([]);
   const [ocrPlanName, setOCRPlanName] = useState('');
+  const [ocrRawText, setOCRRawText] = useState('');
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [manualEvents, setManualEvents] = useState<Array<{id: string; title: string; day: Day; startMinutes: number; durationMinutes: number}>>([]);
 
   const handleCreate = () => {
     if (!formData.name.trim()) return;
@@ -89,12 +92,13 @@ export function PlanList() {
     setImportError(null);
 
     try {
-      const { events } = await processImageWithOCR(file, setOCRProgress);
+      const { events, rawText } = await processImageWithOCR(file, setOCRProgress);
       setOCREvents(events);
+      setOCRRawText(rawText);
       setOCRPlanName(`Imported from ${file.name.replace(/\.[^/.]+$/, '')}`);
       
       if (events.length === 0) {
-        setImportError('No schedule events detected in the image. Try a clearer image with visible times.');
+        setImportError('No schedule events detected. Screenshot import works best with clear text. For Google Calendar, try exporting as ICS instead (Calendar Settings → Export).');
       }
     } catch (err) {
       setImportError('Failed to process image. Please try again.');
@@ -338,8 +342,18 @@ export function PlanList() {
       )}
 
       {ocrEvents.length > 0 && !ocrProcessing && (
-        <Modal open={true} onClose={() => { setOCREvents([]); setOCRPlanName(''); }} title="Create Plan from Screenshot">
+        <Modal open={true} onClose={() => { setOCREvents([]); setOCRPlanName(''); setOCRRawText(''); }} title="Screenshot Import Results">
           <div className="space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm">
+              <p className="font-medium text-amber-800 mb-1">Limited Results</p>
+              <p className="text-amber-700">
+                Screenshot scanning has difficulty with calendar grids. For better results, export your calendar as ICS or CSV file.
+              </p>
+              <p className="text-amber-600 text-xs mt-1">
+                Google Calendar: Settings → Import & export → Export
+              </p>
+            </div>
+            
             <div>
               <label className="block text-sm font-medium mb-1">Plan Name *</label>
               <input
@@ -354,36 +368,40 @@ export function PlanList() {
             
             <div>
               <p className="text-sm text-gray-600 mb-2">
-                {ocrEvents.length} events detected. Events with missing data will be skipped.
+                {ocrEvents.length} text items detected (may need editing after import):
               </p>
-              <div className="max-h-48 overflow-auto border rounded text-xs">
+              <div className="max-h-36 overflow-auto border rounded text-xs">
                 <table className="w-full">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
                       <th className="p-2 text-left">Day</th>
                       <th className="p-2 text-left">Time</th>
-                      <th className="p-2 text-left">Title</th>
+                      <th className="p-2 text-left">Detected Text</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {ocrEvents.map(event => {
-                      const isValid = event.startMinutes !== null && event.endMinutes !== null && event.day !== null;
-                      return (
-                        <tr key={event.id} className={isValid ? '' : 'bg-red-50 text-gray-400'}>
-                          <td className="p-2">{event.day || '?'}</td>
-                          <td className="p-2">{event.startTime} - {event.endTime}</td>
-                          <td className="p-2 truncate max-w-[120px]">{event.title}</td>
-                        </tr>
-                      );
-                    })}
+                    {ocrEvents.map(event => (
+                      <tr key={event.id}>
+                        <td className="p-2">{event.day || 'Mon'}</td>
+                        <td className="p-2">{event.startTime} - {event.endTime}</td>
+                        <td className="p-2 truncate max-w-[120px]" title={event.title}>{event.title}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
             </div>
+            
+            <details className="text-xs">
+              <summary className="cursor-pointer text-gray-500 hover:text-gray-700">Show raw scanned text</summary>
+              <pre className="mt-2 p-2 bg-gray-100 rounded overflow-auto max-h-24 whitespace-pre-wrap text-[10px]">
+                {ocrRawText || 'No text detected'}
+              </pre>
+            </details>
 
-            <div className="flex justify-end gap-3 pt-4">
+            <div className="flex justify-end gap-3 pt-2">
               <button
-                onClick={() => { setOCREvents([]); setOCRPlanName(''); }}
+                onClick={() => { setOCREvents([]); setOCRPlanName(''); setOCRRawText(''); }}
                 className="px-4 py-2 text-sm border rounded hover:bg-gray-50"
               >
                 Cancel
@@ -394,7 +412,7 @@ export function PlanList() {
                 className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
                 data-testid="create-plan-from-ocr"
               >
-                Create Plan
+                Create Plan Anyway
               </button>
             </div>
           </div>
