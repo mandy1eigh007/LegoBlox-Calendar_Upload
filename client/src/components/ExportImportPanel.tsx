@@ -27,10 +27,12 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   const [csvContent, setCSVContent] = useState<string | null>(null);
   const [csvHeaders, setCSVHeaders] = useState<string[]>([]);
   const [csvMapping, setCSVMapping] = useState(() => {
-    const saved = localStorage.getItem('csvMapping');
-    if (saved) {
+    if (typeof window !== 'undefined') {
       try {
-        return JSON.parse(saved);
+        const saved = localStorage.getItem('csvMapping');
+        if (saved) {
+          return JSON.parse(saved);
+        }
       } catch {}
     }
     return {
@@ -46,7 +48,11 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   const [csvDrafts, setCSVDrafts] = useState<CSVDraftEvent[]>([]);
   
   useEffect(() => {
-    localStorage.setItem('csvMapping', JSON.stringify(csvMapping));
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('csvMapping', JSON.stringify(csvMapping));
+      } catch {}
+    }
   }, [csvMapping]);
   
   const ocrInputRef = useRef<HTMLInputElement>(null);
