@@ -12,6 +12,7 @@ export interface BucketTotal {
   budget: number;
   difference: number;
   status: 'under' | 'on-target' | 'over';
+  met: boolean;
 }
 
 export function calculateGoldenRuleTotals(
@@ -58,7 +59,8 @@ export function calculateGoldenRuleTotals(
       scheduled, 
       budget: bucket.budgetMinutes, 
       difference, 
-      status 
+      status,
+      met: scheduled >= bucket.budgetMinutes,
     };
   });
 }
