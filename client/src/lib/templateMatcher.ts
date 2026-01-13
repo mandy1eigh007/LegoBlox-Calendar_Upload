@@ -1,11 +1,13 @@
 import { BlockTemplate, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId } from '@/state/types';
+import { matchTitleToTemplateViaAlias } from './titleAliases';
 
 export interface TemplateMatchResult {
   templateId: string | null;
   bucketId: GoldenRuleBucketId | null;
-  matchedBy: 'exact' | 'keyword' | 'fuzzy' | 'none';
+  matchedBy: 'exact' | 'alias' | 'keyword' | 'fuzzy' | 'none';
   confidence: number;
   candidates: TemplateCandidate[];
+  aliasUsed?: string;
 }
 
 export interface TemplateCandidate {
@@ -201,6 +203,29 @@ export function resolveTemplateForImportedTitle(
           score: 1,
           matchReason: 'Exact title match'
         }]
+      };
+    }
+  }
+  
+  const templateIds = templates.map(t => t.id);
+  const aliasMatch = matchTitleToTemplateViaAlias(title, templateIds);
+  
+  if (aliasMatch.templateId) {
+    const template = templates.find(t => t.id === aliasMatch.templateId);
+    if (template) {
+      return {
+        templateId: template.id,
+        bucketId: template.goldenRuleBucketId,
+        matchedBy: 'alias',
+        confidence: aliasMatch.matchType === 'exact' ? 1 : aliasMatch.matchType === 'alias' ? 0.95 : 0.85,
+        candidates: [{
+          templateId: template.id,
+          templateTitle: template.title,
+          bucketId: template.goldenRuleBucketId,
+          score: 0.95,
+          matchReason: `Alias: "${aliasMatch.aliasUsed}"`
+        }],
+        aliasUsed: aliasMatch.aliasUsed
       };
     }
   }

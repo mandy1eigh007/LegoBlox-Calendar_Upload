@@ -1,0 +1,476 @@
+An ICS file absolutely has the text. If your importer can create events at all, it is already reading the `SUMMARY` field (the title). What’s failing is your matching layer, and the current “fallback to first template” behavior is masking the problem by silently assigning everything to “Introduction to Pre-Apprenticeship.”
+
+Fix is straightforward:
+
+1. Parse `SUMMARY` correctly (including weird ICS formatting).
+2. Normalize titles aggressively (strip “Intro/Introduction/Part/Week/Cohort/PACE/TRP”, punctuation, case, extra spaces).
+3. Match by keyword scoring first (deterministic, explainable).
+4. Use fuzzy similarity only as a last resort.
+5. If still unsure: mark **Unassigned**, show the top 3 suggestions with confidence, and ask you.
+6. Add double-click assignment on any block and a bulk “apply to all similar titles” option.
+7. Persist your manual assignments so next import gets smarter automatically.
+
+Below is drop-in code you can paste into Replit. It gives you:
+
+* Smarter matcher with keyword intelligence + fuzzy fallback
+* “Ask if unsure” behavior (no more defaulting everything to the first template)
+* Suggestions list
+* A normalized-title map so manual assignments stick
+
+---
+
+## 1) `src/lib/templateMatcher.ts`
+
+```ts
+// src/lib/templateMatcher.ts
+// Deterministic keyword-first template matching for imported event titles (ICS/CSV/OCR).
+// If unsure -> return Unassigned with top suggestions. Never auto-default to first template.
+
+export type Template = {
+  id: string;
+  title: string;
+  category?: string;
+  // Optional explicit keywords/aliases for better matching
+  keywords?: string[];
+  aliases?: string[];
+};
+
+export type MatchResult = {
+  templateId: string | null; // null = Unassigned
+  confidence: number; // 0..1
+  reason: string;
+  suggestions: Array<{ templateId: string; confidence: number; reason: string }>;
+  normalizedTitle: string;
+};
+
+type MatcherOptions = {
+  // If best score below this, return Unassigned
+  minConfidenceToAutoAssign?: number; // default 0.72
+  // If best - secondBest < this, treat as ambiguous and ask
+  minGapToAutoAssign?: number; // default 0.08
+};
+
+const DEFAULT_OPTIONS: Required<MatcherOptions> = {
+  minConfidenceToAutoAssign: 0.72,
+  minGapToAutoAssign: 0.08,
+};
+
+// Words that appear constantly and should not drive matching
+const STOPWORDS = new Set([
+  "intro",
+  "introduction",
+  "into",
+  "to",
+  "and",
+  "the",
+  "a",
+  "an",
+  "part",
+  "session",
+  "week",
+  "day",
+  "class",
+  "cohort",
+  "pace",
+  "trp",
+  "tuk",
+  "pierce",
+  "county",
+  "classroom",
+  "room",
+  "shop",
+  "admin",
+  "final",
+  "review",
+  "round",
+  "unit",
+  "due",
+  "tentative",
+]);
+
+// Strong “anchor” keywords (high signal)
+const ANCHORS: Array<{
+  templateHintIds?: string[]; // optional: if you know your internal IDs
+  keywords: string[];
+  weight: number;
+  label: string;
+}> = [
+  { keywords: ["osha"], weight: 6, label: "OSHA anchor" },
+  { keywords: ["forklift"], weight: 6, label: "Forklift anchor" },
+  { keywords: ["flagger", "flagging"], weight: 6, label: "Flagger anchor" },
+  { keywords: ["mock", "interview"], weight: 6, label: "Interview anchor" },
+  { keywords: ["resume", "résumé"], weight: 6, label: "Resume anchor" },
+  { keywords: ["elevator", "pitch"], weight: 6, label: "Elevator pitch anchor" },
+  { keywords: ["aces", "ace"], weight: 6, label: "ACES anchor" },
+  { keywords: ["tape", "measure", "measuring"], weight: 5, label: "Tape measure anchor" },
+  { keywords: ["ladder"], weight: 5, label: "Ladder anchor" },
+  { keywords: ["scaffold", "scaffolding"], weight: 5, label: "Scaffold anchor" },
+  { keywords: ["grit", "growth", "mindset"], weight: 5, label: "Grit/Growth anchor" },
+  { keywords: ["trade", "awareness"], weight: 5, label: "Trade awareness anchor" },
+  { keywords: ["support", "services"], weight: 5, label: "Support services anchor" },
+  { keywords: ["tour", "worksite", "jobsite", "site", "speaker", "guest"], weight: 4, label: "Tour/Speaker anchor" },
+];
+
+// Basic normalization: lower, strip punctuation, collapse spaces, remove stopword clutter
+export function normalizeTitle(raw: string): string {
+  const s = (raw || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "") // remove diacritics
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ") // unicode-safe non-alnum -> space
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!s) return "";
+
+  // Remove obvious cohort prefixes like "PACE 62", "TRP 129"
+  const noCohort = s.replace(/\b(pace|trp)\s*\d+\b/g, "").replace(/\s+/g, " ").trim();
+
+  // Remove stopwords but keep meaningful tokens
+  const tokens = noCohort.split(" ").filter((t) => t && !STOPWORDS.has(t));
+  return tokens.join(" ").trim();
+}
+
+function tokenize(normalized: string): string[] {
+  if (!normalized) return [];
+  return normalized.split(" ").filter(Boolean);
+}
+
+// Levenshtein distance for fuzzy matching (no dependency)
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+
+  const dp = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const temp = dp[j];
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[j] = Math.min(dp[j] + 1, dp[j - 1] + 1, prev + cost);
+      prev = temp;
+    }
+  }
+  return dp[n];
+}
+
+function similarity(a: string, b: string): number {
+  // normalized similarity from levenshtein
+  if (!a || !b) return 0;
+  const dist = levenshtein(a, b);
+  const maxLen = Math.max(a.length, b.length);
+  return maxLen === 0 ? 1 : 1 - dist / maxLen;
+}
+
+type Profile = {
+  id: string;
+  title: string;
+  normTitle: string;
+  tokenSet: Set<string>;
+  keywords: Set<string>;
+  aliases: string[];
+};
+
+function buildProfiles(templates: Template[]): Profile[] {
+  return templates.map((t) => {
+    const normTitle = normalizeTitle(t.title);
+    const titleTokens = tokenize(normTitle);
+    const keywordSet = new Set<string>();
+
+    // Title tokens count as keywords
+    for (const tok of titleTokens) keywordSet.add(tok);
+
+    // Explicit keywords/aliases
+    if (t.keywords) for (const k of t.keywords) keywordSet.add(normalizeTitle(k));
+    const aliases = (t.aliases || []).map((a) => normalizeTitle(a)).filter(Boolean);
+
+    // Expand aliases into keyword space too
+    for (const a of aliases) {
+      for (const tok of tokenize(a)) keywordSet.add(tok);
+    }
+
+    return {
+      id: t.id,
+      title: t.title,
+      normTitle,
+      tokenSet: new Set(titleTokens),
+      keywords: keywordSet,
+      aliases,
+    };
+  });
+}
+
+function scoreByKeywords(eventTokens: string[], profile: Profile): { score: number; reason: string } {
+  if (eventTokens.length === 0) return { score: 0, reason: "No tokens" };
+
+  let score = 0;
+  const matched: string[] = [];
+
+  // Keyword overlap
+  for (const tok of eventTokens) {
+    if (profile.keywords.has(tok)) {
+      score += 1.2; // base keyword hit
+      matched.push(tok);
+    }
+  }
+
+  // Anchor boosts (high-signal phrases)
+  const eventTokenSet = new Set(eventTokens);
+  for (const anchor of ANCHORS) {
+    const hasAll = anchor.keywords.every((k) => eventTokenSet.has(normalizeTitle(k)));
+    if (hasAll) {
+      score += anchor.weight;
+      matched.push(`anchor:${anchor.label}`);
+    }
+  }
+
+  // Slight bonus for matching multiword title similarity
+  const titleSim = similarity(eventTokens.join(" "), profile.normTitle);
+  score += titleSim * 2.0;
+
+  const reason =
+    matched.length > 0
+      ? `Matched: ${matched.slice(0, 6).join(", ")} (titleSim=${titleSim.toFixed(2)})`
+      : `Weak match (titleSim=${titleSim.toFixed(2)})`;
+
+  return { score, reason };
+}
+
+export function matchTemplate(
+  rawTitle: string,
+  templates: Template[],
+  // persistedAssignments maps normalizedTitle -> templateId
+  persistedAssignments?: Record<string, string>,
+  options?: MatcherOptions
+): MatchResult {
+  const opt = { ...DEFAULT_OPTIONS, ...(options || {}) };
+
+  const normalizedTitle = normalizeTitle(rawTitle);
+  if (!normalizedTitle) {
+    return {
+      templateId: null,
+      confidence: 0,
+      reason: "Empty/unknown title",
+      suggestions: [],
+      normalizedTitle,
+    };
+  }
+
+  // 1) If user already assigned this exact normalized title before, honor it.
+  if (persistedAssignments && persistedAssignments[normalizedTitle]) {
+    return {
+      templateId: persistedAssignments[normalizedTitle],
+      confidence: 1,
+      reason: "Previously assigned by user",
+      suggestions: [],
+      normalizedTitle,
+    };
+  }
+
+  const profiles = buildProfiles(templates);
+  const eventTokens = tokenize(normalizedTitle);
+
+  // 2) Keyword scoring across all templates
+  const scored = profiles.map((p) => {
+    const { score, reason } = scoreByKeywords(eventTokens, p);
+    return { templateId: p.id, score, reason };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+
+  const best = scored[0];
+  const second = scored[1];
+
+  // Convert raw score to 0..1 confidence (simple squashing)
+  // You can tune these constants based on your library size.
+  const confBest = Math.max(0, Math.min(1, best.score / 10));
+  const confSecond = second ? Math.max(0, Math.min(1, second.score / 10)) : 0;
+  const gap = confBest - confSecond;
+
+  const suggestions = scored.slice(0, 3).map((s) => ({
+    templateId: s.templateId,
+    confidence: Math.max(0, Math.min(1, s.score / 10)),
+    reason: s.reason,
+  }));
+
+  // 3) Decide: auto-assign vs ask
+  if (confBest >= opt.minConfidenceToAutoAssign && gap >= opt.minGapToAutoAssign) {
+    return {
+      templateId: best.templateId,
+      confidence: confBest,
+      reason: best.reason,
+      suggestions,
+      normalizedTitle,
+    };
+  }
+
+  // 4) Unassigned, with suggestions
+  return {
+    templateId: null,
+    confidence: confBest,
+    reason: `Unassigned (bestConf=${confBest.toFixed(2)}, gap=${gap.toFixed(2)}). Needs confirmation.`,
+    suggestions,
+    normalizedTitle,
+  };
+}
+
+// Store / load user assignments locally (swap to DB later if you want multi-user)
+const STORAGE_KEY = "templateAssignments.v1";
+
+export function loadAssignments(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+export function saveAssignments(map: Record<string, string>): void {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
+}
+
+export function recordAssignment(normalizedTitle: string, templateId: string): Record<string, string> {
+  const map = loadAssignments();
+  map[normalizedTitle] = templateId;
+  saveAssignments(map);
+  return map;
+}
+```
+
+Key behavior change: **never default to the first template**. If it’s not confident, it returns `templateId: null` with suggestions.
+
+---
+
+## 2) Change your ICS import so titles don’t get mangled
+
+A common reason your matcher “can’t predict” is because the title you feed it isn’t actually the `SUMMARY` cleanly (it might include extra fields, or it’s not decoding escaped text). Make sure you:
+
+* Unfold ICS lines (ICS can wrap long lines starting with a space)
+* Decode `\\n`, `\\,`, `\\;`
+
+Here’s a safe helper:
+
+```ts
+// src/lib/icsText.ts
+export function unfoldIcs(text: string): string {
+  // Lines that start with space/tab are continuations
+  return text.replace(/\r?\n[ \t]/g, "");
+}
+
+export function decodeIcsValue(v: string): string {
+  return (v || "")
+    .replace(/\\n/gi, " ")
+    .replace(/\\,/g, ",")
+    .replace(/\\;/g, ";")
+    .trim();
+}
+
+export function extractSummaryLine(veventBlock: string): string {
+  const lines = veventBlock.split(/\r?\n/);
+  for (const line of lines) {
+    // SUMMARY;LANGUAGE=en-US:Something OR SUMMARY:Something
+    if (line.startsWith("SUMMARY")) {
+      const idx = line.indexOf(":");
+      if (idx >= 0) return decodeIcsValue(line.slice(idx + 1));
+    }
+  }
+  return "";
+}
+```
+
+If your importer already uses an ICS parser library, still verify you’re using the right field (`summary`, not `description` or `location`).
+
+---
+
+## 3) Double-click assignment (required)
+
+Wherever you render an event block:
+
+```tsx
+// inside your calendar event component
+<div
+  className="event-block"
+  onDoubleClick={() => {
+    // open Assign Template modal
+    openAssignModal({
+      eventId: event.id,
+      rawTitle: event.title,
+      normalizedTitle: event.normalizedTitle,
+      suggestions: event.suggestions,
+    });
+  }}
+>
+  {event.title}
+</div>
+```
+
+In the modal:
+
+* show dropdown of templates
+* show “Apply to all similar titles” checkbox
+* show top suggestions from matcher
+* when user saves:
+
+  * update that event’s templateId
+  * if “apply to all similar”, call `recordAssignment(normalizedTitle, templateId)` and re-run matching across all imported events
+
+This is what turns imports into a one-time cleanup, not a recurring nightmare.
+
+---
+
+## 4) What the import flow should do (this is where your current app is failing)
+
+During import review (before adding to calendar):
+
+1. Parse events
+2. For each event:
+
+   * `normalizedTitle = normalizeTitle(summary)`
+   * `match = matchTemplate(summary, templates, loadAssignments())`
+   * attach `match.templateId`, `match.confidence`, `match.suggestions`
+3. UI shows:
+
+   * Assigned events (counts toward Golden Rule if template says so)
+   * Unassigned events (does NOT count, must be assigned)
+4. Only after review/assignment do you commit blocks to the plan.
+
+No more silent misclassification.
+
+---
+
+## 5) Why your expectation is correct (“in the same vein it should match”)
+
+You’re right because your titles share obvious signals:
+
+* “intro resume” contains `resume`
+* “shop introduction” contains `shop`
+* “intro pre apprenticeship” contains `pre`/`apprenticeship`
+  The only reason it “can’t” is because the app is doing one of these wrong:
+* It’s not extracting `SUMMARY` cleanly
+* It’s not normalizing text
+* It’s using exact string equality only
+* It’s defaulting unmatched titles to the first template
+
+The code above fixes all four.
+
+---
+
+## 6) The one line you must give Replit so it stops lying to you
+
+Put this in your Replit prompt (verbatim):
+
+“Do not default unmatched imported events to the first template. If confidence is below threshold or ambiguous, mark as Unassigned, show top 3 suggested templates with confidence and reasons, and require user confirmation before counting toward Golden Rule totals or committing to the calendar.”
+
+---
+
+If you paste your current template list (IDs + titles) from your app, I’ll tailor the keyword/alias sets so “Intro to Resume”, “Resume Work Time”, “Intro into Shop”, etc. land correctly on your exact templates without you having to babysit it.

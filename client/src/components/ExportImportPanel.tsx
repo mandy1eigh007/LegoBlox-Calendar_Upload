@@ -8,6 +8,9 @@ import { minutesToTimeDisplay } from '@/lib/time';
 import { v4 as uuidv4 } from 'uuid';
 import { AlertTriangle, Camera, Loader2 } from 'lucide-react';
 import { processImageWithOCR, OCREvent } from '@/lib/ocr';
+import { loadTitleAliases, importAliasCSV, exportAliasCSV, TitleAlias } from '@/lib/titleAliases';
+import { loadResources, importResourceCSV, exportResourceCSV } from '@/lib/resources';
+import { loadHardEvents, importHardEventsCSV, exportHardEventsCSV } from '@/lib/hardEvents';
 
 interface ExportImportPanelProps {
   plan: Plan;
@@ -60,6 +63,100 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   const [ocrProgress, setOCRProgress] = useState(0);
   const [ocrEvents, setOCREvents] = useState<OCREvent[]>([]);
   const [ocrRawText, setOCRRawText] = useState('');
+  
+  const aliasInputRef = useRef<HTMLInputElement>(null);
+  const resourceInputRef = useRef<HTMLInputElement>(null);
+  const hardEventsInputRef = useRef<HTMLInputElement>(null);
+  
+  const [aliasCount, setAliasCount] = useState(() => loadTitleAliases().aliases.length);
+  const [resourceCount, setResourceCount] = useState(() => loadResources().resources.length);
+  const [hardEventCount, setHardEventCount] = useState(() => loadHardEvents().events.length);
+  const [configImportSuccess, setConfigImportSuccess] = useState<string | null>(null);
+  
+  const handleAliasCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      const count = importAliasCSV(content);
+      if (count > 0) {
+        setAliasCount(loadTitleAliases().aliases.length);
+        setConfigImportSuccess(`Imported ${count} title aliases`);
+        setTimeout(() => setConfigImportSuccess(null), 3000);
+      } else {
+        setImportError('No valid aliases found. Make sure CSV has raw_title,template_id columns.');
+      }
+    };
+    reader.readAsText(file);
+    if (aliasInputRef.current) aliasInputRef.current.value = '';
+  };
+  
+  const handleAliasCSVExport = () => {
+    const csv = exportAliasCSV();
+    downloadCSVFile(csv, 'title_aliases.csv');
+  };
+  
+  const handleResourceCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      const count = importResourceCSV(content);
+      if (count > 0) {
+        setResourceCount(loadResources().resources.length);
+        setConfigImportSuccess(`Imported ${count} resources`);
+        setTimeout(() => setConfigImportSuccess(null), 3000);
+      } else {
+        setImportError('No valid resources found. Make sure CSV has resource_id,name columns.');
+      }
+    };
+    reader.readAsText(file);
+    if (resourceInputRef.current) resourceInputRef.current.value = '';
+  };
+  
+  const handleResourceCSVExport = () => {
+    const csv = exportResourceCSV();
+    downloadCSVFile(csv, 'resources.csv');
+  };
+  
+  const handleHardEventsCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      const count = importHardEventsCSV(content);
+      if (count > 0) {
+        setHardEventCount(loadHardEvents().events.length);
+        setConfigImportSuccess(`Imported ${count} locked events`);
+        setTimeout(() => setConfigImportSuccess(null), 3000);
+      } else {
+        setImportError('No valid events found. Check CSV format.');
+      }
+    };
+    reader.readAsText(file);
+    if (hardEventsInputRef.current) hardEventsInputRef.current.value = '';
+  };
+  
+  const handleHardEventsCSVExport = () => {
+    const csv = exportHardEventsCSV();
+    downloadCSVFile(csv, 'hard_events.csv');
+  };
+  
+  const downloadCSVFile = (content: string, filename: string) => {
+    const blob = new Blob([content], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleExportCSV = () => {
     const csv = exportToCSV(plan, state.templates);
@@ -559,6 +656,53 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
           >
             Export Full Backup (All Plans + Templates)
           </button>
+        </div>
+
+        <div className="border-t pt-4">
+          <h4 className="font-medium mb-3">Configuration Files</h4>
+          <p className="text-sm text-gray-600 mb-3">
+            Upload CSV files to configure title mappings, resources, and locked events.
+          </p>
+          
+          <input ref={aliasInputRef} type="file" accept=".csv" onChange={handleAliasCSVUpload} className="hidden" data-testid="alias-csv-input" />
+          <input ref={resourceInputRef} type="file" accept=".csv" onChange={handleResourceCSVUpload} className="hidden" data-testid="resource-csv-input" />
+          <input ref={hardEventsInputRef} type="file" accept=".csv" onChange={handleHardEventsCSVUpload} className="hidden" data-testid="hardevents-csv-input" />
+          
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm w-40">Title Aliases ({aliasCount})</span>
+              <button onClick={() => aliasInputRef.current?.click()} className="flex-1 px-3 py-1 text-sm border rounded hover:bg-gray-50" data-testid="import-alias-button">
+                Upload
+              </button>
+              <button onClick={handleAliasCSVExport} className="flex-1 px-3 py-1 text-sm border rounded hover:bg-gray-50" data-testid="export-alias-button">
+                Export
+              </button>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <span className="text-sm w-40">Resources ({resourceCount})</span>
+              <button onClick={() => resourceInputRef.current?.click()} className="flex-1 px-3 py-1 text-sm border rounded hover:bg-gray-50" data-testid="import-resource-button">
+                Upload
+              </button>
+              <button onClick={handleResourceCSVExport} className="flex-1 px-3 py-1 text-sm border rounded hover:bg-gray-50" data-testid="export-resource-button">
+                Export
+              </button>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <span className="text-sm w-40">Locked Events ({hardEventCount})</span>
+              <button onClick={() => hardEventsInputRef.current?.click()} className="flex-1 px-3 py-1 text-sm border rounded hover:bg-gray-50" data-testid="import-hardevents-button">
+                Upload
+              </button>
+              <button onClick={handleHardEventsCSVExport} className="flex-1 px-3 py-1 text-sm border rounded hover:bg-gray-50" data-testid="export-hardevents-button">
+                Export
+              </button>
+            </div>
+          </div>
+          
+          {configImportSuccess && (
+            <p className="mt-2 text-sm text-green-600">{configImportSuccess}</p>
+          )}
         </div>
 
         <div className="border-t pt-4">

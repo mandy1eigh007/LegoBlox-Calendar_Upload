@@ -1057,7 +1057,7 @@ export function PlanList() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredICSEvents.slice(0, 50).map(event => {
+                    {filteredICSEvents.slice(0, 50).map((event, idx) => {
                       const startHour = event.dtstart.getHours();
                       const startMin = event.dtstart.getMinutes();
                       const endHour = event.dtend.getHours();
@@ -1073,7 +1073,7 @@ export function PlanList() {
                       
                       return (
                         <tr 
-                          key={event.uid} 
+                          key={`${event.uid}-${idx}`} 
                           className={`${icsSelectedEvents.has(event.uid) ? 'bg-blue-50' : event.wasRounded ? 'bg-amber-50' : ''} ${isExpanded ? 'border-b-0' : ''}`}
                         >
                           <td className="p-2">

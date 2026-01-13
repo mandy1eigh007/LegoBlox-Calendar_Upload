@@ -10,6 +10,7 @@ import {
   PlanSettings,
 } from '@/state/types';
 import { calculateGoldenRuleTotals } from './goldenRule';
+import { loadProbabilityTable, getProbability, minutesToTimeBucket, ContextKey, trainFromBlocks, getProbabilityTableStats } from './probabilityLearning';
 
 export interface SchedulerConfig {
   targetWeek: number;
@@ -25,6 +26,8 @@ export interface SchedulerConfig {
 export interface SuggestedBlock extends PlacedBlock {
   isNew: boolean;
   bucketLabel: string;
+  confidence?: number;
+  reason?: string;
 }
 
 export interface SchedulerResult {
@@ -92,6 +95,43 @@ function findTemplateForBucket(
   templates: BlockTemplate[]
 ): BlockTemplate | null {
   return templates.find(t => t.goldenRuleBucketId === bucketId && t.countsTowardGoldenRule) || null;
+}
+
+function scoreSlotForTemplate(
+  slot: TimeSlot,
+  template: BlockTemplate,
+  templates: BlockTemplate[]
+): { score: number; reason: string } {
+  const probTable = loadProbabilityTable();
+  
+  if (probTable.totalEvents === 0) {
+    return { score: 0.5, reason: 'No training data' };
+  }
+  
+  const context: ContextKey = {
+    weekIndex: slot.week,
+    dayOfWeek: slot.day,
+    timeBucket: minutesToTimeBucket(slot.startMinutes),
+  };
+  
+  const prob = getProbability(probTable, template.id, context, templates.length);
+  const reason = `P=${(prob * 100).toFixed(0)}% for W${slot.week} ${slot.day} ${context.timeBucket}`;
+  
+  return { score: prob, reason };
+}
+
+export function trainFromExistingPlans(plans: Plan[]): { trained: number; events: number } {
+  let totalEvents = 0;
+  
+  for (const plan of plans) {
+    if (plan.blocks.length > 0) {
+      trainFromBlocks(plan.blocks, plan.settings.name);
+      totalEvents += plan.blocks.filter(b => b.templateId).length;
+    }
+  }
+  
+  const stats = getProbabilityTableStats(loadProbabilityTable());
+  return { trained: plans.length, events: stats.totalEvents };
 }
 
 function createPlaceholderTemplate(bucket: typeof GOLDEN_RULE_BUCKETS[number]): BlockTemplate {
@@ -162,7 +202,27 @@ function placeBlockInSlot(
     resource: template.defaultResource,
     isNew: true,
     bucketLabel,
+    confidence: 0.5,
+    reason: '',
   };
+}
+
+function placeBlockInSlotWithProbability(
+  slot: TimeSlot,
+  duration: number,
+  template: BlockTemplate,
+  bucketId: GoldenRuleBucketId,
+  bucketLabel: string,
+  templates: BlockTemplate[]
+): SuggestedBlock | null {
+  const block = placeBlockInSlot(slot, duration, template, bucketId, bucketLabel);
+  if (!block) return null;
+  
+  const { score, reason } = scoreSlotForTemplate(slot, template, templates);
+  block.confidence = score;
+  block.reason = reason;
+  
+  return block;
 }
 
 export function generateScheduleSuggestions(
@@ -210,12 +270,13 @@ export function generateScheduleSuggestions(
           remainingMinutes
         );
         
-        const suggestion = placeBlockInSlot(
+        const suggestion = placeBlockInSlotWithProbability(
           slot,
           blockDuration,
           template,
           deficit.bucketId,
-          deficit.label
+          deficit.label,
+          templates
         );
         
         if (suggestion) {
