@@ -368,6 +368,9 @@ export function convertICSEventsToBlocks(
     return { blocks: [], skipped: events.length, included: 0 };
   }
   
+  let minWeek = Infinity;
+  const tempBlocks: Array<{event: ICSEventWithDate; week: number; dayIndex: number; diffDays: number}> = [];
+  
   for (const event of events) {
     const eventDate = new Date(event.dtstart);
     
@@ -393,6 +396,12 @@ export function convertICSEventsToBlocks(
       continue;
     }
     
+    minWeek = Math.min(minWeek, week);
+    tempBlocks.push({ event, week, dayIndex, diffDays });
+  }
+  
+  for (const { event, week, dayIndex } of tempBlocks) {
+    const normalizedWeek = week - minWeek + 1;
     const day = DAYS[dayIndex] as Day;
     
     const startHour = event.dtstart.getHours();
@@ -423,7 +432,7 @@ export function convertICSEventsToBlocks(
     blocks.push({
       id: uuidv4(),
       templateId: matchingTemplate.id,
-      week,
+      week: normalizedWeek,
       day,
       startMinutes,
       durationMinutes,
