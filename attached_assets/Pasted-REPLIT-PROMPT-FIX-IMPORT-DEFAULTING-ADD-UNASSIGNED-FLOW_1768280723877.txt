@@ -1,0 +1,127 @@
+REPLIT PROMPT — FIX IMPORT DEFAULTING + ADD UNASSIGNED FLOW (NO ICONS)
+
+PROBLEM
+Imported events that don’t match an existing template title are defaulting to the first template (often “Introduction to Pre-Apprenticeship”). This corrupts the schedule and Golden Rule totals.
+
+GOAL
+1) Never default unmatched imported events to the first template.
+2) Unmatched events must be marked UNASSIGNED and must NOT count toward Golden Rule totals until manually assigned.
+3) Make it easy to assign unmatched events to the correct template after import (single + bulk assign).
+4) Backward compatible: existing saved plans that were incorrectly defaulted must be recoverable via an “Unassigned review” workflow (at minimum, prevent future corruption; ideally detect suspicious defaults).
+
+RULES
+- Do not add icons or emojis anywhere.
+- Do not break existing import/export.
+- Do not invent templates or “guess” the correct Golden Rule category for unmatched events.
+- Golden Rule totals must ignore Unassigned.
+
+DATA MODEL CHANGES (BACKWARD COMPATIBLE)
+Update scheduled event/block model to allow unassigned templates:
+
+- ScheduledBlock fields:
+  - templateId: string | null   (null means UNASSIGNED)
+  - titleOverride: string | null (keep raw imported title here)
+  - countsTowardGoldenRule: boolean (derived, NOT stored): templateId != null AND template.countsTowardGoldenRule == true
+
+Update template model:
+- Template fields:
+  - countsTowardGoldenRule: boolean (default true for existing curriculum templates)
+  - category: string (already exists)
+  - durationMinutes: number (already exists)
+
+IMPORT MAPPING LOGIC (STOP DEFAULTING)
+Wherever import parsing creates ScheduledBlocks:
+
+1) Normalize imported title:
+   - trimmed
+   - collapse whitespace
+   - case-insensitive compare
+
+2) Try matching in this order:
+   A) Exact match against template.title (case-insensitive)
+   B) Exact match against known aliases (optional: add template.aliases: string[] later)
+   C) Fuzzy match ONLY if score >= threshold (e.g., 0.88) and if the fuzzy result is unambiguous
+
+3) If no match:
+   - templateId = null
+   - titleOverride = raw imported title
+   - mark as UNASSIGNED in UI
+   - DO NOT count in Golden Rule totals
+
+IMPORTANT: REMOVE ANY CODE THAT DOES:
+   templateId = templates[0].id
+or any similar “fallback to first template”.
+
+UNASSIGNED REVIEW UI (REQUIRED)
+After any import (ICS/CSV/OCR), if any ScheduledBlocks have templateId = null:
+
+- Show a modal or right-side panel section titled “Unassigned items”
+- List each unassigned block with:
+  - Date
+  - Start–End time
+  - Raw title (titleOverride)
+  - Location/notes if available
+  - A dropdown to assign a template (searchable)
+  - An “Apply” button
+
+Bulk assignment tools:
+- “Assign all with same title”:
+  - If multiple unassigned blocks share the same titleOverride, user can map that title to a template once and apply to all matching.
+- “Assign all selected”:
+  - Allow selecting multiple unassigned blocks and assigning one template to all.
+
+Once assigned:
+- templateId becomes that template’s id
+- block display title should become template.title unless user keeps titleOverride intentionally
+
+CALENDAR DISPLAY RULES
+- If templateId is null:
+  - Render the block with titleOverride
+  - Show a visible text tag “Unassigned” inside the block (text only)
+  - Use a neutral style so it’s obvious it doesn’t count
+- If templateId is set:
+  - Render with template styling normally
+
+GOLDEN RULE TOTALS FIX
+When computing totals:
+- Only sum minutes for blocks where:
+  - templateId != null
+  - template.countsTowardGoldenRule == true
+- Unassigned blocks show in a separate line item:
+  - “Unassigned (not counting) — Xm”
+This helps instructors see time that needs categorization.
+
+OPTIONAL RECOVERY FOR OLD IMPORTS (IF POSSIBLE)
+If you can detect “bad defaults” from past imports:
+- If a plan has an unusually high percentage of one template (e.g., >60%) and many blocks have titleOverride that doesn’t match that template, show a warning:
+  - “This plan may have been imported with default template assignment. Review suggested.”
+- Provide a tool:
+  - “Convert suspicious blocks to Unassigned”
+  - Criteria: blocks whose stored titleOverride differs from template title AND were created via import (if you store provenance)
+If provenance isn’t stored, skip recovery and only fix forward behavior.
+
+FILES / LOCATIONS (DO THE WORK, DON’T GUESS)
+- Locate the import pipeline(s):
+  - ICS parser -> createScheduledBlocks()
+  - CSV importer -> createScheduledBlocks()
+  - OCR importer -> createScheduledBlocks()
+- Centralize mapping logic in one function, used by all importers:
+  - resolveTemplateForImportedTitle(title, templates) -> { templateId: string|null, matchedBy: 'exact'|'alias'|'fuzzy'|'none' }
+
+ACCEPTANCE TESTS (MUST PASS)
+1) Import ICS with events not matching any template:
+   - Blocks appear with correct raw titles
+   - Marked Unassigned
+   - Golden Rule totals unchanged (do not increase)
+2) Assign an unassigned block to a template:
+   - Block title/styling updates
+   - Golden Rule totals update accordingly
+3) Bulk assign by matching title:
+   - Multiple blocks update in one action
+4) No event ever defaults to first template after import.
+
+DELIVERABLE
+- Implement end-to-end.
+- List exact files changed.
+- No TODOs.
+- No icons anywhere.

@@ -13,6 +13,8 @@ import { PrintView } from './PrintView';
 import { CompareMode } from './CompareMode';
 import { PartnersPanel } from './PartnersPanel';
 import { ConfirmModal } from './Modal';
+import { ScheduleSuggestionPanel } from './ScheduleSuggestionPanel';
+import { SuggestedBlock } from '@/lib/predictiveScheduler';
 import { findTimeConflicts, wouldFitInDay } from '@/lib/collision';
 import { 
   SLOT_HEIGHT_PX, 
@@ -44,6 +46,7 @@ export function Builder() {
   const [draggedItem, setDraggedItem] = useState<{ type: 'template' | 'placed-block'; data: BlockTemplate | PlacedBlock } | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [hoverMinutes, setHoverMinutes] = useState<number | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(
@@ -315,6 +318,13 @@ export function Builder() {
     setSelectedBlockId(null);
   };
 
+  const handleAcceptSuggestions = (suggestions: SuggestedBlock[]) => {
+    for (const suggestion of suggestions) {
+      const { isNew, bucketLabel, ...block } = suggestion;
+      dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
+    }
+  };
+
   const selectedBlock = selectedBlockId ? plan.blocks.find(b => b.id === selectedBlockId) : null;
   const selectedTemplate = selectedBlock ? state.templates.find(t => t.id === selectedBlock.templateId) : undefined;
 
@@ -430,12 +440,11 @@ export function Builder() {
             </button>
             {plan.settings.schedulerMode === 'predictive' && (
               <button
-                onClick={() => alert('Predictive scheduling is coming soon! This feature will analyze your past schedules and suggest optimal block placements automatically.')}
-                className="px-3 py-1 text-sm bg-purple-400 text-white rounded cursor-not-allowed opacity-75"
+                onClick={() => setShowSuggestions(true)}
+                className="px-3 py-1 text-sm bg-purple-600 text-white rounded hover:bg-purple-700"
                 data-testid="suggest-schedule-button"
-                disabled
               >
-                Suggest Schedule (Coming Soon)
+                Suggest Schedule
               </button>
             )}
           </div>
@@ -443,8 +452,8 @@ export function Builder() {
         
         {plan.settings.schedulerMode === 'predictive' && (
           <div className="bg-purple-50 border-b border-purple-200 px-4 py-2 text-sm text-purple-700 flex items-center gap-2" data-testid="predictive-mode-banner">
-            <span className="font-medium">Predictive Mode (Preview):</span>
-            <span>AI-powered scheduling is coming soon. For now, use manual drag-and-drop to build your schedule.</span>
+            <span className="font-medium">Predictive Mode:</span>
+            <span>Click "Suggest Schedule" to auto-generate blocks based on Golden Rule budgets.</span>
           </div>
         )}
 
@@ -534,6 +543,17 @@ export function Builder() {
           onCreateTemplate={(template) => {
             dispatch({ type: 'ADD_TEMPLATE', payload: template });
           }}
+        />
+      )}
+      
+      {showSuggestions && (
+        <ScheduleSuggestionPanel
+          plan={plan}
+          templates={state.templates}
+          currentWeek={currentWeek}
+          open={showSuggestions}
+          onClose={() => setShowSuggestions(false)}
+          onAccept={handleAcceptSuggestions}
         />
       )}
       

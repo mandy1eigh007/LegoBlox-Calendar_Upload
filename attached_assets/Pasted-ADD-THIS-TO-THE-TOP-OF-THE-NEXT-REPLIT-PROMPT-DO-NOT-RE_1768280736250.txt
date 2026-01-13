@@ -1,0 +1,117 @@
+ADD THIS TO THE TOP OF THE NEXT REPLIT PROMPT (DO NOT REWRITE THE APP; EXTEND IT)
+
+GOAL
+1) When a plan/calendar is “done”, instructors can PUBLISH it for a student-facing view.
+2) Students can VIEW published calendars read-only (no edits, no drag/drop, no template changes).
+3) If the instructor updates the plan later, the student view automatically reflects the latest version.
+4) Make the home screen UI less boring and more usable (still not using ANEW branding). No icons anywhere in the UI.
+
+ABSOLUTE RULES
+- Do not invent features or skip requirements. Build exactly what is requested.
+- This is an ADD-ON to the existing repo and existing features (Import ICS / Paste ICS / Screenshot / Backup / Create New Plan / drag-drop). Keep everything working.
+- No icons: remove any icon components/emoji in buttons and headers. Text-only UI.
+- Keep 15-minute scheduling logic intact (or improve it if currently buggy), but do not break current plans.
+
+FEATURE: PUBLISH FOR STUDENTS (READ-ONLY)
+Add a publishing system per plan:
+
+Data model (backward compatible):
+- Plan has:
+  - isPublished: boolean (default false)
+  - publishedAt: ISO string | null
+  - publicId: string | null (unguessable token, e.g., 16–24 chars)
+  - updatedAt: ISO string (already exists? if not, add)
+  - lastPublishedSnapshotId: optional (only if you already have snapshots; otherwise skip)
+
+Publishing behavior:
+- In instructor plan editor (where the calendar grid is), add a clear “Publish” / “Unpublish” control.
+- When Publish is clicked:
+  - Set isPublished = true
+  - Set publishedAt = now
+  - Generate publicId if missing (must remain stable across re-publish unless user explicitly “Regenerate Link”)
+  - Show a “Student Link” section with:
+    - Copy link button (text-only button)
+    - The actual URL displayed as selectable text
+- When Unpublish is clicked:
+  - Set isPublished = false
+  - Student link becomes inaccessible (404 or “Not available” page)
+- Optional but wanted: “Regenerate Link” (text-only) that rotates publicId and invalidates old link.
+
+Student-facing route:
+- Create a new route like:
+  - /student/:publicId
+- This page:
+  - Loads the plan by publicId only if isPublished = true
+  - Renders the same calendar grid view BUT locked:
+    - No drag/drop
+    - No resizing
+    - No “Edit Block” panel
+    - No template library
+    - No export/import
+  - Shows:
+    - Plan name
+    - Cohort (if your plan has it)
+    - Week selector (view-only)
+    - “Last updated” timestamp (plan.updatedAt)
+- IMPORTANT: Student view must always reflect the latest plan data (not a one-time snapshot) unless the existing app architecture requires snapshots. If snapshots are required, then on each save update the published snapshot automatically.
+
+Permissions / safety:
+- If your app already has roles (instructor/admin vs student), use them:
+  - Instructors can publish/unpublish
+  - Students can only access /student/:publicId
+- If there is no auth system, publishing must still work via the unguessable publicId link (read-only).
+
+Change visibility:
+- Student view should display a simple “Updated:” timestamp so students know something changed.
+- If easy and already supported, add a tiny “Recent Changes” log (max last 10 changes: timestamp + summary like “Week 3: added OSHA 10 block”). If not easy, skip; timestamp alone is required.
+
+UI IMPROVEMENTS (HOME SCREEN + PLAN LIST)
+The current interface is functional but bland. Improve without icons and without ANEW branding:
+
+Home layout:
+- Keep the same actions, but reorganize for clarity:
+  1) Header row: Title + short subtitle (what this tool does)
+  2) Primary actions row: “Create New Plan” as primary button
+  3) Import section as a card beneath it:
+     - Tabs or segmented buttons (text-only): “Import ICS”, “Paste ICS”, “Import Spreadsheet (CSV/XLSX)”, “Import Screenshot (OCR)”, “Import Backup (JSON)”
+     - Keep drag-and-drop zone visible and clearly labeled.
+  4) Plans list area:
+     - Show plan cards (even if empty state)
+     - Each plan card shows: name, created date, last updated date, published status (text badge like “Published” / “Draft”), and a “Open” button.
+- Empty state:
+  - Replace “No plans created yet” with a more helpful empty card:
+    - “Create your first plan”
+    - 3 bullet steps (text only): Create plan → Add blocks → Publish for students
+  - Add a subtle decorative background using CSS only (no icons): soft gradient, pattern, or subtle grid texture.
+
+Visual style changes (still clean, just less sterile):
+- Use a warmer palette and depth:
+  - Soft page background (very light tint)
+  - Cards with light borders + slightly stronger shadow
+  - Rounded corners consistent
+  - Buttons with clear hierarchy (primary/secondary/ghost)
+- Typography:
+  - Slightly larger page title
+  - Subtitles and helper text readable
+- Remove icon glyphs from all buttons (replace with text labels only).
+- Keep everything accessible (contrast, focus states).
+
+PLAN EDITOR PAGE: PUBLISH CONTROL + BETTER RIGHT PANEL
+- If the plan editor already has a right panel for editing blocks:
+  - Add a new top section: “Plan Status”
+    - Draft/Published state
+    - Publish/Unpublish button
+    - Student link + copy button (only when published)
+- Student link must be obvious and fast to copy.
+
+ACCEPTANCE CHECKLIST (MUST PASS)
+- Create a plan → schedule blocks → Publish → open student link in a private window → calendar visible, read-only.
+- Edit the plan after publishing (move/add a block) → refresh student page → changes visible and updated timestamp changes.
+- Unpublish → student link no longer shows the calendar.
+- No icons anywhere (buttons, headers, panels).
+- No breaking changes: importing, exporting, existing editor functions still work.
+
+DELIVERABLES
+- Implement the feature in the current repo with exact code changes.
+- Show the exact new routes/files added and what existing files were modified.
+- Keep everything deterministic and working; no TODOs, no placeholders.
