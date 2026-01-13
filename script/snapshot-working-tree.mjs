@@ -15,11 +15,13 @@ function main() {
   const status = run('git status --porcelain');
   const diffstat = run('git diff --stat');
 
-  const out = `# Working Tree Snapshot\n\nTimestamp: ${timestamp}\n\n## git status --porcelain\n\n```
-  + '\n' + (status || '(clean)') + '\n```
-\n## git diff --stat\n\n```
-\n' + (diffstat || '(no changes)') + '\n```
-`;
+  const out =
+    '# Working Tree Snapshot\n\n' +
+    `Timestamp: ${timestamp}\n\n` +
+    '## git status --porcelain\n\n' +
+    '```\n' + (status || '(clean)') + '\n```\n\n' +
+    '## git diff --stat\n\n' +
+    '```\n' + (diffstat || '(no changes)') + '\n```\n';
 
   fs.writeFileSync(outPath, out, 'utf8');
   console.log(`Wrote working tree snapshot to ${outPath}`);
