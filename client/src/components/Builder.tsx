@@ -137,11 +137,9 @@ export function Builder() {
     
     const gridElement = document.querySelector('[data-testid="week-grid"]');
     if (!gridElement) return;
-    
-    const pointerY = (event.activatorEvent as PointerEvent)?.clientY || 0;
-    const deltaY = event.delta.y;
-    const finalY = pointerY + deltaY;
-    
+    // Use the original activator event Y to avoid large drag "jumps"
+    const activatorClientY = (event.activatorEvent as PointerEvent)?.clientY;
+    const finalY = typeof activatorClientY === 'number' ? activatorClientY : 0;
     const dropMinutes = calculateDropMinutes(finalY, gridElement);
     
     if (activeData?.type === 'template') {
@@ -161,7 +159,7 @@ export function Builder() {
       return;
     }
     
-    const conflicts = findTimeConflicts(plan.blocks, currentWeek, day, startMinutes, duration);
+    const conflicts = findTimeConflicts(plan.blocks, currentWeek, day, startMinutes, duration, undefined, template.defaultResource || template.defaultLocation || undefined);
     
     if (conflicts.length > 0 && !settings.allowOverlaps) {
       const conflictTitle = state.templates.find(t => t.id === conflicts[0].templateId)?.title || 'Unknown';
@@ -196,7 +194,7 @@ export function Builder() {
       return;
     }
     
-    const conflicts = findTimeConflicts(plan.blocks, currentWeek, newDay, newStartMinutes, duration, block.id);
+    const conflicts = findTimeConflicts(plan.blocks, currentWeek, newDay, newStartMinutes, duration, block.id, block.resource || block.location || undefined);
     
     if (conflicts.length > 0 && !settings.allowOverlaps) {
       const conflictTitle = state.templates.find(t => t.id === conflicts[0].templateId)?.title || 'Unknown';
@@ -238,7 +236,7 @@ export function Builder() {
     
     const conflicts = findTimeConflicts(
       plan.blocks, block.week, block.day,
-      block.startMinutes, newDuration, block.id
+      block.startMinutes, newDuration, block.id, block.resource || block.location || undefined
     );
     
     if (conflicts.length > 0 && !settings.allowOverlaps) {
@@ -262,7 +260,7 @@ export function Builder() {
     
     const conflicts = findTimeConflicts(
       plan.blocks, updatedBlock.week, updatedBlock.day, 
-      updatedBlock.startMinutes, updatedBlock.durationMinutes, updatedBlock.id
+      updatedBlock.startMinutes, updatedBlock.durationMinutes, updatedBlock.id, updatedBlock.resource || updatedBlock.location || undefined
     );
     
     if (conflicts.length > 0 && !settings.allowOverlaps) {
@@ -375,7 +373,26 @@ export function Builder() {
     const timestamp = new Date().toISOString();
     dispatch({ type: 'ASSIGN_BLOCK_TEMPLATE', payload: { planId: plan.id, blockId, templateId, timestamp } });
   };
+  
+  // Assign with optional countsTowardGoldenRule override (single block)
+  const handleAssignBlockWithFlags = (blockId: string, templateId: string, countsOverride?: boolean) => {
+    const timestamp = new Date().toISOString();
+    const template = state.templates.find(t => t.id === templateId);
+    if (typeof countsOverride === 'boolean') {
+      const block = plan.blocks.find(b => b.id === blockId);
+      if (!block) return;
+      const updated = {
+        ...block,
+        templateId,
+        countsTowardGoldenRule: countsOverride,
+        goldenRuleBucketId: countsOverride ? (template?.goldenRuleBucketId ?? null) : null,
+      };
+      dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updated } });
+      return;
+    }
 
+    dispatch({ type: 'ASSIGN_BLOCK_TEMPLATE', payload: { planId: plan.id, blockId, templateId, timestamp } });
+  };
   const handleAssignMultiple = (blockIds: string[], templateId: string) => {
     const timestamp = new Date().toISOString();
     dispatch({ type: 'ASSIGN_MULTIPLE_BLOCKS_TEMPLATE', payload: { planId: plan.id, blockIds, templateId, timestamp } });
@@ -677,12 +694,12 @@ export function Builder() {
           onAccept={handleAcceptSuggestions}
           onUpdateHardDates={(hardDates: HardDate[]) => {
             dispatch({
-              type: 'UPDATE_PLAN_SETTINGS',
+              type: 'UPDATE_PLAN',
               payload: {
                 planId: plan.id,
-                settings: { ...plan.settings, hardDates }
+                updates: { settings: { ...plan.settings, hardDates } }
               }
-            });
+            } as any);
           }}
         />
       )}
@@ -703,7 +720,7 @@ export function Builder() {
           block={reassignBlock}
           templates={state.templates}
           allBlocks={plan.blocks}
-          onAssign={handleAssignBlock}
+          onAssign={handleAssignBlockWithFlags}
           onAssignMultiple={handleAssignMultiple}
         />
       )}

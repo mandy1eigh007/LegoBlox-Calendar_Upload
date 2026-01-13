@@ -1,0 +1,29 @@
+{
+  "placed": [
+    {
+      "id": "e1bd7bb4-84ce-44fe-a29d-7696be0aa686",
+      "templateId": "OSHA_10",
+      "week": 1,
+      "day": 0,
+      "startMinutes": 390,
+      "durationMinutes": 300
+    },
+    {
+      "id": "60e64f77-3dd3-4569-aa6e-7ded22f4c1cb",
+      "templateId": null,
+      "week": 1,
+      "day": 1,
+      "startMinutes": 450,
+      "durationMinutes": 60
+    },
+    {
+      "id": "81db655d-a36f-4211-956a-4f093009b018",
+      "templateId": null,
+      "week": 1,
+      "day": 2,
+      "startMinutes": 450,
+      "durationMinutes": 60
+    }
+  ],
+  "unplaced": []
+}

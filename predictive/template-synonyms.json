@@ -1,0 +1,9 @@
+{
+  "Intro to Pre-Apprenticeship": ["orientation", "program intro", "welcome", "cohort orientation"],
+  "Resumes": ["resume", "résumé", "resume lab", "resume workshop"],
+  "Mock Interviews": ["mock interview", "mocks", "interview practice"],
+  "OSHA 10": ["osha", "osha10", "osha-10"],
+  "Shop Introduction": ["shop intro", "shop orientation"],
+  "ACES": ["aces", "ace stations", "stations"],
+  "Skills Project": ["skills", "project", "crate", "wall project", "cleanup"]
+}

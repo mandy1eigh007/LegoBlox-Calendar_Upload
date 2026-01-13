@@ -1,0 +1,21 @@
+{
+  "calendars": [
+    {
+      "name": "PACE TUK 1",
+      "programWeeks": 12,
+      "daysOfWeek": ["Tue","Wed","Thu","Fri"],
+      "dayStart": "06:30",
+      "dayEnd": "15:30",
+      "events": [
+        {
+          "title": "OSHA 10 Day 1",
+          "start": "2025-01-20T06:30:00",
+          "end": "2025-01-20T11:30:00",
+          "location": "Classroom 1",
+          "description": "",
+          "templateId": "OSHA_10"
+        }
+      ]
+    }
+  ]
+}

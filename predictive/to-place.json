@@ -1,0 +1,4 @@
+[
+  { "templateId": "OSHA_10", "durationMinutes": 300, "count": 1 },
+  { "templateId": null, "durationMinutes": 60, "count": 2 }
+]

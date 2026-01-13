@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useStore } from '@/state/store';
 import { Plan, AppState, PlacedBlock, DAYS, Day } from '@/state/types';
-import { exportToCSV, exportToICS, downloadCSV, downloadJSON, downloadICS, importICSToBlocks, importCSVToBlocks, getCSVHeaders, CSVDraftEvent } from '@/lib/csv';
+import { exportToCSV, exportToICS, downloadCSV, downloadJSON, downloadICS, importICSToBlocks, importCSVToBlocks, getCSVHeaders, CSVDraftEvent, parseICSWithDateRange, convertICSEventsToBlocks } from '@/lib/csv';
 import { validateAppState } from '@/state/validators';
 import { Modal } from './Modal';
 import { minutesToTimeDisplay } from '@/lib/time';
@@ -11,6 +11,7 @@ import { processImageWithOCR, OCREvent } from '@/lib/ocr';
 import { loadTitleAliases, importAliasCSV, exportAliasCSV, TitleAlias } from '@/lib/titleAliases';
 import { loadResources, importResourceCSV, exportResourceCSV } from '@/lib/resources';
 import { loadHardEvents, importHardEventsCSV, exportHardEventsCSV } from '@/lib/hardEvents';
+import { resolveTemplateForImportedTitle } from '@/lib/templateMatcher';
 
 interface ExportImportPanelProps {
   plan: Plan;
@@ -63,6 +64,18 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   const [ocrProgress, setOCRProgress] = useState(0);
   const [ocrEvents, setOCREvents] = useState<OCREvent[]>([]);
   const [ocrRawText, setOCRRawText] = useState('');
+
+  const [icsPreview, setIcsPreview] = useState<null | {
+    events: any[];
+    minDateStr: string;
+    maxDateStr: string;
+    minDate: Date | null;
+    maxDate: Date | null;
+    detectedTimezone: string | null;
+    raw: string;
+  }>(null);
+  const [icsRangeStart, setIcsRangeStart] = useState<string | null>(null);
+  const [icsRangeEnd, setIcsRangeEnd] = useState<string | null>(null);
   
   const aliasInputRef = useRef<HTMLInputElement>(null);
   const resourceInputRef = useRef<HTMLInputElement>(null);
@@ -228,20 +241,26 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
     reader.onload = (event) => {
       try {
         const content = event.target?.result as string;
-        const { blocks, skipped } = importICSToBlocks(content, state.templates);
-        
-        if (blocks.length === 0) {
-          setImportError('No valid events found in ICS file. Events must be Mon-Fri, 6:30 AM - 3:30 PM.');
+        const parsed = parseICSWithDateRange(content);
+        if (!parsed || !parsed.events || parsed.events.length === 0) {
+          setImportError('No events found in ICS file.');
           setImportSuccess(null);
           return;
         }
 
-        for (const block of blocks) {
-          dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
-        }
-        
+        setIcsPreview({
+          events: parsed.events,
+          minDateStr: parsed.minDateStr,
+          maxDateStr: parsed.maxDateStr,
+          minDate: parsed.minDate,
+          maxDate: parsed.maxDate,
+          detectedTimezone: parsed.detectedTimezone,
+          raw: content,
+        });
+        setIcsRangeStart(parsed.minDateStr);
+        setIcsRangeEnd(parsed.maxDateStr);
         setImportError(null);
-        setImportSuccess(`Imported ${blocks.length} events${skipped > 0 ? ` (${skipped} skipped - outside schedule hours or weekend)` : ''}.`);
+        setImportSuccess(null);
       } catch (err) {
         setImportError('Failed to parse ICS file');
         setImportSuccess(null);
@@ -252,6 +271,26 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
     if (icsInputRef.current) {
       icsInputRef.current.value = '';
     }
+  };
+
+  const handleApplyICSPreview = () => {
+    if (!icsPreview || !icsRangeStart || !icsRangeEnd) return;
+    const startDate = new Date(icsRangeStart + 'T00:00:00');
+    const endDate = new Date(icsRangeEnd + 'T23:59:59');
+    const { blocks, skipped, included } = convertICSEventsToBlocks(icsPreview.events, state.templates, startDate, endDate, false);
+
+    if (!blocks || blocks.length === 0) {
+      setImportError('No valid blocks in selected date range.');
+      setIcsPreview(null);
+      return;
+    }
+
+    for (const block of blocks) {
+      dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
+    }
+
+    setImportSuccess(`Imported ${included} events${skipped > 0 ? ` (${skipped} skipped)` : ''}.`);
+    setIcsPreview(null);
   };
 
   const handleCSVFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -475,6 +514,68 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
             >
               Apply Valid Events
             </button>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
+  if (icsPreview) {
+    return (
+      <Modal open={open} onClose={() => { setIcsPreview(null); onClose(); }} title="Preview ICS Import">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">Detected events from {icsPreview.minDateStr} to {icsPreview.maxDateStr}. Select a date range to include before importing.</p>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-gray-500">Start Date</label>
+              <input type="date" value={icsRangeStart || ''} onChange={(e) => setIcsRangeStart(e.target.value)} className="w-full p-2 border rounded" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500">End Date</label>
+              <input type="date" value={icsRangeEnd || ''} onChange={(e) => setIcsRangeEnd(e.target.value)} className="w-full p-2 border rounded" />
+            </div>
+          </div>
+
+          <div className="max-h-64 overflow-auto border rounded">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr>
+                  <th className="p-2 text-left">Date</th>
+                  <th className="p-2 text-left">Time</th>
+                  <th className="p-2 text-left">Title</th>
+                  <th className="p-2 text-left">Match</th>
+                </tr>
+              </thead>
+              <tbody>
+                {icsPreview.events.map((ev: any, idx: number) => {
+                  const match = resolveTemplateForImportedTitle(ev.summary, state.templates);
+                  const matchedTemplate = match.templateId ? state.templates.find(t => t.id === match.templateId) : null;
+                  return (
+                    <tr key={idx} className={match.templateId ? '' : 'bg-yellow-50'}>
+                      <td className="p-2">{ev.localDateStr || ev.dtstart?.toISOString?.().slice(0,10) || ''}</td>
+                      <td className="p-2">{ev.dtstart ? `${new Date(ev.dtstart).getHours()}:${String(new Date(ev.dtstart).getMinutes()).padStart(2,'0')}` : ''} - {ev.dtend ? `${new Date(ev.dtend).getHours()}:${String(new Date(ev.dtend).getMinutes()).padStart(2,'0')}` : ''}</td>
+                      <td className="p-2 truncate max-w-[250px]">{ev.summary}</td>
+                      <td className="p-2 text-xs">
+                        {match.templateId ? (
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{matchedTemplate?.title}</span>
+                            <span className="text-gray-500">{Math.round(match.confidence * 100)}%</span>
+                          </div>
+                        ) : (
+                          <span className="text-orange-600 font-medium">UNASSIGNED</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex gap-2">
+            <button onClick={() => { setIcsPreview(null); }} className="flex-1 px-4 py-2 border rounded">Cancel</button>
+            <button onClick={handleApplyICSPreview} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded">Import Selected Range</button>
           </div>
         </div>
       </Modal>
