@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useLocation, useParams } from 'wouter';
 import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, useSensor, useSensors, PointerSensor } from '@dnd-kit/core';
 import { useStore } from '@/state/store';
-import { BlockTemplate, PlacedBlock, Day, DAYS, ApplyScope } from '@/state/types';
+import { BlockTemplate, PlacedBlock, Day, DAYS, ApplyScope, RecurrenceSeries } from '@/state/types';
 import { BlockLibrary } from './BlockLibrary';
 import { WeekGrid } from './WeekGrid';
 import { BlockEditPanel } from './BlockEditPanel';
@@ -267,9 +267,13 @@ export function Builder() {
     dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block: newBlock } });
   };
 
-  const handleCreateRecurrence = (blocks: PlacedBlock[]) => {
+  const handleCreateRecurrence = (blocks: PlacedBlock[], series?: RecurrenceSeries) => {
     if (selectedBlockId) {
       dispatch({ type: 'DELETE_BLOCK', payload: { planId: plan.id, blockId: selectedBlockId } });
+    }
+    
+    if (series) {
+      dispatch({ type: 'ADD_RECURRENCE_SERIES', payload: { planId: plan.id, series } });
     }
     
     for (const block of blocks) {

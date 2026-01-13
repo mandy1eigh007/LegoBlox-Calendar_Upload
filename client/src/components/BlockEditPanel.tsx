@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { PlacedBlock, BlockTemplate, Plan, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId, ApplyScope, DAYS, Day, RecurrenceType, RecurrencePattern } from '@/state/types';
+import { PlacedBlock, BlockTemplate, Plan, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId, ApplyScope, DAYS, Day, RecurrenceType, RecurrencePattern, RecurrenceSeries } from '@/state/types';
 import { formatDuration, minutesToTimeDisplay, getEndMinutes } from '@/lib/time';
 import { ConfirmModal, Modal } from './Modal';
 import { createRecurringBlocks } from '@/lib/recurrence';
@@ -12,7 +12,7 @@ interface BlockEditPanelProps {
   onDelete: (scope?: ApplyScope) => void;
   onDuplicate: () => void;
   onClose: () => void;
-  onCreateRecurrence?: (blocks: PlacedBlock[]) => void;
+  onCreateRecurrence?: (blocks: PlacedBlock[], series?: RecurrenceSeries) => void;
 }
 
 const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180, 240, 300, 360, 420, 480, 540];
@@ -112,8 +112,8 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
       goldenRuleBucketId: countsTowardGoldenRule && goldenRuleBucketId ? goldenRuleBucketId : null,
     };
 
-    const { blocks } = createRecurringBlocks(currentBlock, pattern, plan);
-    onCreateRecurrence(blocks);
+    const { series, blocks } = createRecurringBlocks(currentBlock, pattern, plan);
+    onCreateRecurrence(blocks, series);
     setShowRecurrence(false);
     onClose();
   };

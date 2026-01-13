@@ -73,7 +73,8 @@ function reducer(state: AppState, action: Action): AppState {
           if (p.id !== planId) return p;
           
           if (!scope || scope === 'this') {
-            return { ...p, blocks: p.blocks.map(b => b.id === block.id ? block : b) };
+            const updatedBlock = { ...block, isRecurrenceException: !!block.recurrenceSeriesId };
+            return { ...p, blocks: p.blocks.map(b => b.id === block.id ? updatedBlock : b) };
           }
           
           if (scope === 'thisAndFuture' && block.recurrenceSeriesId) {
@@ -114,6 +115,20 @@ function reducer(state: AppState, action: Action): AppState {
                   };
                 }
                 return b;
+              }),
+              recurrenceSeries: p.recurrenceSeries.map(s => {
+                if (s.id === block.recurrenceSeriesId) {
+                  return {
+                    ...s,
+                    baseStartMinutes: block.startMinutes,
+                    baseDurationMinutes: block.durationMinutes,
+                    baseLocation: block.location,
+                    baseNotes: block.notes,
+                    countsTowardGoldenRule: block.countsTowardGoldenRule,
+                    goldenRuleBucketId: block.goldenRuleBucketId,
+                  };
+                }
+                return s;
               }),
             };
           }
