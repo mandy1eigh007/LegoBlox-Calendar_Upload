@@ -45,9 +45,10 @@ export function CompareMode({ currentPlanId, currentWeek, onClose }: CompareMode
 
     for (const plan of selectedPlans) {
       for (const block of plan.blocks) {
-        if (block.week !== displayWeek || !block.location) continue;
+        const blockResource = block.resource || block.location;
+        if (block.week !== displayWeek || !blockResource) continue;
         
-        const key = `${block.day}-${block.location}`;
+        const key = `${block.day}-${blockResource}`;
         if (!resourceBlocks.has(key)) {
           resourceBlocks.set(key, []);
         }
@@ -90,9 +91,10 @@ export function CompareMode({ currentPlanId, currentWeek, onClose }: CompareMode
             } else {
               const template1 = state.templates.find(t => t.id === a.block.templateId);
               const template2 = state.templates.find(t => t.id === b.block.templateId);
+              const aResource = a.block.resource || a.block.location;
               
               result.push({
-                resource: a.block.location,
+                resource: aResource,
                 day: a.block.day,
                 week: displayWeek,
                 startMinutes: overlapStart,
@@ -116,10 +118,11 @@ export function CompareMode({ currentPlanId, currentWeek, onClose }: CompareMode
   };
 
   const isBlockConflicting = (planId: string, block: PlacedBlock) => {
+    const blockResource = block.resource || block.location;
     return conflicts.some(c => 
       c.plans.some(p => p.planId === planId) &&
       c.day === block.day &&
-      c.resource === block.location &&
+      c.resource === blockResource &&
       block.startMinutes < c.endMinutes &&
       (block.startMinutes + block.durationMinutes) > c.startMinutes
     );
