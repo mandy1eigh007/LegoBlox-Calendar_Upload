@@ -303,3 +303,164 @@ export function importICSToBlocks(
   
   return { blocks, skipped };
 }
+
+export interface CSVDraftEvent {
+  id: string;
+  week: number;
+  day: Day;
+  startMinutes: number;
+  durationMinutes: number;
+  title: string;
+  location: string;
+  notes: string;
+  needsReview: boolean;
+  warning?: string;
+}
+
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+  
+  return result;
+}
+
+function parseTimeString(time: string): number | null {
+  const cleanTime = time.trim().toUpperCase();
+  
+  const match12 = cleanTime.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/);
+  if (match12) {
+    let hours = parseInt(match12[1]);
+    const minutes = parseInt(match12[2]);
+    const period = match12[3];
+    
+    if (period === 'PM' && hours !== 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+    
+    return hours * 60 + minutes;
+  }
+  
+  const match24 = cleanTime.match(/^(\d{1,2}):(\d{2})$/);
+  if (match24) {
+    const hours = parseInt(match24[1]);
+    const minutes = parseInt(match24[2]);
+    return hours * 60 + minutes;
+  }
+  
+  return null;
+}
+
+function parseDayString(day: string): Day | null {
+  const cleanDay = day.trim().toLowerCase();
+  const dayMap: Record<string, Day> = {
+    'monday': 'Monday', 'mon': 'Monday', 'm': 'Monday',
+    'tuesday': 'Tuesday', 'tue': 'Tuesday', 'tu': 'Tuesday',
+    'wednesday': 'Wednesday', 'wed': 'Wednesday', 'w': 'Wednesday',
+    'thursday': 'Thursday', 'thu': 'Thursday', 'th': 'Thursday',
+    'friday': 'Friday', 'fri': 'Friday', 'f': 'Friday',
+  };
+  return dayMap[cleanDay] || null;
+}
+
+export function importCSVToBlocks(
+  content: string,
+  columnMapping: { week: number; day: number; startTime: number; endTime: number; title: number; location: number; notes: number }
+): { drafts: CSVDraftEvent[]; errors: string[] } {
+  const lines = content.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) {
+    return { drafts: [], errors: ['CSV file must have a header row and at least one data row'] };
+  }
+  
+  const drafts: CSVDraftEvent[] = [];
+  const errors: string[] = [];
+  
+  for (let i = 1; i < lines.length; i++) {
+    const cells = parseCSVLine(lines[i]);
+    
+    const weekStr = cells[columnMapping.week] || '1';
+    const week = parseInt(weekStr) || 1;
+    
+    const dayStr = cells[columnMapping.day] || '';
+    const day = parseDayString(dayStr);
+    
+    const startTimeStr = cells[columnMapping.startTime] || '';
+    const startMinutes = parseTimeString(startTimeStr);
+    
+    const endTimeStr = cells[columnMapping.endTime] || '';
+    const endMinutes = parseTimeString(endTimeStr);
+    
+    const title = columnMapping.title >= 0 && columnMapping.title < cells.length ? (cells[columnMapping.title] || '') : '';
+    const location = columnMapping.location >= 0 && columnMapping.location < cells.length ? (cells[columnMapping.location] || '') : '';
+    const notes = columnMapping.notes >= 0 && columnMapping.notes < cells.length ? (cells[columnMapping.notes] || '') : '';
+    
+    if (!title) continue;
+    
+    let needsReview = false;
+    let warning = '';
+    
+    if (!day) {
+      needsReview = true;
+      warning = `Unknown day: "${dayStr}"`;
+    }
+    
+    if (startMinutes === null || endMinutes === null) {
+      needsReview = true;
+      warning = warning ? `${warning}; Invalid time format` : 'Invalid time format';
+    }
+    
+    const finalStart = startMinutes ?? 390;
+    let finalDuration = (endMinutes !== null && startMinutes !== null) 
+      ? endMinutes - startMinutes 
+      : 60;
+    
+    if (finalDuration % 15 !== 0) {
+      finalDuration = Math.ceil(finalDuration / 15) * 15;
+      warning = warning ? `${warning}; Duration rounded to 15-min` : 'Duration rounded to 15-min increment';
+    }
+    
+    if (finalStart < 390 || finalStart + finalDuration > 930) {
+      needsReview = true;
+      warning = warning ? `${warning}; Outside schedule hours` : 'Outside schedule hours (6:30 AM - 3:30 PM)';
+    }
+    
+    drafts.push({
+      id: uuidv4(),
+      week,
+      day: day || 'Monday',
+      startMinutes: Math.max(390, Math.min(finalStart, 915)),
+      durationMinutes: Math.max(15, Math.min(finalDuration, 540)),
+      title,
+      location,
+      notes,
+      needsReview,
+      warning,
+    });
+  }
+  
+  return { drafts, errors };
+}
+
+export function getCSVHeaders(content: string): string[] {
+  const lines = content.split(/\r?\n/);
+  if (lines.length === 0) return [];
+  return parseCSVLine(lines[0]);
+}

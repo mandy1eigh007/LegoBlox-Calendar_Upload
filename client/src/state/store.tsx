@@ -297,6 +297,100 @@ function reducer(state: AppState, action: Action): AppState {
         ],
       };
     }
+
+    case 'ADD_PARTNER_ORG':
+      return {
+        ...state,
+        partners: {
+          ...state.partners,
+          orgs: [...state.partners.orgs, action.payload],
+        },
+      };
+
+    case 'UPDATE_PARTNER_ORG':
+      return {
+        ...state,
+        partners: {
+          ...state.partners,
+          orgs: state.partners.orgs.map(o => 
+            o.id === action.payload.id ? action.payload : o
+          ),
+        },
+      };
+
+    case 'DELETE_PARTNER_ORG':
+      return {
+        ...state,
+        partners: {
+          ...state.partners,
+          orgs: state.partners.orgs.filter(o => o.id !== action.payload),
+          contacts: state.partners.contacts.filter(c => c.orgId !== action.payload),
+          engagements: state.partners.engagements.filter(e => e.orgId !== action.payload),
+        },
+      };
+
+    case 'ADD_PARTNER_CONTACT':
+      return {
+        ...state,
+        partners: {
+          ...state.partners,
+          contacts: [...state.partners.contacts, action.payload],
+        },
+      };
+
+    case 'UPDATE_PARTNER_CONTACT':
+      return {
+        ...state,
+        partners: {
+          ...state.partners,
+          contacts: state.partners.contacts.map(c => 
+            c.id === action.payload.id ? action.payload : c
+          ),
+        },
+      };
+
+    case 'DELETE_PARTNER_CONTACT':
+      return {
+        ...state,
+        partners: {
+          ...state.partners,
+          contacts: state.partners.contacts.filter(c => c.id !== action.payload),
+          engagements: state.partners.engagements.map(e => ({
+            ...e,
+            contactIds: e.contactIds.filter(id => id !== action.payload),
+          })),
+        },
+      };
+
+    case 'ADD_PARTNER_ENGAGEMENT':
+      return {
+        ...state,
+        partners: {
+          ...state.partners,
+          engagements: [...state.partners.engagements, action.payload],
+        },
+      };
+
+    case 'UPDATE_PARTNER_ENGAGEMENT':
+      return {
+        ...state,
+        partners: {
+          ...state.partners,
+          engagements: state.partners.engagements.map(e => 
+            e.id === action.payload.id ? action.payload : e
+          ),
+        },
+      };
+
+    case 'DELETE_PARTNER_ENGAGEMENT':
+      return {
+        ...state,
+        partners: {
+          ...state.partners,
+          engagements: state.partners.engagements.filter(e => e.id !== action.payload),
+        },
+        templates: state.templates.filter(t => t.engagementId !== action.payload),
+      };
       
     default:
       return state;

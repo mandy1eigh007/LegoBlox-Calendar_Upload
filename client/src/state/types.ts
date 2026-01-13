@@ -70,6 +70,45 @@ export interface RecurrencePattern {
   endWeek: number;
 }
 
+export type EngagementType = 'apprenticeship_tour' | 'worksite_tour' | 'speaker_presentation';
+
+export const ENGAGEMENT_TYPES: { value: EngagementType; label: string; bucketId: GoldenRuleBucketId }[] = [
+  { value: 'apprenticeship_tour', label: 'Apprenticeship Tour', bucketId: 'APPRENTICE_TOURS' },
+  { value: 'worksite_tour', label: 'Worksite Tour', bucketId: 'WORKSITE_TOURS' },
+  { value: 'speaker_presentation', label: 'Speaker Presentation', bucketId: 'SPEAKER_PRESENTATIONS' },
+];
+
+export interface PartnerOrg {
+  id: string;
+  name: string;
+  address: string;
+  notes: string;
+}
+
+export interface PartnerContact {
+  id: string;
+  orgId: string;
+  name: string;
+  role: string;
+  phone: string;
+  email: string;
+}
+
+export interface PartnerEngagement {
+  id: string;
+  orgId: string;
+  contactIds: string[];
+  type: EngagementType;
+  title: string;
+  address: string;
+  ppeRequired: string;
+  arrivalInstructions: string;
+  parkingNotes: string;
+  studentLimit: number | null;
+  notes: string;
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+}
+
 export interface BlockTemplate {
   id: string;
   title: string;
@@ -80,6 +119,7 @@ export interface BlockTemplate {
   goldenRuleBucketId: GoldenRuleBucketId | null;
   defaultLocation: string;
   defaultNotes: string;
+  engagementId?: string | null;
 }
 
 export interface PlacedBlock {
@@ -96,6 +136,7 @@ export interface PlacedBlock {
   goldenRuleBucketId: GoldenRuleBucketId | null;
   recurrenceSeriesId: string | null;
   isRecurrenceException: boolean;
+  engagementId?: string | null;
 }
 
 export interface RecurrenceSeries {
@@ -128,10 +169,17 @@ export interface Plan {
   recurrenceSeries: RecurrenceSeries[];
 }
 
+export interface PartnersData {
+  orgs: PartnerOrg[];
+  contacts: PartnerContact[];
+  engagements: PartnerEngagement[];
+}
+
 export interface AppState {
   version: 2;
   templates: BlockTemplate[];
   plans: Plan[];
+  partners: PartnersData;
 }
 
 export type ApplyScope = 'this' | 'thisAndFuture' | 'all';
@@ -154,7 +202,16 @@ export type Action =
   | { type: 'DELETE_RECURRENCE_SERIES'; payload: { planId: string; seriesId: string } }
   | { type: 'COPY_WEEK'; payload: { planId: string; fromWeek: number; toWeek: number } }
   | { type: 'RESET_WEEK'; payload: { planId: string; week: number } }
-  | { type: 'IMPORT_STATE'; payload: { state: AppState; mode: 'replace' | 'merge' } };
+  | { type: 'IMPORT_STATE'; payload: { state: AppState; mode: 'replace' | 'merge' } }
+  | { type: 'ADD_PARTNER_ORG'; payload: PartnerOrg }
+  | { type: 'UPDATE_PARTNER_ORG'; payload: PartnerOrg }
+  | { type: 'DELETE_PARTNER_ORG'; payload: string }
+  | { type: 'ADD_PARTNER_CONTACT'; payload: PartnerContact }
+  | { type: 'UPDATE_PARTNER_CONTACT'; payload: PartnerContact }
+  | { type: 'DELETE_PARTNER_CONTACT'; payload: string }
+  | { type: 'ADD_PARTNER_ENGAGEMENT'; payload: PartnerEngagement }
+  | { type: 'UPDATE_PARTNER_ENGAGEMENT'; payload: PartnerEngagement }
+  | { type: 'DELETE_PARTNER_ENGAGEMENT'; payload: string };
 
 export function minutesToTimeString(minutes: number): string {
   const hours = Math.floor(minutes / 60);

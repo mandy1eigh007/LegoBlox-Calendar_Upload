@@ -11,6 +11,7 @@ import { PlanEditor } from './PlanEditor';
 import { ExportImportPanel } from './ExportImportPanel';
 import { PrintView } from './PrintView';
 import { CompareMode } from './CompareMode';
+import { PartnersPanel } from './PartnersPanel';
 import { ConfirmModal } from './Modal';
 import { findTimeConflicts, wouldFitInDay } from '@/lib/collision';
 import { 
@@ -37,6 +38,7 @@ export function Builder() {
   const [showExport, setShowExport] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
+  const [showPartners, setShowPartners] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [draggedItem, setDraggedItem] = useState<{ type: 'template' | 'placed-block'; data: BlockTemplate | PlacedBlock } | null>(null);
@@ -413,6 +415,13 @@ export function Builder() {
               Compare
             </button>
             <button
+              onClick={() => setShowPartners(true)}
+              className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+              data-testid="partners-button"
+            >
+              Partners
+            </button>
+            <button
               onClick={() => setShowSettings(true)}
               className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
               data-testid="edit-settings-button"
@@ -501,6 +510,15 @@ export function Builder() {
 
       <PlanEditor plan={plan} open={showSettings} onClose={() => setShowSettings(false)} onToggleDiagnostics={() => setShowDiagnostics(!showDiagnostics)} showDiagnostics={showDiagnostics} />
       <ExportImportPanel plan={plan} open={showExport} onClose={() => setShowExport(false)} />
+      
+      {showPartners && (
+        <PartnersPanel
+          onClose={() => setShowPartners(false)}
+          onCreateTemplate={(template) => {
+            dispatch({ type: 'ADD_TEMPLATE', payload: template });
+          }}
+        />
+      )}
       
       <ConfirmModal
         open={showResetConfirm}

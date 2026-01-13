@@ -9,6 +9,11 @@ export function createInitialState(): AppState {
     version: 2,
     templates: createSeedTemplates(),
     plans: [],
+    partners: {
+      orgs: [],
+      contacts: [],
+      engagements: [],
+    },
   };
 }
 
@@ -31,6 +36,9 @@ function isValidState(data: unknown): data is AppState {
   if (s.version !== 2) return false;
   if (!Array.isArray(s.templates)) return false;
   if (!Array.isArray(s.plans)) return false;
+  if (!s.partners) {
+    s.partners = { orgs: [], contacts: [], engagements: [] };
+  }
   return true;
 }
 
@@ -113,6 +121,7 @@ function migrateV1ToV2(oldState: unknown): AppState | null {
       version: 2,
       templates: newTemplates as AppState['templates'],
       plans: newPlans as AppState['plans'],
+      partners: { orgs: [], contacts: [], engagements: [] },
     };
   }
   
