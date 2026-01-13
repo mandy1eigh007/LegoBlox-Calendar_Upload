@@ -1,14 +1,17 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { useLocation } from 'wouter';
 import { useStore } from '@/state/store';
-import { Plan, PlanSettings, DEFAULT_RESOURCES, AppState, PlacedBlock, Day, DAYS } from '@/state/types';
+import { Plan, PlanSettings, DEFAULT_RESOURCES, AppState, PlacedBlock, Day, DAYS, GOLDEN_RULE_BUCKETS } from '@/state/types';
 import { Modal, ConfirmModal } from './Modal';
 import { createDefaultPlanSettings } from '@/lib/storage';
 import { v4 as uuidv4 } from 'uuid';
 import { validateAppState } from '@/state/validators';
 import { processImageWithOCR, OCREvent } from '@/lib/ocr';
-import { Camera, Upload, Loader2, FileUp } from 'lucide-react';
+import { Camera, Upload, Loader2, FileUp, FileText, AlertTriangle, ClipboardPaste } from 'lucide-react';
 import { parseICSWithDateRange, convertICSEventsToBlocks, ICSEventWithDate } from '@/lib/csv';
+
+type DateRangeMode = 'all' | 'range' | 'week';
+type ImportTarget = 'new' | 'existing';
 
 export function PlanList() {
   const { state, dispatch } = useStore();
@@ -39,6 +42,18 @@ export function PlanList() {
   const [icsMaxDateStr, setIcsMaxDateStr] = useState<string>('');
   const [icsStartDate, setIcsStartDate] = useState<string>('');
   const [icsEndDate, setIcsEndDate] = useState<string>('');
+  const [icsDetectedTimezone, setIcsDetectedTimezone] = useState<string | null>(null);
+  const [icsDateRangeMode, setIcsDateRangeMode] = useState<DateRangeMode>('all');
+  const [icsIncludeOutsideHours, setIcsIncludeOutsideHours] = useState(false);
+  const [icsImportTarget, setIcsImportTarget] = useState<ImportTarget>('new');
+  const [icsTargetPlanId, setIcsTargetPlanId] = useState<string>('');
+  const [icsPlanStartDate, setIcsPlanStartDate] = useState<string>('');
+  const [icsSelectedEvents, setIcsSelectedEvents] = useState<Set<string>>(new Set());
+  const [icsBulkResource, setIcsBulkResource] = useState<string>('');
+  const [icsBulkBucketId, setIcsBulkBucketId] = useState<string>('');
+  const [showPasteICS, setShowPasteICS] = useState(false);
+  const [pasteICSText, setPasteICSText] = useState('');
+  const csvInputRef = useRef<HTMLInputElement>(null);
 
   const handleCreate = () => {
     if (!formData.name.trim()) return;
@@ -135,10 +150,13 @@ export function PlanList() {
 
     const blocks: PlacedBlock[] = [];
     for (const event of ocrEvents) {
-      if (event.startMinutes === null || event.endMinutes === null || !event.day) continue;
-      
-      const startMinutes = Math.max(390, Math.min(event.startMinutes, 915));
-      let durationMinutes = event.endMinutes - event.startMinutes;
+      const hasValidTime = event.startMinutes !== null && event.endMinutes !== null && event.day;
+      const startMinutes = hasValidTime 
+        ? Math.max(390, Math.min(event.startMinutes!, 915))
+        : 390;
+      let durationMinutes = hasValidTime 
+        ? (event.endMinutes! - event.startMinutes!)
+        : 30;
       durationMinutes = Math.max(15, Math.ceil(durationMinutes / 15) * 15);
       
       if (startMinutes + durationMinutes > 930) {
@@ -153,12 +171,12 @@ export function PlanList() {
         id: uuidv4(),
         templateId: matchingTemplate.id,
         week: 1,
-        day: event.day,
+        day: event.day || 'Mon',
         startMinutes,
         durationMinutes,
         titleOverride: matchingTemplate.title === event.title ? '' : event.title,
         location: '',
-        notes: `Imported via OCR: ${event.rawText}`,
+        notes: hasValidTime ? `Imported via OCR: ${event.rawText}` : `Draft block from OCR - adjust time as needed: ${event.rawText}`,
         countsTowardGoldenRule: matchingTemplate.countsTowardGoldenRule,
         goldenRuleBucketId: matchingTemplate.goldenRuleBucketId,
         recurrenceSeriesId: null,
@@ -184,7 +202,7 @@ export function PlanList() {
     reader.onload = (event) => {
       try {
         const content = event.target?.result as string;
-        const { events, minDate, maxDate, minDateStr, maxDateStr } = parseICSWithDateRange(content);
+        const { events, minDate, maxDate, minDateStr, maxDateStr, detectedTimezone } = parseICSWithDateRange(content);
         
         if (events.length === 0) {
           setImportError('No events found in ICS file.');
@@ -198,7 +216,12 @@ export function PlanList() {
         setIcsMaxDateStr(maxDateStr);
         setIcsStartDate(minDateStr);
         setIcsEndDate(maxDateStr);
+        setIcsDetectedTimezone(detectedTimezone);
+        setIcsPlanStartDate(minDateStr);
         setIcsImportPlanName(`Imported from ${file.name.replace(/\.[^/.]+$/, '')}`);
+        setIcsDateRangeMode('all');
+        setIcsIncludeOutsideHours(false);
+        setIcsSelectedEvents(new Set());
         setImportSuccess(null);
         setImportError(null);
       } catch (err) {
@@ -218,20 +241,21 @@ export function PlanList() {
   };
 
   const handleCreatePlanFromICS = () => {
-    if (!icsImportPlanName.trim() || pendingICSEvents.length === 0 || !icsStartDate || !icsEndDate) return;
+    if (!icsImportPlanName.trim() || filteredICSEvents.length === 0) return;
     
-    const startDate = new Date(icsStartDate);
-    const endDate = new Date(icsEndDate);
+    const startDate = icsDateRangeMode === 'all' && icsMinDate ? icsMinDate : new Date(icsStartDate);
+    const endDate = icsDateRangeMode === 'all' && icsMaxDate ? icsMaxDate : new Date(icsEndDate);
     
     const { blocks, included } = convertICSEventsToBlocks(
-      pendingICSEvents,
+      filteredICSEvents,
       state.templates,
       startDate,
-      endDate
+      endDate,
+      icsIncludeOutsideHours
     );
     
     if (blocks.length === 0) {
-      setImportError('No valid events in selected date range. Events must be Mon-Fri, 6:30 AM - 3:30 PM.');
+      setImportError('No valid events to import. Check your filters and try again.');
       return;
     }
     
@@ -257,12 +281,125 @@ export function PlanList() {
     setIcsMaxDate(null);
     setIcsMinDateStr('');
     setIcsMaxDateStr('');
+    setIcsDetectedTimezone(null);
+    setIcsDateRangeMode('all');
+    setIcsIncludeOutsideHours(false);
+    setIcsImportTarget('new');
+    setIcsTargetPlanId('');
+    setIcsPlanStartDate('');
+    setIcsSelectedEvents(new Set());
+    setIcsBulkResource('');
+    setIcsBulkBucketId('');
   };
   
-  const filteredICSEvents = pendingICSEvents.filter(e => {
-    if (!icsStartDate || !icsEndDate) return true;
-    return e.localDateStr >= icsStartDate && e.localDateStr <= icsEndDate;
-  });
+  const handlePasteICSParse = () => {
+    if (!pasteICSText.trim()) return;
+    
+    try {
+      const { events, minDate, maxDate, minDateStr, maxDateStr, detectedTimezone } = parseICSWithDateRange(pasteICSText);
+      
+      if (events.length === 0) {
+        setImportError('No events found in pasted ICS content.');
+        return;
+      }
+
+      setPendingICSEvents(events);
+      setIcsMinDate(minDate);
+      setIcsMaxDate(maxDate);
+      setIcsMinDateStr(minDateStr);
+      setIcsMaxDateStr(maxDateStr);
+      setIcsStartDate(minDateStr);
+      setIcsEndDate(maxDateStr);
+      setIcsDetectedTimezone(detectedTimezone);
+      setIcsPlanStartDate(minDateStr);
+      setIcsImportPlanName('Pasted Calendar');
+      setIcsDateRangeMode('all');
+      setIcsIncludeOutsideHours(false);
+      setIcsSelectedEvents(new Set());
+      setShowPasteICS(false);
+      setPasteICSText('');
+      setImportError(null);
+    } catch (err) {
+      setImportError('Failed to parse pasted ICS content. Make sure it starts with BEGIN:VCALENDAR');
+    }
+  };
+  
+  const filteredICSEvents = useMemo(() => {
+    return pendingICSEvents.filter(e => {
+      if (icsDateRangeMode === 'all') {
+        // No date filtering
+      } else if (icsDateRangeMode === 'range' || icsDateRangeMode === 'week') {
+        if (icsStartDate && icsEndDate) {
+          if (e.localDateStr < icsStartDate || e.localDateStr > icsEndDate) return false;
+        }
+      }
+      
+      if (e.isWeekend) return false;
+      
+      if (!icsIncludeOutsideHours && e.isOutsideScheduleHours) return false;
+      
+      return true;
+    });
+  }, [pendingICSEvents, icsDateRangeMode, icsStartDate, icsEndDate, icsIncludeOutsideHours]);
+  
+  const roundedEventsCount = filteredICSEvents.filter(e => e.wasRounded).length;
+  const outsideHoursCount = pendingICSEvents.filter(e => e.isOutsideScheduleHours && !e.isWeekend).length;
+  
+  const handleBulkApply = () => {
+    if (icsSelectedEvents.size === 0 || (icsBulkResource === '' && icsBulkBucketId === '')) return;
+    
+    const updatedEvents = pendingICSEvents.map(event => {
+      if (!icsSelectedEvents.has(event.uid)) return event;
+      return {
+        ...event,
+        resource: icsBulkResource || event.resource,
+        goldenRuleBucketId: icsBulkBucketId || event.goldenRuleBucketId,
+      };
+    });
+    
+    setPendingICSEvents(updatedEvents);
+    setIcsBulkResource('');
+    setIcsBulkBucketId('');
+  };
+  
+  const toggleEventSelection = (uid: string) => {
+    const newSet = new Set(icsSelectedEvents);
+    if (newSet.has(uid)) {
+      newSet.delete(uid);
+    } else {
+      newSet.add(uid);
+    }
+    setIcsSelectedEvents(newSet);
+  };
+  
+  const selectAllEvents = () => {
+    setIcsSelectedEvents(new Set(filteredICSEvents.map(e => e.uid)));
+  };
+  
+  const deselectAllEvents = () => {
+    setIcsSelectedEvents(new Set());
+  };
+  
+  const handleDateRangeModeChange = (mode: DateRangeMode) => {
+    setIcsDateRangeMode(mode);
+    if (mode === 'all') {
+      setIcsStartDate(icsMinDateStr);
+      setIcsEndDate(icsMaxDateStr);
+    } else if (mode === 'week' && icsMinDate) {
+      // Select just the first week
+      const end = new Date(icsMinDate);
+      end.setDate(end.getDate() + 6);
+      setIcsStartDate(icsMinDateStr);
+      setIcsEndDate(formatLocalDateForInput(end));
+    }
+  };
+  
+  const formatLocalDateForInput = (d: Date): string => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -361,6 +498,19 @@ export function PlanList() {
               className="hidden"
               data-testid="import-ics-home-input"
             />
+            <input
+              ref={csvInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  navigate('/plan/new?csv=1');
+                }
+              }}
+              className="hidden"
+              data-testid="import-csv-home-input"
+            />
             <button
               onClick={() => icsInputRef.current?.click()}
               className="px-4 py-2 border rounded hover:bg-gray-50 flex items-center gap-2 bg-white"
@@ -370,12 +520,12 @@ export function PlanList() {
               Import ICS
             </button>
             <button
-              onClick={() => jsonInputRef.current?.click()}
+              onClick={() => setShowPasteICS(true)}
               className="px-4 py-2 border rounded hover:bg-gray-50 flex items-center gap-2 bg-white"
-              data-testid="import-json-button"
+              data-testid="paste-ics-button"
             >
-              <Upload className="w-4 h-4" />
-              Import Backup
+              <ClipboardPaste className="w-4 h-4" />
+              Paste ICS
             </button>
             <button
               onClick={() => ocrInputRef.current?.click()}
@@ -384,6 +534,14 @@ export function PlanList() {
             >
               <Camera className="w-4 h-4" />
               Screenshot
+            </button>
+            <button
+              onClick={() => jsonInputRef.current?.click()}
+              className="px-4 py-2 border rounded hover:bg-gray-50 flex items-center gap-2 bg-white"
+              data-testid="import-json-button"
+            >
+              <FileText className="w-4 h-4" />
+              Backup
             </button>
             <button
               onClick={() => setShowCreate(true)}
@@ -397,8 +555,8 @@ export function PlanList() {
         
         <div className="mb-6 p-4 border-2 border-dashed border-gray-300 rounded-lg bg-white text-center">
           <FileUp className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-          <p className="text-sm text-gray-600">Drag & drop ICS, JSON, or image files here</p>
-          <p className="text-xs text-gray-400 mt-1">or use the buttons above</p>
+          <p className="text-sm text-gray-600">Drag & drop ICS, JSON, CSV, or image files here</p>
+          <p className="text-xs text-gray-400 mt-1">Supported: .ics (calendar), .json (backup), .csv (spreadsheet), images (OCR)</p>
         </div>
         
         {importError && (
@@ -539,14 +697,15 @@ export function PlanList() {
         <Modal open={true} onClose={() => { setOCREvents([]); setOCRPlanName(''); setOCRRawText(''); }} title="Screenshot Import Results">
           <div className="space-y-4">
             <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm">
-              <p className="font-medium text-amber-800 mb-1">Limited Results</p>
+              <p className="font-medium text-amber-800 mb-1">OCR Has Limitations</p>
               <p className="text-amber-700">
-                Screenshot scanning has difficulty with calendar grids. For better results, export your calendar as ICS file:
+                Screenshot scanning cannot reliably detect times from calendar grids. Detected titles are shown below.
+                You can create draft blocks (titles only) and manually assign times in the schedule editor.
               </p>
               <div className="text-amber-600 text-xs mt-2 space-y-1">
-                <p><strong>Google Calendar:</strong> Settings → Import & export → Export</p>
-                <p><strong>Outlook Desktop:</strong> File → Save Calendar → Save as ICS</p>
-                <p><strong>Outlook Web:</strong> Calendar → Share → Publish Calendar → Copy ICS link</p>
+                <p><strong>Better option:</strong> Export your calendar as ICS file instead:</p>
+                <p>Google Calendar: Settings → Import & export → Export</p>
+                <p>Outlook: File → Save Calendar → Save as ICS</p>
               </div>
             </div>
             
@@ -564,23 +723,29 @@ export function PlanList() {
             
             <div>
               <p className="text-sm text-gray-600 mb-2">
-                {ocrEvents.length} text items detected (may need editing after import):
+                {ocrEvents.length} text items detected:
               </p>
               <div className="max-h-36 overflow-auto border rounded text-xs">
                 <table className="w-full">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
-                      <th className="p-2 text-left">Day</th>
-                      <th className="p-2 text-left">Time</th>
-                      <th className="p-2 text-left">Detected Text</th>
+                      <th className="p-2 text-left">Detected Text (Title)</th>
+                      <th className="p-2 text-left">Suggested Time</th>
+                      <th className="p-2 text-left">Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {ocrEvents.map(event => (
                       <tr key={event.id}>
-                        <td className="p-2">{event.day || 'Mon'}</td>
-                        <td className="p-2">{event.startTime} - {event.endTime}</td>
-                        <td className="p-2 truncate max-w-[120px]" title={event.title}>{event.title}</td>
+                        <td className="p-2 truncate max-w-[150px]" title={event.title}>{event.title}</td>
+                        <td className="p-2 text-gray-500">{event.startTime || '?'} - {event.endTime || '?'}</td>
+                        <td className="p-2">
+                          {event.startMinutes !== null ? (
+                            <span className="text-green-600">Has time</span>
+                          ) : (
+                            <span className="text-amber-600">Set manually</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -608,7 +773,44 @@ export function PlanList() {
                 className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
                 data-testid="create-plan-from-ocr"
               >
-                Create Plan Anyway
+                Create Draft Plan
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 text-center">
+              Blocks without detected times will be placed at 6:30 AM. Edit times in the schedule view.
+            </p>
+          </div>
+        </Modal>
+      )}
+
+      {showPasteICS && (
+        <Modal open={true} onClose={() => { setShowPasteICS(false); setPasteICSText(''); }} title="Paste ICS Calendar Text">
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              If your file picker cannot find .ics files, you can paste the calendar content directly here.
+              Open the .ics file in a text editor, copy all content, and paste below.
+            </p>
+            <textarea
+              value={pasteICSText}
+              onChange={e => setPasteICSText(e.target.value)}
+              placeholder="BEGIN:VCALENDAR&#10;VERSION:2.0&#10;..."
+              className="w-full h-48 px-3 py-2 border rounded font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+              data-testid="paste-ics-textarea"
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => { setShowPasteICS(false); setPasteICSText(''); }}
+                className="px-4 py-2 text-sm border rounded hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePasteICSParse}
+                disabled={!pasteICSText.trim()}
+                className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                data-testid="parse-pasted-ics"
+              >
+                Parse Calendar
               </button>
             </div>
           </div>
@@ -617,14 +819,19 @@ export function PlanList() {
 
       {pendingICSEvents.length > 0 && (
         <Modal open={true} onClose={clearICSImport} title="Import Calendar Events">
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[80vh] overflow-y-auto">
             <div className="bg-green-50 border border-green-200 rounded p-3 text-sm">
               <p className="text-green-800">
-                Found {pendingICSEvents.length} events in the calendar file!
+                Found {pendingICSEvents.length} events in the calendar!
               </p>
               {icsMinDate && icsMaxDate && (
                 <p className="text-green-600 text-xs mt-1">
                   Events span from {icsMinDate.toLocaleDateString()} to {icsMaxDate.toLocaleDateString()}
+                </p>
+              )}
+              {icsDetectedTimezone && (
+                <p className="text-green-600 text-xs">
+                  Detected timezone: {icsDetectedTimezone} (displaying in your local time)
                 </p>
               )}
             </div>
@@ -641,73 +848,190 @@ export function PlanList() {
               />
             </div>
             
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Start Date</label>
-                <input
-                  type="date"
-                  value={icsStartDate}
-                  onChange={e => setIcsStartDate(e.target.value)}
-                  min={icsMinDateStr}
-                  max={icsEndDate}
-                  className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  data-testid="ics-start-date"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">End Date</label>
-                <input
-                  type="date"
-                  value={icsEndDate}
-                  onChange={e => setIcsEndDate(e.target.value)}
-                  min={icsStartDate}
-                  max={icsMaxDateStr}
-                  className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  data-testid="ics-end-date"
-                />
-              </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Date Range</label>
+              <select
+                value={icsDateRangeMode}
+                onChange={e => handleDateRangeModeChange(e.target.value as DateRangeMode)}
+                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                data-testid="ics-date-range-mode"
+              >
+                <option value="all">All dates</option>
+                <option value="range">Select range</option>
+                <option value="week">Single week (Mon-Sun)</option>
+              </select>
             </div>
             
+            {icsDateRangeMode !== 'all' && (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    value={icsStartDate}
+                    onChange={e => setIcsStartDate(e.target.value)}
+                    min={icsMinDateStr}
+                    max={icsEndDate}
+                    className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    data-testid="ics-start-date"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">End Date</label>
+                  <input
+                    type="date"
+                    value={icsEndDate}
+                    onChange={e => setIcsEndDate(e.target.value)}
+                    min={icsStartDate}
+                    max={icsMaxDateStr}
+                    className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    data-testid="ics-end-date"
+                  />
+                </div>
+              </div>
+            )}
+            
+            <div className="flex items-center gap-4 text-sm">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={icsIncludeOutsideHours}
+                  onChange={e => setIcsIncludeOutsideHours(e.target.checked)}
+                  className="rounded"
+                  data-testid="ics-include-outside-hours"
+                />
+                Include events outside 6:30 AM - 3:30 PM ({outsideHoursCount} events)
+              </label>
+            </div>
+            
+            {roundedEventsCount > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-amber-800 font-medium">{roundedEventsCount} events will be rounded to 15-minute increments</p>
+                    <p className="text-amber-700 text-xs mt-1">Times not on 15-minute boundaries are adjusted. Review the preview below.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <div>
-              <p className="text-sm text-gray-600 mb-2">
-                Preview ({filteredICSEvents.length} events in selected range):
-              </p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm text-gray-600">
+                  Preview ({filteredICSEvents.length} events):
+                </p>
+                <div className="flex gap-2 text-xs">
+                  <button onClick={selectAllEvents} className="text-blue-600 hover:underline">Select all</button>
+                  <button onClick={deselectAllEvents} className="text-blue-600 hover:underline">Clear selection</button>
+                </div>
+              </div>
               <div className="max-h-48 overflow-auto border rounded text-xs">
                 <table className="w-full">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
+                      <th className="p-2 w-8"></th>
                       <th className="p-2 text-left">Date</th>
                       <th className="p-2 text-left">Time</th>
                       <th className="p-2 text-left">Title</th>
+                      <th className="p-2 text-left">Resource</th>
+                      <th className="p-2 text-left">Category</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredICSEvents.slice(0, 20).map(event => {
+                    {filteredICSEvents.slice(0, 30).map(event => {
                       const startHour = event.dtstart.getHours();
                       const startMin = event.dtstart.getMinutes();
                       const endHour = event.dtend.getHours();
                       const endMin = event.dtend.getMinutes();
+                      const bucket = event.goldenRuleBucketId 
+                        ? GOLDEN_RULE_BUCKETS.find(b => b.id === event.goldenRuleBucketId)
+                        : null;
                       return (
-                        <tr key={event.uid}>
+                        <tr key={event.uid} className={icsSelectedEvents.has(event.uid) ? 'bg-blue-50' : event.wasRounded ? 'bg-amber-50' : ''}>
+                          <td className="p-2">
+                            <input
+                              type="checkbox"
+                              checked={icsSelectedEvents.has(event.uid)}
+                              onChange={() => toggleEventSelection(event.uid)}
+                              className="rounded"
+                            />
+                          </td>
                           <td className="p-2">{event.dtstart.toLocaleDateString()}</td>
                           <td className="p-2">
                             {startHour % 12 || 12}:{startMin.toString().padStart(2, '0')} {startHour >= 12 ? 'PM' : 'AM'} - 
                             {endHour % 12 || 12}:{endMin.toString().padStart(2, '0')} {endHour >= 12 ? 'PM' : 'AM'}
                           </td>
-                          <td className="p-2 truncate max-w-[120px]" title={event.summary}>{event.summary}</td>
+                          <td className="p-2 truncate max-w-[80px]" title={event.summary}>{event.summary}</td>
+                          <td className="p-2">
+                            {event.resource ? (
+                              <span className="text-blue-600">{event.resource}</span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="p-2">
+                            {bucket ? (
+                              <span className="text-purple-600" title={bucket.label}>{bucket.label.slice(0, 15)}</span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
-                {filteredICSEvents.length > 20 && (
-                  <p className="p-2 text-center text-gray-500">...and {filteredICSEvents.length - 20} more events</p>
+                {filteredICSEvents.length > 30 && (
+                  <p className="p-2 text-center text-gray-500">...and {filteredICSEvents.length - 30} more events</p>
                 )}
                 {filteredICSEvents.length === 0 && (
-                  <p className="p-4 text-center text-gray-500">No events in selected date range</p>
+                  <p className="p-4 text-center text-gray-500">No events match the current filters</p>
                 )}
               </div>
             </div>
+            
+            {icsSelectedEvents.size > 0 && (
+              <div className="bg-gray-50 border rounded p-3 text-sm">
+                <p className="font-medium mb-2">Bulk edit {icsSelectedEvents.size} selected events:</p>
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-500">Resource</label>
+                    <select
+                      value={icsBulkResource}
+                      onChange={e => setIcsBulkResource(e.target.value)}
+                      className="w-full px-2 py-1 border rounded text-sm"
+                    >
+                      <option value="">Choose...</option>
+                      {DEFAULT_RESOURCES.map(r => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-500">Category</label>
+                    <select
+                      value={icsBulkBucketId}
+                      onChange={e => setIcsBulkBucketId(e.target.value)}
+                      className="w-full px-2 py-1 border rounded text-sm"
+                    >
+                      <option value="">Choose...</option>
+                      {GOLDEN_RULE_BUCKETS.map(b => (
+                        <option key={b.id} value={b.id}>{b.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    onClick={handleBulkApply}
+                    disabled={icsBulkResource === '' && icsBulkBucketId === ''}
+                    className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                    data-testid="ics-bulk-apply"
+                  >
+                    Apply
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div className="flex justify-end gap-3 pt-2">
               <button

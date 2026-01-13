@@ -140,10 +140,12 @@ interface ParsedICSEvent {
   dtend: Date;
   location?: string;
   description?: string;
+  originalTimezone?: string;
+  isUTC?: boolean;
 }
 
-function parseICSDate(dateStr: string): Date | null {
-  if (!dateStr) return null;
+function parseICSDate(dateStr: string, tzid?: string): { date: Date | null; isUTC: boolean; tzid?: string } {
+  if (!dateStr) return { date: null, isUTC: false };
   
   const cleanStr = dateStr.replace(/[^0-9TZ]/g, '');
   
@@ -153,7 +155,7 @@ function parseICSDate(dateStr: string): Date | null {
     const day = parseInt(cleanStr.slice(6, 8));
     const hour = parseInt(cleanStr.slice(9, 11)) || 0;
     const minute = parseInt(cleanStr.slice(11, 13)) || 0;
-    return new Date(Date.UTC(year, month, day, hour, minute));
+    return { date: new Date(Date.UTC(year, month, day, hour, minute)), isUTC: true, tzid: 'UTC' };
   }
   
   const year = parseInt(cleanStr.slice(0, 4));
@@ -162,17 +164,23 @@ function parseICSDate(dateStr: string): Date | null {
   const hour = parseInt(cleanStr.slice(9, 11)) || 0;
   const minute = parseInt(cleanStr.slice(11, 13)) || 0;
   
-  return new Date(year, month, day, hour, minute);
+  return { date: new Date(year, month, day, hour, minute), isUTC: false, tzid };
 }
 
-export function parseICS(content: string): ParsedICSEvent[] {
+export function parseICS(content: string): { events: ParsedICSEvent[]; detectedTimezone: string | null } {
   const events: ParsedICSEvent[] = [];
   const lines = content.replace(/\r\n /g, '').split(/\r?\n/);
   
   let inEvent = false;
-  let currentEvent: Partial<ParsedICSEvent> = {};
+  let currentEvent: Partial<ParsedICSEvent> & { startTzid?: string } = {};
+  let detectedTimezone: string | null = null;
   
   for (const line of lines) {
+    if (line.startsWith('X-WR-TIMEZONE:') || line.startsWith('TZID:')) {
+      const tz = line.split(':')[1]?.trim();
+      if (tz && !detectedTimezone) detectedTimezone = tz;
+    }
+    
     if (line === 'BEGIN:VEVENT') {
       inEvent = true;
       currentEvent = {};
@@ -188,6 +196,8 @@ export function parseICS(content: string): ParsedICSEvent[] {
           dtend: currentEvent.dtend,
           location: currentEvent.location,
           description: currentEvent.description,
+          originalTimezone: currentEvent.startTzid || detectedTimezone || undefined,
+          isUTC: currentEvent.isUTC,
         });
       }
       inEvent = false;
@@ -200,8 +210,12 @@ export function parseICS(content: string): ParsedICSEvent[] {
     const colonIndex = line.indexOf(':');
     if (colonIndex === -1) continue;
     
-    const key = line.slice(0, colonIndex).split(';')[0];
+    const keyPart = line.slice(0, colonIndex);
+    const key = keyPart.split(';')[0];
     const value = line.slice(colonIndex + 1);
+    
+    const tzidMatch = keyPart.match(/TZID=([^;:]+)/);
+    const tzid = tzidMatch ? tzidMatch[1] : undefined;
     
     switch (key) {
       case 'UID':
@@ -210,12 +224,18 @@ export function parseICS(content: string): ParsedICSEvent[] {
       case 'SUMMARY':
         currentEvent.summary = value;
         break;
-      case 'DTSTART':
-        currentEvent.dtstart = parseICSDate(value) || undefined;
+      case 'DTSTART': {
+        const parsed = parseICSDate(value, tzid);
+        currentEvent.dtstart = parsed.date || undefined;
+        currentEvent.isUTC = parsed.isUTC;
+        currentEvent.startTzid = parsed.tzid || tzid;
         break;
-      case 'DTEND':
-        currentEvent.dtend = parseICSDate(value) || undefined;
+      }
+      case 'DTEND': {
+        const parsed = parseICSDate(value, tzid);
+        currentEvent.dtend = parsed.date || undefined;
         break;
+      }
       case 'LOCATION':
         currentEvent.location = value;
         break;
@@ -225,11 +245,21 @@ export function parseICS(content: string): ParsedICSEvent[] {
     }
   }
   
-  return events;
+  return { events, detectedTimezone };
 }
 
 export interface ICSEventWithDate extends ParsedICSEvent {
   localDateStr: string;
+  startMinutesOriginal: number;
+  startMinutesRounded: number;
+  durationMinutesOriginal: number;
+  durationMinutesRounded: number;
+  wasRounded: boolean;
+  roundingNote: string;
+  isOutsideScheduleHours: boolean;
+  isWeekend: boolean;
+  resource?: string;
+  goldenRuleBucketId?: string;
 }
 
 function formatLocalDate(d: Date): string {
@@ -239,21 +269,67 @@ function formatLocalDate(d: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+function roundToNearest15(minutes: number): number {
+  return Math.round(minutes / 15) * 15;
+}
+
+function formatTime12(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${h12}:${m.toString().padStart(2, '0')} ${period}`;
+}
+
 export function parseICSWithDateRange(content: string): {
   events: ICSEventWithDate[];
   minDate: Date | null;
   maxDate: Date | null;
   minDateStr: string;
   maxDateStr: string;
+  detectedTimezone: string | null;
 } {
-  const rawEvents = parseICS(content);
-  const events: ICSEventWithDate[] = rawEvents.map(e => ({
-    ...e,
-    localDateStr: formatLocalDate(e.dtstart),
-  }));
+  const { events: rawEvents, detectedTimezone } = parseICS(content);
+  
+  const events: ICSEventWithDate[] = rawEvents.map(e => {
+    const startMinutesOriginal = e.dtstart.getHours() * 60 + e.dtstart.getMinutes();
+    const endMinutesOriginal = e.dtend.getHours() * 60 + e.dtend.getMinutes();
+    const durationMinutesOriginal = endMinutesOriginal - startMinutesOriginal;
+    
+    const startMinutesRounded = roundToNearest15(startMinutesOriginal);
+    const durationMinutesRounded = Math.max(15, roundToNearest15(durationMinutesOriginal));
+    
+    const wasRounded = startMinutesOriginal !== startMinutesRounded || durationMinutesOriginal !== durationMinutesRounded;
+    
+    let roundingNote = '';
+    if (wasRounded) {
+      const originalStart = formatTime12(startMinutesOriginal);
+      const originalEnd = formatTime12(startMinutesOriginal + durationMinutesOriginal);
+      const roundedStart = formatTime12(startMinutesRounded);
+      const roundedEnd = formatTime12(startMinutesRounded + durationMinutesRounded);
+      roundingNote = `Rounded from ${originalStart}-${originalEnd} to ${roundedStart}-${roundedEnd}`;
+    }
+    
+    const isOutsideScheduleHours = startMinutesRounded < 390 || (startMinutesRounded + durationMinutesRounded) > 930;
+    const dayOfWeek = e.dtstart.getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    
+    return {
+      ...e,
+      localDateStr: formatLocalDate(e.dtstart),
+      startMinutesOriginal,
+      startMinutesRounded,
+      durationMinutesOriginal,
+      durationMinutesRounded,
+      wasRounded,
+      roundingNote,
+      isOutsideScheduleHours,
+      isWeekend,
+    };
+  });
   
   if (events.length === 0) {
-    return { events, minDate: null, maxDate: null, minDateStr: '', maxDateStr: '' };
+    return { events, minDate: null, maxDate: null, minDateStr: '', maxDateStr: '', detectedTimezone };
   }
   
   const sorted = [...events].sort((a, b) => a.dtstart.getTime() - b.dtstart.getTime());
@@ -263,6 +339,7 @@ export function parseICSWithDateRange(content: string): {
     maxDate: sorted[sorted.length - 1].dtstart,
     minDateStr: formatLocalDate(sorted[0].dtstart),
     maxDateStr: formatLocalDate(sorted[sorted.length - 1].dtstart),
+    detectedTimezone,
   };
 }
 
@@ -270,7 +347,8 @@ export function convertICSEventsToBlocks(
   events: ICSEventWithDate[],
   templates: BlockTemplate[],
   startDate: Date,
-  endDate: Date
+  endDate: Date,
+  includeOutsideHours: boolean = false
 ): { blocks: PlacedBlock[]; skipped: number; included: number } {
   const blocks: PlacedBlock[] = [];
   let skipped = 0;
@@ -319,14 +397,23 @@ export function convertICSEventsToBlocks(
     
     const startHour = event.dtstart.getHours();
     const startMinute = event.dtstart.getMinutes();
-    const startMinutes = startHour * 60 + startMinute;
+    let startMinutes = startHour * 60 + startMinute;
     
     const durationMs = event.dtend.getTime() - event.dtstart.getTime();
-    const durationMinutes = Math.max(15, Math.round(durationMs / (1000 * 60) / 15) * 15);
+    let durationMinutes = Math.max(15, Math.round(durationMs / (1000 * 60) / 15) * 15);
     
-    if (startMinutes < 390 || startMinutes + durationMinutes > 930) {
+    const isOutsideHours = startMinutes < 390 || startMinutes + durationMinutes > 930;
+    if (isOutsideHours && !includeOutsideHours) {
       skipped++;
       continue;
+    }
+    
+    if (isOutsideHours && includeOutsideHours) {
+      if (startMinutes < 390) startMinutes = 390;
+      if (startMinutes + durationMinutes > 930) {
+        durationMinutes = 930 - startMinutes;
+      }
+      if (durationMinutes < 15) durationMinutes = 15;
     }
     
     const matchingTemplate = templates.find(t => 
@@ -344,9 +431,10 @@ export function convertICSEventsToBlocks(
       location: event.location || '',
       notes: event.description || '',
       countsTowardGoldenRule: matchingTemplate.countsTowardGoldenRule,
-      goldenRuleBucketId: matchingTemplate.goldenRuleBucketId,
+      goldenRuleBucketId: event.goldenRuleBucketId || matchingTemplate.goldenRuleBucketId,
       recurrenceSeriesId: null,
       isRecurrenceException: false,
+      resource: event.resource,
     });
     included++;
   }
@@ -359,7 +447,7 @@ export function importICSToBlocks(
   templates: BlockTemplate[],
   referenceDate: Date = new Date()
 ): { blocks: PlacedBlock[]; skipped: number } {
-  const events = parseICS(content);
+  const { events } = parseICS(content);
   const blocks: PlacedBlock[] = [];
   let skipped = 0;
   
