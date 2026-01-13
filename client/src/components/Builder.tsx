@@ -23,10 +23,14 @@ import { findAlternativeResource } from '@/lib/calendarCompare';
 import { 
   SLOT_HEIGHT_PX, 
   SLOT_MINUTES,
+  DAY_START_MIN,
+  DAY_END_MIN,
   minutesToTimeDisplay,
   getEndMinutes,
   snapToSlot,
-  clampMinutes
+  clampMinutes,
+  clampToDay,
+  pxToMinutes
 } from '@/lib/time';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -96,14 +100,9 @@ export function Builder() {
 
   const calculateDropMinutes = (clientY: number, gridElement: Element): number => {
     const rect = gridElement.getBoundingClientRect();
-    const headerHeight = 41;
     const scrollTop = gridElement.scrollTop;
-    const yWithinGrid = (clientY - rect.top - headerHeight) + scrollTop;
-    const slotIndex = Math.round(yWithinGrid / SLOT_HEIGHT_PX);
-    const minutesFromStart = slotIndex * SLOT_MINUTES;
-    const rawMinutes = settings.dayStartMinutes + minutesFromStart;
-    const snappedMinutes = snapToSlot(rawMinutes, SLOT_MINUTES);
-    return clampMinutes(snappedMinutes, settings.dayStartMinutes, settings.dayEndMinutes - 15);
+    const minutes = pxToMinutes(clientY, rect, scrollTop, settings.dayStartMinutes);
+    return clampToDay(minutes, settings.dayStartMinutes, settings.dayEndMinutes - 15);
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
