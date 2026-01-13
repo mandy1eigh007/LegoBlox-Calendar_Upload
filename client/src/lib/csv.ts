@@ -1,5 +1,6 @@
-import { Plan, BlockTemplate, DAYS, GOLDEN_RULE_BUCKETS } from '@/state/types';
+import { Plan, BlockTemplate, DAYS, GOLDEN_RULE_BUCKETS, PlacedBlock, Day } from '@/state/types';
 import { minutesToTimeDisplay, getEndMinutes } from './time';
+import { v4 as uuidv4 } from 'uuid';
 
 export function exportToCSV(plan: Plan, templates: BlockTemplate[]): string {
   const headers = [
@@ -130,4 +131,175 @@ export function downloadICS(content: string, filename: string): void {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(link.href);
+}
+
+interface ParsedICSEvent {
+  uid: string;
+  summary: string;
+  dtstart: Date;
+  dtend: Date;
+  location?: string;
+  description?: string;
+}
+
+function parseICSDate(dateStr: string): Date | null {
+  if (!dateStr) return null;
+  
+  const cleanStr = dateStr.replace(/[^0-9TZ]/g, '');
+  
+  if (cleanStr.endsWith('Z')) {
+    const year = parseInt(cleanStr.slice(0, 4));
+    const month = parseInt(cleanStr.slice(4, 6)) - 1;
+    const day = parseInt(cleanStr.slice(6, 8));
+    const hour = parseInt(cleanStr.slice(9, 11)) || 0;
+    const minute = parseInt(cleanStr.slice(11, 13)) || 0;
+    return new Date(Date.UTC(year, month, day, hour, minute));
+  }
+  
+  const year = parseInt(cleanStr.slice(0, 4));
+  const month = parseInt(cleanStr.slice(4, 6)) - 1;
+  const day = parseInt(cleanStr.slice(6, 8));
+  const hour = parseInt(cleanStr.slice(9, 11)) || 0;
+  const minute = parseInt(cleanStr.slice(11, 13)) || 0;
+  
+  return new Date(year, month, day, hour, minute);
+}
+
+export function parseICS(content: string): ParsedICSEvent[] {
+  const events: ParsedICSEvent[] = [];
+  const lines = content.replace(/\r\n /g, '').split(/\r?\n/);
+  
+  let inEvent = false;
+  let currentEvent: Partial<ParsedICSEvent> = {};
+  
+  for (const line of lines) {
+    if (line === 'BEGIN:VEVENT') {
+      inEvent = true;
+      currentEvent = {};
+      continue;
+    }
+    
+    if (line === 'END:VEVENT') {
+      if (currentEvent.summary && currentEvent.dtstart && currentEvent.dtend) {
+        events.push({
+          uid: currentEvent.uid || uuidv4(),
+          summary: currentEvent.summary,
+          dtstart: currentEvent.dtstart,
+          dtend: currentEvent.dtend,
+          location: currentEvent.location,
+          description: currentEvent.description,
+        });
+      }
+      inEvent = false;
+      currentEvent = {};
+      continue;
+    }
+    
+    if (!inEvent) continue;
+    
+    const colonIndex = line.indexOf(':');
+    if (colonIndex === -1) continue;
+    
+    const key = line.slice(0, colonIndex).split(';')[0];
+    const value = line.slice(colonIndex + 1);
+    
+    switch (key) {
+      case 'UID':
+        currentEvent.uid = value;
+        break;
+      case 'SUMMARY':
+        currentEvent.summary = value;
+        break;
+      case 'DTSTART':
+        currentEvent.dtstart = parseICSDate(value) || undefined;
+        break;
+      case 'DTEND':
+        currentEvent.dtend = parseICSDate(value) || undefined;
+        break;
+      case 'LOCATION':
+        currentEvent.location = value;
+        break;
+      case 'DESCRIPTION':
+        currentEvent.description = value.replace(/\\n/g, '\n');
+        break;
+    }
+  }
+  
+  return events;
+}
+
+export function importICSToBlocks(
+  content: string,
+  templates: BlockTemplate[],
+  referenceDate: Date = new Date()
+): { blocks: PlacedBlock[]; skipped: number } {
+  const events = parseICS(content);
+  const blocks: PlacedBlock[] = [];
+  let skipped = 0;
+  
+  const refDate = new Date(referenceDate);
+  refDate.setHours(0, 0, 0, 0);
+  const refDay = refDate.getDay();
+  const mondayRef = new Date(refDate);
+  mondayRef.setDate(refDate.getDate() - (refDay === 0 ? 6 : refDay - 1));
+  
+  const defaultTemplate = templates[0];
+  if (!defaultTemplate) {
+    return { blocks: [], skipped: events.length };
+  }
+  
+  for (const event of events) {
+    const eventDate = new Date(event.dtstart);
+    eventDate.setHours(0, 0, 0, 0);
+    
+    const diffDays = Math.floor((eventDate.getTime() - mondayRef.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) {
+      skipped++;
+      continue;
+    }
+    
+    const week = Math.floor(diffDays / 7) + 1;
+    const dayIndex = diffDays % 7;
+    
+    if (dayIndex > 4) {
+      skipped++;
+      continue;
+    }
+    
+    const day = DAYS[dayIndex] as Day;
+    
+    const startHour = event.dtstart.getHours();
+    const startMinute = event.dtstart.getMinutes();
+    const startMinutes = startHour * 60 + startMinute;
+    
+    const durationMs = event.dtend.getTime() - event.dtstart.getTime();
+    const durationMinutes = Math.max(15, Math.round(durationMs / (1000 * 60) / 15) * 15);
+    
+    if (startMinutes < 390 || startMinutes + durationMinutes > 930) {
+      skipped++;
+      continue;
+    }
+    
+    const matchingTemplate = templates.find(t => 
+      t.title.toLowerCase() === event.summary.toLowerCase()
+    ) || defaultTemplate;
+    
+    blocks.push({
+      id: uuidv4(),
+      templateId: matchingTemplate.id,
+      week,
+      day,
+      startMinutes,
+      durationMinutes,
+      titleOverride: matchingTemplate.title === event.summary ? '' : event.summary,
+      location: event.location || '',
+      notes: event.description || '',
+      countsTowardGoldenRule: matchingTemplate.countsTowardGoldenRule,
+      goldenRuleBucketId: matchingTemplate.goldenRuleBucketId,
+      recurrenceSeriesId: null,
+      isRecurrenceException: false,
+    });
+  }
+  
+  return { blocks, skipped };
 }
