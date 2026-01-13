@@ -228,6 +228,132 @@ export function parseICS(content: string): ParsedICSEvent[] {
   return events;
 }
 
+export interface ICSEventWithDate extends ParsedICSEvent {
+  localDateStr: string;
+}
+
+function formatLocalDate(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function parseICSWithDateRange(content: string): {
+  events: ICSEventWithDate[];
+  minDate: Date | null;
+  maxDate: Date | null;
+  minDateStr: string;
+  maxDateStr: string;
+} {
+  const rawEvents = parseICS(content);
+  const events: ICSEventWithDate[] = rawEvents.map(e => ({
+    ...e,
+    localDateStr: formatLocalDate(e.dtstart),
+  }));
+  
+  if (events.length === 0) {
+    return { events, minDate: null, maxDate: null, minDateStr: '', maxDateStr: '' };
+  }
+  
+  const sorted = [...events].sort((a, b) => a.dtstart.getTime() - b.dtstart.getTime());
+  return {
+    events,
+    minDate: sorted[0].dtstart,
+    maxDate: sorted[sorted.length - 1].dtstart,
+    minDateStr: formatLocalDate(sorted[0].dtstart),
+    maxDateStr: formatLocalDate(sorted[sorted.length - 1].dtstart),
+  };
+}
+
+export function convertICSEventsToBlocks(
+  events: ICSEventWithDate[],
+  templates: BlockTemplate[],
+  startDate: Date,
+  endDate: Date
+): { blocks: PlacedBlock[]; skipped: number; included: number } {
+  const blocks: PlacedBlock[] = [];
+  let skipped = 0;
+  let included = 0;
+  
+  const start = new Date(startDate);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setHours(23, 59, 59, 999);
+  
+  const startDay = start.getDay();
+  const mondayRef = new Date(start);
+  mondayRef.setDate(start.getDate() - (startDay === 0 ? 6 : startDay - 1));
+  
+  const defaultTemplate = templates[0];
+  if (!defaultTemplate) {
+    return { blocks: [], skipped: events.length, included: 0 };
+  }
+  
+  for (const event of events) {
+    const eventDate = new Date(event.dtstart);
+    
+    if (eventDate < start || eventDate > end) {
+      skipped++;
+      continue;
+    }
+    
+    const eventDateOnly = new Date(eventDate);
+    eventDateOnly.setHours(0, 0, 0, 0);
+    
+    const diffDays = Math.floor((eventDateOnly.getTime() - mondayRef.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) {
+      skipped++;
+      continue;
+    }
+    
+    const week = Math.floor(diffDays / 7) + 1;
+    const dayIndex = diffDays % 7;
+    
+    if (dayIndex > 4) {
+      skipped++;
+      continue;
+    }
+    
+    const day = DAYS[dayIndex] as Day;
+    
+    const startHour = event.dtstart.getHours();
+    const startMinute = event.dtstart.getMinutes();
+    const startMinutes = startHour * 60 + startMinute;
+    
+    const durationMs = event.dtend.getTime() - event.dtstart.getTime();
+    const durationMinutes = Math.max(15, Math.round(durationMs / (1000 * 60) / 15) * 15);
+    
+    if (startMinutes < 390 || startMinutes + durationMinutes > 930) {
+      skipped++;
+      continue;
+    }
+    
+    const matchingTemplate = templates.find(t => 
+      t.title.toLowerCase() === event.summary.toLowerCase()
+    ) || defaultTemplate;
+    
+    blocks.push({
+      id: uuidv4(),
+      templateId: matchingTemplate.id,
+      week,
+      day,
+      startMinutes,
+      durationMinutes,
+      titleOverride: matchingTemplate.title === event.summary ? '' : event.summary,
+      location: event.location || '',
+      notes: event.description || '',
+      countsTowardGoldenRule: matchingTemplate.countsTowardGoldenRule,
+      goldenRuleBucketId: matchingTemplate.goldenRuleBucketId,
+      recurrenceSeriesId: null,
+      isRecurrenceException: false,
+    });
+    included++;
+  }
+  
+  return { blocks, skipped, included };
+}
+
 export function importICSToBlocks(
   content: string,
   templates: BlockTemplate[],

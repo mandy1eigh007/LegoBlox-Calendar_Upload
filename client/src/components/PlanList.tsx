@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { validateAppState } from '@/state/validators';
 import { processImageWithOCR, OCREvent } from '@/lib/ocr';
 import { Camera, Upload, Loader2, FileUp } from 'lucide-react';
-import { importICSToBlocks } from '@/lib/csv';
+import { parseICSWithDateRange, convertICSEventsToBlocks, ICSEventWithDate } from '@/lib/csv';
 
 export function PlanList() {
   const { state, dispatch } = useStore();
@@ -32,7 +32,13 @@ export function PlanList() {
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [manualEvents, setManualEvents] = useState<Array<{id: string; title: string; day: Day; startMinutes: number; durationMinutes: number}>>([]);
   const [icsImportPlanName, setIcsImportPlanName] = useState('');
-  const [pendingICSBlocks, setPendingICSBlocks] = useState<PlacedBlock[]>([]);
+  const [pendingICSEvents, setPendingICSEvents] = useState<ICSEventWithDate[]>([]);
+  const [icsMinDate, setIcsMinDate] = useState<Date | null>(null);
+  const [icsMaxDate, setIcsMaxDate] = useState<Date | null>(null);
+  const [icsMinDateStr, setIcsMinDateStr] = useState<string>('');
+  const [icsMaxDateStr, setIcsMaxDateStr] = useState<string>('');
+  const [icsStartDate, setIcsStartDate] = useState<string>('');
+  const [icsEndDate, setIcsEndDate] = useState<string>('');
 
   const handleCreate = () => {
     if (!formData.name.trim()) return;
@@ -178,14 +184,20 @@ export function PlanList() {
     reader.onload = (event) => {
       try {
         const content = event.target?.result as string;
-        const { blocks, skipped } = importICSToBlocks(content, state.templates);
+        const { events, minDate, maxDate, minDateStr, maxDateStr } = parseICSWithDateRange(content);
         
-        if (blocks.length === 0) {
-          setImportError('No valid events found in ICS file. Events must be Mon-Fri, 6:30 AM - 3:30 PM.');
+        if (events.length === 0) {
+          setImportError('No events found in ICS file.');
           return;
         }
 
-        setPendingICSBlocks(blocks);
+        setPendingICSEvents(events);
+        setIcsMinDate(minDate);
+        setIcsMaxDate(maxDate);
+        setIcsMinDateStr(minDateStr);
+        setIcsMaxDateStr(maxDateStr);
+        setIcsStartDate(minDateStr);
+        setIcsEndDate(maxDateStr);
         setIcsImportPlanName(`Imported from ${file.name.replace(/\.[^/.]+$/, '')}`);
         setImportSuccess(null);
         setImportError(null);
@@ -206,21 +218,51 @@ export function PlanList() {
   };
 
   const handleCreatePlanFromICS = () => {
-    if (!icsImportPlanName.trim() || pendingICSBlocks.length === 0) return;
+    if (!icsImportPlanName.trim() || pendingICSEvents.length === 0 || !icsStartDate || !icsEndDate) return;
+    
+    const startDate = new Date(icsStartDate);
+    const endDate = new Date(icsEndDate);
+    
+    const { blocks, included } = convertICSEventsToBlocks(
+      pendingICSEvents,
+      state.templates,
+      startDate,
+      endDate
+    );
+    
+    if (blocks.length === 0) {
+      setImportError('No valid events in selected date range. Events must be Mon-Fri, 6:30 AM - 3:30 PM.');
+      return;
+    }
     
     const plan: Plan = {
       id: uuidv4(),
       settings: { ...createDefaultPlanSettings(), name: icsImportPlanName },
-      blocks: pendingICSBlocks,
+      blocks,
       recurrenceSeries: [],
     };
     
     dispatch({ type: 'ADD_PLAN', payload: plan });
-    setPendingICSBlocks([]);
-    setIcsImportPlanName('');
-    setImportSuccess(`Created plan with ${pendingICSBlocks.length} events!`);
+    clearICSImport();
+    setImportSuccess(`Created plan with ${included} events!`);
     navigate(`/plan/${plan.id}`);
   };
+  
+  const clearICSImport = () => {
+    setPendingICSEvents([]);
+    setIcsImportPlanName('');
+    setIcsStartDate('');
+    setIcsEndDate('');
+    setIcsMinDate(null);
+    setIcsMaxDate(null);
+    setIcsMinDateStr('');
+    setIcsMaxDateStr('');
+  };
+  
+  const filteredICSEvents = pendingICSEvents.filter(e => {
+    if (!icsStartDate || !icsEndDate) return true;
+    return e.localDateStr >= icsStartDate && e.localDateStr <= icsEndDate;
+  });
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -573,13 +615,18 @@ export function PlanList() {
         </Modal>
       )}
 
-      {pendingICSBlocks.length > 0 && (
-        <Modal open={true} onClose={() => { setPendingICSBlocks([]); setIcsImportPlanName(''); }} title="Import Calendar Events">
+      {pendingICSEvents.length > 0 && (
+        <Modal open={true} onClose={clearICSImport} title="Import Calendar Events">
           <div className="space-y-4">
             <div className="bg-green-50 border border-green-200 rounded p-3 text-sm">
               <p className="text-green-800">
-                Found {pendingICSBlocks.length} events in the calendar file!
+                Found {pendingICSEvents.length} events in the calendar file!
               </p>
+              {icsMinDate && icsMaxDate && (
+                <p className="text-green-600 text-xs mt-1">
+                  Events span from {icsMinDate.toLocaleDateString()} to {icsMaxDate.toLocaleDateString()}
+                </p>
+              )}
             </div>
             
             <div>
@@ -594,61 +641,88 @@ export function PlanList() {
               />
             </div>
             
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={icsStartDate}
+                  onChange={e => setIcsStartDate(e.target.value)}
+                  min={icsMinDateStr}
+                  max={icsEndDate}
+                  className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  data-testid="ics-start-date"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">End Date</label>
+                <input
+                  type="date"
+                  value={icsEndDate}
+                  onChange={e => setIcsEndDate(e.target.value)}
+                  min={icsStartDate}
+                  max={icsMaxDateStr}
+                  className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  data-testid="ics-end-date"
+                />
+              </div>
+            </div>
+            
             <div>
-              <p className="text-sm text-gray-600 mb-2">Preview of events:</p>
+              <p className="text-sm text-gray-600 mb-2">
+                Preview ({filteredICSEvents.length} events in selected range):
+              </p>
               <div className="max-h-48 overflow-auto border rounded text-xs">
                 <table className="w-full">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
-                      <th className="p-2 text-left">Week</th>
-                      <th className="p-2 text-left">Day</th>
+                      <th className="p-2 text-left">Date</th>
                       <th className="p-2 text-left">Time</th>
                       <th className="p-2 text-left">Title</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {pendingICSBlocks.slice(0, 20).map(block => {
-                      const template = state.templates.find(t => t.id === block.templateId);
-                      const title = block.titleOverride || template?.title || 'Event';
-                      const startHour = Math.floor(block.startMinutes / 60);
-                      const startMin = block.startMinutes % 60;
-                      const endMinutes = block.startMinutes + block.durationMinutes;
-                      const endHour = Math.floor(endMinutes / 60);
-                      const endMin = endMinutes % 60;
+                    {filteredICSEvents.slice(0, 20).map(event => {
+                      const startHour = event.dtstart.getHours();
+                      const startMin = event.dtstart.getMinutes();
+                      const endHour = event.dtend.getHours();
+                      const endMin = event.dtend.getMinutes();
                       return (
-                        <tr key={block.id}>
-                          <td className="p-2">{block.week}</td>
-                          <td className="p-2">{block.day}</td>
+                        <tr key={event.uid}>
+                          <td className="p-2">{event.dtstart.toLocaleDateString()}</td>
                           <td className="p-2">
                             {startHour % 12 || 12}:{startMin.toString().padStart(2, '0')} {startHour >= 12 ? 'PM' : 'AM'} - 
                             {endHour % 12 || 12}:{endMin.toString().padStart(2, '0')} {endHour >= 12 ? 'PM' : 'AM'}
                           </td>
-                          <td className="p-2 truncate max-w-[120px]" title={title}>{title}</td>
+                          <td className="p-2 truncate max-w-[120px]" title={event.summary}>{event.summary}</td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
-                {pendingICSBlocks.length > 20 && (
-                  <p className="p-2 text-center text-gray-500">...and {pendingICSBlocks.length - 20} more events</p>
+                {filteredICSEvents.length > 20 && (
+                  <p className="p-2 text-center text-gray-500">...and {filteredICSEvents.length - 20} more events</p>
+                )}
+                {filteredICSEvents.length === 0 && (
+                  <p className="p-4 text-center text-gray-500">No events in selected date range</p>
                 )}
               </div>
             </div>
 
             <div className="flex justify-end gap-3 pt-2">
               <button
-                onClick={() => { setPendingICSBlocks([]); setIcsImportPlanName(''); }}
+                onClick={clearICSImport}
                 className="px-4 py-2 text-sm border rounded hover:bg-gray-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreatePlanFromICS}
-                disabled={!icsImportPlanName.trim()}
+                disabled={!icsImportPlanName.trim() || filteredICSEvents.length === 0}
                 className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
                 data-testid="create-plan-from-ics"
               >
-                Create Plan
+                Create Plan ({filteredICSEvents.length} events)
               </button>
             </div>
           </div>
