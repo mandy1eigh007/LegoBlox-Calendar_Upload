@@ -69,4 +69,39 @@ describe('Import -> Unassigned behavior', () => {
     expect(blocks[0].templateId).toBeNull();
     expect(blocks[0].countsTowardGoldenRule).toBe(false);
   });
+
+  it('returns null templateId for ambiguous fuzzy matches (two close templates)', () => {
+    const ambiguousTemplates: BlockTemplate[] = [
+      {
+        id: 't-intro-a',
+        title: 'Intro Workshop Session A',
+        category: 'PD',
+        colorHex: '#000000',
+        defaultDurationMinutes: 90,
+        countsTowardGoldenRule: true,
+        goldenRuleBucketId: 'INTRO_PREAPP',
+        defaultLocation: '',
+        defaultNotes: '',
+      },
+      {
+        id: 't-intro-b',
+        title: 'Intro Workshop Session B',
+        category: 'PD',
+        colorHex: '#111111',
+        defaultDurationMinutes: 90,
+        countsTowardGoldenRule: true,
+        goldenRuleBucketId: 'INTRO_PREAPP',
+        defaultLocation: '',
+        defaultNotes: '',
+      },
+    ];
+
+    // "Intro Workshop" scores equally on both => margin too small => returns null
+    const result = resolveTemplateForImportedTitle('Intro Workshop', ambiguousTemplates);
+    
+    // Ambiguous match: both templates score identically; matcher should return null
+    expect(result.templateId).toBeNull();
+    expect(result.candidates.length).toBeGreaterThan(0);
+    expect(result.matchedBy).toBe('none');
+  });
 });
