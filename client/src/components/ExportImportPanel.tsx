@@ -441,7 +441,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
       
       dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
       imported++;
-      if (!matchingTemplate) unassigned++;
+      if (!match.templateId) unassigned++;
     }
     
     setOCREvents([]);
