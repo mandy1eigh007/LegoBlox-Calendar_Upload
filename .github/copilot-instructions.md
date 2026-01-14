@@ -24,7 +24,7 @@ LegoBlox Calendar Upload is a full-stack TypeScript application for managing and
 /predictive       - Predictive scheduling module (ML-based calendar suggestions)
 /script           - Build and development scripts
 /docs             - Documentation
-/migrations       - Database migrations (Drizzle)
+/migrations       - Database migrations (Drizzle, created when generated)
 ```
 
 ## Path Aliases
