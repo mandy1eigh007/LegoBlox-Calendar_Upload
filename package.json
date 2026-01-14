@@ -14,6 +14,8 @@
     "predictive:build-model": "tsx predictive/model.ts predictive/normalized-events.json predictive/template-models.json",
     "predictive:solve": "tsx predictive/solver.ts predictive/template-models.json predictive/to-place.json",
     "test": "vitest",
+    "timeline:update": "node script/update-dev-timeline.mjs",
+    "timeline:snapshot": "node script/snapshot-working-tree.mjs",
     "predictive:test": "npm run predictive:ingest && npm run predictive:build-model && npm run predictive:solve && node -e \"const fs=require('fs'); if(!fs.existsSync('predictive/template-models.json')){console.error('MISSING: predictive/template-models.json'); process.exit(2);} if(!fs.existsSync('predictive/suggested-schedule.json')){console.error('MISSING: predictive/suggested-schedule.json'); process.exit(3);} console.log('predictive pipeline OK');\""
   },
   "dependencies": {
