@@ -340,13 +340,12 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
     let unassigned = 0;
     
     for (const draft of csvDrafts) {
-      const matchingTemplate = state.templates.find(t => 
-        t.title.toLowerCase() === draft.title.toLowerCase()
-      );
-      
+      const match = resolveTemplateForImportedTitle(draft.title, state.templates);
+      const matchedTemplate = match.templateId ? state.templates.find(t => t.id === match.templateId) : null;
+
       const block: PlacedBlock = {
         id: uuidv4(),
-        templateId: matchingTemplate ? matchingTemplate.id : null,
+        templateId: match.templateId,
         week: draft.week,
         day: draft.day,
         startMinutes: draft.startMinutes,
@@ -354,15 +353,15 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
         titleOverride: draft.title,
         location: draft.location,
         notes: draft.notes,
-        countsTowardGoldenRule: matchingTemplate ? matchingTemplate.countsTowardGoldenRule : false,
-        goldenRuleBucketId: matchingTemplate ? matchingTemplate.goldenRuleBucketId : null,
+        countsTowardGoldenRule: matchedTemplate ? matchedTemplate.countsTowardGoldenRule : false,
+        goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
         recurrenceSeriesId: null,
         isRecurrenceException: false,
       };
-      
+
       dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
       imported++;
-      if (!matchingTemplate) unassigned++;
+      if (!match.templateId) unassigned++;
     }
     
     setCSVDrafts([]);
@@ -421,13 +420,12 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
         durationMinutes = 930 - startMinutes;
       }
       
-      const matchingTemplate = state.templates.find(t => 
-        t.title.toLowerCase() === event.title.toLowerCase()
-      );
-      
+      const match = resolveTemplateForImportedTitle(event.title, state.templates);
+      const matchedTemplate = match.templateId ? state.templates.find(t => t.id === match.templateId) : null;
+
       const block: PlacedBlock = {
         id: uuidv4(),
-        templateId: matchingTemplate ? matchingTemplate.id : null,
+        templateId: match.templateId,
         week: 1,
         day: event.day,
         startMinutes,
@@ -435,8 +433,8 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
         titleOverride: event.title,
         location: '',
         notes: `Imported via OCR: ${event.rawText}`,
-        countsTowardGoldenRule: matchingTemplate ? matchingTemplate.countsTowardGoldenRule : false,
-        goldenRuleBucketId: matchingTemplate ? matchingTemplate.goldenRuleBucketId : null,
+        countsTowardGoldenRule: matchedTemplate ? matchedTemplate.countsTowardGoldenRule : false,
+        goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
         recurrenceSeriesId: null,
         isRecurrenceException: false,
       };
