@@ -1,10 +1,6 @@
 <!-- LAST_SHA: -->
 
-<!-- LAST_SHA: -->
-
-<!-- LAST_SHA: -->
-
-<!-- LAST_SHA:  -->
+# Dev Timeline
 
 # Development Timeline
 
