@@ -3,26 +3,40 @@ name: Predictive Pipeline Test
 on:
   push:
     paths:
-      - 'predictive/**'
-      - 'client/**'
-      - 'package.json'
+      - "predictive/**"
+      - "client/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/predictive-test.yml"
   pull_request:
     paths:
-      - 'predictive/**'
-      - 'client/**'
-      - 'package.json'
+      - "predictive/**"
+      - "client/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/predictive-test.yml"
 
 jobs:
   predictive-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "22"
+          cache: "npm"
+
+      - name: Show tool versions
+        run: |
+          node -v
+          npm -v
+
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci || (echo "npm ci FAILED. Dumping npm debug logs..." && ls -la /home/runner/.npm/_logs || true && for f in /home/runner/.npm/_logs/*debug-0.log; do echo "----- $f -----"; tail -n 200 "$f"; done || true && exit 1)
+
       - name: Run predictive pipeline test
-        run: npm run predictive:test
+        run: |
+          npm run predictive:test || (echo "predictive:test FAILED. Dumping npm debug logs..." && ls -la /home/runner/.npm/_logs || true && for f in /home/runner/.npm/_logs/*debug-0.log; do echo "----- $f -----"; tail -n 200 "$f"; done || true && exit 1)
