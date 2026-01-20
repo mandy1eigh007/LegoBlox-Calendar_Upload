@@ -1,7 +1,11 @@
-import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, ReactNode, useRef } from 'react';
 import { AppState, Action, PlacedBlock, RecurrenceSeries } from './types';
 import { loadState, saveState, createInitialState } from '@/lib/storage';
 import { v4 as uuidv4 } from 'uuid';
+
+function touchPlan(plan: AppState['plans'][number], timestamp?: string) {
+  return { ...plan, updatedAt: timestamp || new Date().toISOString() };
+}
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -39,14 +43,16 @@ function reducer(state: AppState, action: Action): AppState {
     case 'RESET_TEMPLATES':
       return { ...state, templates: action.payload };
       
-    case 'ADD_PLAN':
-      return { ...state, plans: [...state.plans, action.payload] };
+    case 'ADD_PLAN': {
+      const plan = action.payload.updatedAt ? action.payload : touchPlan(action.payload);
+      return { ...state, plans: [...state.plans, plan] };
+    }
       
     case 'UPDATE_PLAN':
       return {
         ...state,
         plans: state.plans.map(p => 
-          p.id === action.payload.id ? action.payload : p
+          p.id === action.payload.id ? touchPlan(action.payload) : p
         ),
       };
       
@@ -58,11 +64,12 @@ function reducer(state: AppState, action: Action): AppState {
       
     case 'ADD_BLOCK': {
       const { planId, block } = action.payload;
+      const updatedAt = new Date().toISOString();
       return {
         ...state,
         plans: state.plans.map(p => 
           p.id === planId 
-            ? { ...p, blocks: [...p.blocks, block] }
+            ? { ...p, blocks: [...p.blocks, block], updatedAt }
             : p
         ),
       };
@@ -70,6 +77,7 @@ function reducer(state: AppState, action: Action): AppState {
       
     case 'UPDATE_BLOCK': {
       const { planId, block, scope } = action.payload;
+      const updatedAt = new Date().toISOString();
       return {
         ...state,
         plans: state.plans.map(p => {
@@ -77,7 +85,7 @@ function reducer(state: AppState, action: Action): AppState {
           
           if (!scope || scope === 'this') {
             const updatedBlock = { ...block, isRecurrenceException: !!block.recurrenceSeriesId };
-            return { ...p, blocks: p.blocks.map(b => b.id === block.id ? updatedBlock : b) };
+            return { ...p, blocks: p.blocks.map(b => b.id === block.id ? updatedBlock : b), updatedAt };
           }
           
           if (scope === 'thisAndFuture' && block.recurrenceSeriesId) {
@@ -98,6 +106,7 @@ function reducer(state: AppState, action: Action): AppState {
                 }
                 return b;
               }),
+              updatedAt,
             };
           }
           
@@ -133,16 +142,18 @@ function reducer(state: AppState, action: Action): AppState {
                 }
                 return s;
               }),
+              updatedAt,
             };
           }
           
-          return { ...p, blocks: p.blocks.map(b => b.id === block.id ? block : b) };
+          return { ...p, blocks: p.blocks.map(b => b.id === block.id ? block : b), updatedAt };
         }),
       };
     }
       
     case 'DELETE_BLOCK': {
       const { planId, blockId, scope } = action.payload;
+      const updatedAt = new Date().toISOString();
       return {
         ...state,
         plans: state.plans.map(p => {
@@ -152,7 +163,7 @@ function reducer(state: AppState, action: Action): AppState {
           if (!block) return p;
           
           if (!scope || scope === 'this') {
-            return { ...p, blocks: p.blocks.filter(b => b.id !== blockId) };
+            return { ...p, blocks: p.blocks.filter(b => b.id !== blockId), updatedAt };
           }
           
           if (scope === 'thisAndFuture' && block.recurrenceSeriesId) {
@@ -181,6 +192,7 @@ function reducer(state: AppState, action: Action): AppState {
                     }
                     return s;
                   }),
+              updatedAt,
             };
           }
           
@@ -189,21 +201,23 @@ function reducer(state: AppState, action: Action): AppState {
               ...p,
               blocks: p.blocks.filter(b => b.recurrenceSeriesId !== block.recurrenceSeriesId),
               recurrenceSeries: p.recurrenceSeries.filter(s => s.id !== block.recurrenceSeriesId),
+              updatedAt,
             };
           }
           
-          return { ...p, blocks: p.blocks.filter(b => b.id !== blockId) };
+          return { ...p, blocks: p.blocks.filter(b => b.id !== blockId), updatedAt };
         }),
       };
     }
 
     case 'ADD_RECURRENCE_SERIES': {
       const { planId, series } = action.payload;
+      const updatedAt = new Date().toISOString();
       return {
         ...state,
         plans: state.plans.map(p => 
           p.id === planId 
-            ? { ...p, recurrenceSeries: [...p.recurrenceSeries, series] }
+            ? { ...p, recurrenceSeries: [...p.recurrenceSeries, series], updatedAt }
             : p
         ),
       };
@@ -211,11 +225,12 @@ function reducer(state: AppState, action: Action): AppState {
 
     case 'UPDATE_RECURRENCE_SERIES': {
       const { planId, series } = action.payload;
+      const updatedAt = new Date().toISOString();
       return {
         ...state,
         plans: state.plans.map(p => 
           p.id === planId 
-            ? { ...p, recurrenceSeries: p.recurrenceSeries.map(s => s.id === series.id ? series : s) }
+            ? { ...p, recurrenceSeries: p.recurrenceSeries.map(s => s.id === series.id ? series : s), updatedAt }
             : p
         ),
       };
@@ -223,6 +238,7 @@ function reducer(state: AppState, action: Action): AppState {
 
     case 'DELETE_RECURRENCE_SERIES': {
       const { planId, seriesId } = action.payload;
+      const updatedAt = new Date().toISOString();
       return {
         ...state,
         plans: state.plans.map(p => 
@@ -231,6 +247,7 @@ function reducer(state: AppState, action: Action): AppState {
                 ...p, 
                 recurrenceSeries: p.recurrenceSeries.filter(s => s.id !== seriesId),
                 blocks: p.blocks.filter(b => b.recurrenceSeriesId !== seriesId),
+                updatedAt,
               }
             : p
         ),
@@ -239,6 +256,7 @@ function reducer(state: AppState, action: Action): AppState {
       
     case 'COPY_WEEK': {
       const { planId, fromWeek, toWeek } = action.payload;
+      const updatedAt = new Date().toISOString();
       return {
         ...state,
         plans: state.plans.map(p => {
@@ -259,18 +277,19 @@ function reducer(state: AppState, action: Action): AppState {
               isRecurrenceException: false,
             }));
           
-          return { ...p, blocks: [...p.blocks, ...newBlocks] };
+          return { ...p, blocks: [...p.blocks, ...newBlocks], updatedAt };
         }),
       };
     }
       
     case 'RESET_WEEK': {
       const { planId, week } = action.payload;
+      const updatedAt = new Date().toISOString();
       return {
         ...state,
         plans: state.plans.map(p => 
           p.id === planId 
-            ? { ...p, blocks: p.blocks.filter(b => b.week !== week) }
+            ? { ...p, blocks: p.blocks.filter(b => b.week !== week), updatedAt }
             : p
         ),
       };
@@ -499,6 +518,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, createInitialState());
   const [initialized, setInitialized] = React.useState(false);
   const [loadError, setLoadError] = React.useState<string | null>(null);
+  const saveTimeoutRef = useRef<number | null>(null);
   
   useEffect(() => {
     const { state: loadedState, error } = loadState();
@@ -510,9 +530,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
   
   useEffect(() => {
-    if (initialized) {
-      saveState(state);
+    if (!initialized) return;
+    if (saveTimeoutRef.current !== null) {
+      window.clearTimeout(saveTimeoutRef.current);
     }
+    saveTimeoutRef.current = window.setTimeout(() => {
+      saveState(state);
+    }, 500);
+    return () => {
+      if (saveTimeoutRef.current !== null) {
+        window.clearTimeout(saveTimeoutRef.current);
+      }
+    };
   }, [state, initialized]);
   
   if (!initialized) {

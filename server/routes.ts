@@ -52,7 +52,7 @@ export async function registerRoutes(
     }
   });
 
-  // Publish a plan: client sends full plan JSON, server stores it by slug (use plan.publicId or generated)
+  // Publish a plan: client sends plan + templates, server stores by slug
   app.post('/api/plans/:planId/publish', async (req, res) => {
     try {
       const planId = req.params.planId;
@@ -60,6 +60,7 @@ export async function registerRoutes(
       if (!body || !body.plan) return res.status(400).json({ message: 'missing plan payload' });
 
       const plan = body.plan;
+      const templates = Array.isArray(body.templates) ? body.templates : [];
       // slug: prefer provided publicId, fallback to planId
       const slug = plan.publicId || planId;
 
@@ -73,12 +74,37 @@ export async function registerRoutes(
         try { store = JSON.parse(fs.readFileSync(filePath, 'utf8') || '{}'); } catch (e) { store = {}; }
       }
 
-      store[slug] = { plan, updatedAt: new Date().toISOString() };
+      store[slug] = { plan, templates, updatedAt: new Date().toISOString() };
       fs.writeFileSync(filePath, JSON.stringify(store, null, 2), 'utf8');
 
       res.json({ slug });
     } catch (e: any) {
       res.status(500).json({ message: e?.message || 'publish error' });
+    }
+  });
+
+  app.post('/api/plans/:planId/unpublish', async (req, res) => {
+    try {
+      const planId = req.params.planId;
+      const body = req.body || {};
+      const slug = body.publicId || planId;
+
+      const filePath = './server/data/published.json';
+      const fs = require('fs');
+      if (!fs.existsSync(filePath)) return res.json({ removed: false });
+
+      let store: Record<string, any> = {};
+      try { store = JSON.parse(fs.readFileSync(filePath, 'utf8') || '{}'); } catch (e) { store = {}; }
+
+      if (store[slug]) {
+        delete store[slug];
+        fs.writeFileSync(filePath, JSON.stringify(store, null, 2), 'utf8');
+        return res.json({ removed: true });
+      }
+
+      return res.json({ removed: false });
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || 'unpublish error' });
     }
   });
 
@@ -90,7 +116,12 @@ export async function registerRoutes(
       if (!fs.existsSync(filePath)) return res.status(404).json({ message: 'not found' });
       const store = JSON.parse(fs.readFileSync(filePath, 'utf8') || '{}');
       if (!store[slug]) return res.status(404).json({ message: 'not found' });
-      res.json(store[slug].plan);
+      const entry = store[slug];
+      if (entry?.plan) {
+        return res.json({ plan: entry.plan, templates: entry.templates || [] });
+      }
+      // Backward compatibility: entry is the plan itself
+      return res.json({ plan: entry, templates: [] });
     } catch (e: any) {
       res.status(500).json({ message: e?.message || 'error' });
     }

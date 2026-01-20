@@ -7,7 +7,7 @@ import { createDefaultPlanSettings } from '@/lib/storage';
 import { v4 as uuidv4 } from 'uuid';
 import { validateAppState } from '@/state/validators';
 import { processImageWithOCR, OCREvent } from '@/lib/ocr';
-import { parseICSWithDateRange, convertICSEventsToBlocks, ICSEventWithDate } from '@/lib/csv';
+import { parseICSWithDateRange, convertICSEventsToBlocks, ICSEventWithDate, importCSVToBlocks, getCSVHeaders } from '@/lib/csv';
 import { resolveTemplateForImportedTitle, TemplateCandidate, getBucketLabel } from '@/lib/templateMatcher';
 import { Loader2, AlertTriangle } from 'lucide-react';
 
@@ -222,6 +222,94 @@ export function PlanList() {
         setImportError(null);
       } catch (err) {
         setImportError('Failed to parse ICS file');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleCSVImport = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const headers = getCSVHeaders(content);
+        const mapping = {
+          week: 1,
+          day: 2,
+          startTime: 3,
+          endTime: 4,
+          title: 5,
+          location: 8,
+          notes: 9,
+        };
+
+        headers.forEach((h, i) => {
+          const lowerH = h.toLowerCase();
+          if (lowerH.includes('week')) mapping.week = i;
+          else if (lowerH.includes('day')) mapping.day = i;
+          else if (lowerH.includes('start')) mapping.startTime = i;
+          else if (lowerH.includes('end')) mapping.endTime = i;
+          else if (lowerH.includes('title') || lowerH.includes('name') || lowerH.includes('event')) mapping.title = i;
+          else if (lowerH.includes('location') || lowerH.includes('room')) mapping.location = i;
+          else if (lowerH.includes('note') || lowerH.includes('description')) mapping.notes = i;
+        });
+
+        const { drafts, errors } = importCSVToBlocks(content, mapping);
+        if (errors.length > 0) {
+          setImportError(errors.join('; '));
+          setImportSuccess(null);
+          return;
+        }
+        if (drafts.length === 0) {
+          setImportError('No events found in CSV file.');
+          setImportSuccess(null);
+          return;
+        }
+
+        const maxWeek = Math.max(...drafts.map(d => d.week), 1);
+        const planName = `Imported from ${file.name.replace(/\.[^/.]+$/, '')}`;
+        const blocks: PlacedBlock[] = drafts.map(draft => {
+          const match = resolveTemplateForImportedTitle(draft.title, state.templates);
+          const matchedTemplate = match.templateId ? state.templates.find(t => t.id === match.templateId) : null;
+          const warningNote = draft.needsReview && draft.warning ? `CSV Import Warning: ${draft.warning}` : '';
+          const notes = [draft.notes, warningNote].filter(Boolean).join('\n');
+          return {
+            id: uuidv4(),
+            templateId: match.templateId,
+            week: draft.week,
+            day: draft.day,
+            startMinutes: draft.startMinutes,
+            durationMinutes: draft.durationMinutes,
+            titleOverride: draft.title,
+            location: draft.location,
+            notes,
+            countsTowardGoldenRule: matchedTemplate ? matchedTemplate.countsTowardGoldenRule : false,
+            goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
+            recurrenceSeriesId: null,
+            isRecurrenceException: false,
+          };
+        });
+
+        const defaults = createDefaultPlanSettings();
+        const plan: Plan = {
+          id: uuidv4(),
+          settings: { ...defaults, name: planName, weeks: Math.max(defaults.weeks, maxWeek) },
+          blocks,
+          recurrenceSeries: [],
+        };
+
+        const unassignedCount = blocks.filter(b => b.templateId === null).length;
+        dispatch({ type: 'ADD_PLAN', payload: plan });
+        setImportError(null);
+        setImportSuccess(
+          unassignedCount > 0
+            ? `Imported ${blocks.length} events (${unassignedCount} unassigned).`
+            : `Imported ${blocks.length} events from CSV.`
+        );
+        navigate(`/plan/${plan.id}`);
+      } catch (err) {
+        setImportError('Failed to parse CSV file.');
+        setImportSuccess(null);
       }
     };
     reader.readAsText(file);
@@ -474,6 +562,8 @@ export function PlanList() {
 
     if (fileName.endsWith('.ics') || fileName.endsWith('.ical') || fileType === 'text/calendar') {
       handleICSImport(file);
+    } else if (fileName.endsWith('.csv') || fileType === 'text/csv') {
+      handleCSVImport(file);
     } else if (fileName.endsWith('.json') || fileType === 'application/json') {
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -496,7 +586,7 @@ export function PlanList() {
     } else if (fileType.startsWith('image/')) {
       handleOCRFileSelect({ target: { files: [file] } } as unknown as React.ChangeEvent<HTMLInputElement>);
     } else {
-      setImportError(`Unsupported file type. Drag an ICS, JSON, or image file.`);
+      setImportError(`Unsupported file type. Drag an ICS, CSV, JSON, or image file.`);
     }
   };
 
@@ -566,7 +656,10 @@ export function PlanList() {
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) {
-                  navigate('/plan/new?csv=1');
+                  handleCSVImport(file);
+                }
+                if (csvInputRef.current) {
+                  csvInputRef.current.value = '';
                 }
               }}
               className="hidden"

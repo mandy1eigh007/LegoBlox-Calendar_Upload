@@ -199,8 +199,9 @@ function DayColumn({
           block.durationMinutes,
           block.id
         );
-        const hasConflict = conflicts.length > 0 && !!block.location && 
-          conflicts.some(c => c.location === block.location);
+        const blockResource = block.resource || block.location;
+        const hasConflict = conflicts.length > 0 && !!blockResource &&
+          conflicts.some(c => (c.resource || c.location) === blockResource);
         
         return (
           <DraggablePlacedBlock

@@ -20,7 +20,7 @@ import { TemplateReassignDialog } from './TemplateReassignDialog';
 import { ComparePlans } from './ComparePlans';
 import { CreateEventDialog } from './CreateEventDialog';
 import { generatePublicId, getStudentUrl } from '@/lib/publish';
-import { findTimeConflicts, wouldFitInDay } from '@/lib/collision';
+import { findTimeConflicts, findNextAvailableSlot, wouldFitInDay } from '@/lib/collision';
 import { findAlternativeResource } from '@/lib/calendarCompare';
 import { 
   SLOT_HEIGHT_PX, 
@@ -78,6 +78,12 @@ export function Builder() {
     }
   }, [errorMessage]);
 
+  useEffect(() => {
+    if (!showDiagnostics) {
+      setHoverMinutes(null);
+    }
+  }, [showDiagnostics]);
+
   if (!plan) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -110,9 +116,9 @@ export function Builder() {
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!gridRef.current) return;
+    if (!showDiagnostics || !gridRef.current) return;
     const minutes = calculateDropMinutes(e.clientY, gridRef.current);
-    setHoverMinutes(minutes);
+    setHoverMinutes(prev => (prev === minutes ? prev : minutes));
   };
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -156,13 +162,43 @@ export function Builder() {
 
   const placeNewBlock = (template: BlockTemplate, day: Day, startMinutes: number) => {
     const duration = template.defaultDurationMinutes;
+    const defaultResource = template.defaultResource || template.defaultLocation || undefined;
+    const shouldAutoPlace = autoPlace && !settings.allowOverlaps;
+    const autoPlacedStart = shouldAutoPlace
+      ? findNextAvailableSlot(
+          plan.blocks,
+          currentWeek,
+          day,
+          startMinutes,
+          duration,
+          settings.dayStartMinutes,
+          settings.dayEndMinutes,
+          settings.slotMinutes,
+          undefined,
+          defaultResource
+        )
+      : null;
+    const finalStartMinutes = autoPlacedStart ?? startMinutes;
+
+    if (shouldAutoPlace && autoPlacedStart === null) {
+      setErrorMessage('No open slots available on this day.');
+      return;
+    }
     
-    if (!wouldFitInDay(startMinutes, duration, settings.dayEndMinutes)) {
+    if (!wouldFitInDay(finalStartMinutes, duration, settings.dayEndMinutes)) {
       setErrorMessage(`Block would extend beyond ${minutesToTimeDisplay(settings.dayEndMinutes)}.`);
       return;
     }
     
-    const conflicts = findTimeConflicts(plan.blocks, currentWeek, day, startMinutes, duration, undefined, template.defaultResource || template.defaultLocation || undefined);
+    const conflicts = findTimeConflicts(
+      plan.blocks,
+      currentWeek,
+      day,
+      finalStartMinutes,
+      duration,
+      undefined,
+      defaultResource
+    );
     
     if (conflicts.length > 0 && !settings.allowOverlaps) {
       const conflictTitle = state.templates.find(t => t.id === conflicts[0].templateId)?.title || 'Unknown';
@@ -175,7 +211,7 @@ export function Builder() {
       templateId: template.id,
       week: currentWeek,
       day,
-      startMinutes,
+      startMinutes: finalStartMinutes,
       durationMinutes: duration,
       titleOverride: '',
       location: template.defaultLocation,
@@ -184,6 +220,7 @@ export function Builder() {
       goldenRuleBucketId: template.goldenRuleBucketId,
       recurrenceSeriesId: null,
       isRecurrenceException: false,
+      resource: template.defaultResource || undefined,
     };
     
     dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
@@ -357,7 +394,10 @@ export function Builder() {
         const res = await fetch(`/api/plans/${plan.id}/publish`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ plan: { ...plan, publicId, isPublished: true, publishedAt: timestamp } }),
+          body: JSON.stringify({
+            plan: { ...plan, publicId, isPublished: true, publishedAt: timestamp },
+            templates: state.templates,
+          }),
         });
         if (!res.ok) throw new Error('publish failed');
         const json = await res.json();
@@ -371,7 +411,19 @@ export function Builder() {
 
   const handleUnpublish = () => {
     const timestamp = new Date().toISOString();
-    dispatch({ type: 'UNPUBLISH_PLAN', payload: { planId: plan.id, timestamp } });
+    (async () => {
+      try {
+        const res = await fetch(`/api/plans/${plan.id}/unpublish`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ publicId: plan.publicId }),
+        });
+        if (!res.ok) throw new Error('unpublish failed');
+        dispatch({ type: 'UNPUBLISH_PLAN', payload: { planId: plan.id, timestamp } });
+      } catch (e) {
+        setErrorMessage('Failed to unpublish plan from server.');
+      }
+    })();
   };
 
   const handleCopyLink = async () => {
@@ -580,7 +632,7 @@ export function Builder() {
               </button>
             </div>
             <p className="text-xs text-green-400 mt-1">
-              Link works on this device. For other devices, export a JSON backup from Export/Import panel.
+              Share this link with students. For offline backups, export JSON from Export/Import.
             </p>
           </div>
         )}
@@ -745,10 +797,10 @@ export function Builder() {
             dispatch({
               type: 'UPDATE_PLAN',
               payload: {
-                planId: plan.id,
-                updates: { settings: { ...plan.settings, hardDates } }
+                ...plan,
+                settings: { ...plan.settings, hardDates }
               }
-            } as any);
+            });
           }}
         />
       )}

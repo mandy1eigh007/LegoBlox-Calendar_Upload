@@ -2,7 +2,7 @@ import { useParams } from 'wouter';
 import { useStore } from '@/state/store';
 import { Plan, DAYS, BlockTemplate } from '@/state/types';
 import { minutesToTimeDisplay, getEndMinutes, durationToPixelHeight, minutesToPixelOffset, SLOT_HEIGHT_PX } from '@/lib/time';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface ReadOnlyBlockProps {
   block: Plan['blocks'][0];
@@ -51,20 +51,80 @@ export function StudentView() {
   const { publicId } = useParams<{ publicId: string }>();
   const { state } = useStore();
   const [currentWeek, setCurrentWeek] = useState(1);
+  const [remotePlan, setRemotePlan] = useState<Plan | null>(null);
+  const [remoteTemplates, setRemoteTemplates] = useState<BlockTemplate[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const plan = state.plans.find(p => p.publicId === publicId && p.isPublished);
+  const localPlan = state.plans.find(p => p.publicId === publicId && p.isPublished);
+
+  useEffect(() => {
+    let active = true;
+    if (!publicId) return;
+    setRemotePlan(null);
+    setRemoteTemplates([]);
+    setIsLoading(true);
+    setLoadError(null);
+    fetch(`/api/published/${publicId}`)
+      .then(res => {
+        if (!res.ok) throw new Error('not found');
+        return res.json();
+      })
+      .then(data => {
+        if (!active) return;
+        const plan = data?.plan ?? data;
+        const templates = Array.isArray(data?.templates) ? data.templates : [];
+        setRemotePlan(plan || null);
+        setRemoteTemplates(templates);
+        setIsLoading(false);
+      })
+      .catch(() => {
+        if (!active) return;
+        if (!localPlan) {
+          setLoadError('Schedule not found or no longer published.');
+        }
+        setIsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [publicId, localPlan]);
+
+  const plan = remotePlan ?? localPlan;
+  const usingRemote = !!remotePlan;
+  const templates = usingRemote ? (remoteTemplates.length > 0 ? remoteTemplates : state.templates) : state.templates;
+
+  useEffect(() => {
+    if (plan) {
+      setCurrentWeek(1);
+    }
+  }, [plan?.id]);
+
+  if (isLoading && !localPlan) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center p-6 bg-white rounded-lg shadow-sm border max-w-md">
+          <h1 className="text-xl font-semibold text-gray-900 mb-2">Loading Schedule...</h1>
+          <p className="text-gray-500">Fetching the published plan. Please wait.</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!plan) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center p-8 bg-white rounded-lg shadow-sm border max-w-md">
           <h1 className="text-xl font-semibold text-gray-900 mb-2">Schedule Not Available</h1>
-          <p className="text-gray-500 mb-4">This schedule is not available in your browser.</p>
+          <p className="text-gray-500 mb-4">
+            {loadError || 'This schedule is not available right now.'}
+          </p>
           <div className="text-left text-sm text-gray-600 bg-gray-50 p-4 rounded">
             <p className="font-medium mb-2">To view this schedule, ask your instructor to:</p>
-            <p className="mb-1">1. Export the schedule as a JSON backup file</p>
-            <p className="mb-1">2. Send you the backup file</p>
-            <p>3. You can then import it using the home page import option</p>
+            <p className="mb-1">1. Republish the schedule from the builder</p>
+            <p className="mb-1">2. Share the updated student link</p>
+            <p>3. Or export a JSON backup and share it with you</p>
           </div>
         </div>
       </div>
@@ -161,7 +221,7 @@ export function StudentView() {
                     />
                   ))}
                   {dayBlocks.map(block => {
-                    const template = state.templates.find(t => t.id === block.templateId);
+                    const template = templates.find(t => t.id === block.templateId);
                     return (
                       <ReadOnlyBlock
                         key={block.id}
