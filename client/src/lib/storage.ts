@@ -60,6 +60,7 @@ function migrateV1ToV2(oldState: unknown): AppState | null {
         goldenRuleBucketId: (template.goldenRuleKey as string) || null,
         defaultLocation: '',
         defaultNotes: '',
+        isArchived: false,
       };
     });
     
@@ -98,6 +99,7 @@ function migrateV1ToV2(oldState: unknown): AppState | null {
           goldenRuleBucketId: null,
           recurrenceSeriesId: null,
           isRecurrenceException: false,
+          isLocked: false,
         };
       });
       
@@ -158,6 +160,17 @@ export function loadState(): { state: AppState; error?: string } {
     for (const plan of parsed.plans) {
       if (!plan.settings.schedulerMode) {
         plan.settings.schedulerMode = 'manual';
+      }
+      for (const block of plan.blocks) {
+        if (block.isLocked === undefined) {
+          block.isLocked = false;
+        }
+      }
+    }
+    
+    for (const template of parsed.templates) {
+      if (template.isArchived === undefined) {
+        template.isArchived = false;
       }
     }
     

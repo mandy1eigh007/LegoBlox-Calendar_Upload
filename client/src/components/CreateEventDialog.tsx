@@ -28,6 +28,7 @@ export function CreateEventDialog({ open, onClose, onCreate, templates }: Create
   const [startMinutes, setStartMinutes] = useState(390);
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [saveAsTemplate, setSaveAsTemplate] = useState(false);
+  const [isLocked, setIsLocked] = useState(true);
 
   const handleCreate = () => {
     if (!title) return;
@@ -46,6 +47,7 @@ export function CreateEventDialog({ open, onClose, onCreate, templates }: Create
       recurrenceSeriesId: null,
       isRecurrenceException: false,
       resource,
+      isLocked,
     };
 
     let newTemplate: BlockTemplate | null = null;
@@ -65,7 +67,7 @@ export function CreateEventDialog({ open, onClose, onCreate, templates }: Create
 
     onCreate(block, newTemplate);
     // reset
-    setTitle(''); setOrganization(''); setContactName(''); setContactEmail(''); setContactPhone(''); setNotes(''); setSaveAsTemplate(false);
+    setTitle(''); setOrganization(''); setContactName(''); setContactEmail(''); setContactPhone(''); setNotes(''); setSaveAsTemplate(false); setIsLocked(true);
     onClose();
   };
 
@@ -129,6 +131,10 @@ export function CreateEventDialog({ open, onClose, onCreate, templates }: Create
           <div className="flex items-center gap-2">
             <input id="counts-gr" type="checkbox" checked={countsTowardGoldenRule} onChange={(e) => setCountsTowardGoldenRule(e.target.checked)} />
             <label htmlFor="counts-gr" className="text-sm">Counts toward Golden Rule</label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input id="lock-placement" type="checkbox" checked={isLocked} onChange={(e) => setIsLocked(e.target.checked)} />
+            <label htmlFor="lock-placement" className="text-sm">Lock placement (partner scheduled)</label>
           </div>
         </div>
 

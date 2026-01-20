@@ -18,6 +18,7 @@ export function createRecurringBlocks(
     baseNotes: baseBlock.notes,
     countsTowardGoldenRule: baseBlock.countsTowardGoldenRule,
     goldenRuleBucketId: baseBlock.goldenRuleBucketId,
+    isLocked: baseBlock.isLocked ?? false,
   };
   
   const blocks: PlacedBlock[] = [];
@@ -39,25 +40,42 @@ export function createRecurringBlocks(
         continue;
       }
       
+      const baseFields = {
+        templateId: baseBlock.templateId,
+        startMinutes: baseBlock.startMinutes,
+        durationMinutes: baseBlock.durationMinutes,
+        titleOverride: baseBlock.titleOverride,
+        location: baseBlock.location,
+        notes: baseBlock.notes,
+        countsTowardGoldenRule: baseBlock.countsTowardGoldenRule,
+        goldenRuleBucketId: baseBlock.goldenRuleBucketId,
+        resource: baseBlock.resource,
+        category: baseBlock.category,
+        partnerOrg: baseBlock.partnerOrg,
+        partnerContact: baseBlock.partnerContact,
+        partnerEmail: baseBlock.partnerEmail,
+        partnerPhone: baseBlock.partnerPhone,
+        partnerAddress: baseBlock.partnerAddress,
+        partnerPPE: baseBlock.partnerPPE,
+        partnerParking: baseBlock.partnerParking,
+        isLocked: baseBlock.isLocked,
+      };
+
       if (week === baseBlock.week && day === baseBlock.day) {
         blocks.push({
-          ...baseBlock,
+          ...baseFields,
+          id: baseBlock.id,
+          week,
+          day,
           recurrenceSeriesId: seriesId,
           isRecurrenceException: false,
         });
       } else {
         blocks.push({
+          ...baseFields,
           id: uuidv4(),
-          templateId: baseBlock.templateId,
           week,
           day,
-          startMinutes: baseBlock.startMinutes,
-          durationMinutes: baseBlock.durationMinutes,
-          titleOverride: baseBlock.titleOverride,
-          location: baseBlock.location,
-          notes: baseBlock.notes,
-          countsTowardGoldenRule: baseBlock.countsTowardGoldenRule,
-          goldenRuleBucketId: baseBlock.goldenRuleBucketId,
           recurrenceSeriesId: seriesId,
           isRecurrenceException: false,
         });
@@ -117,6 +135,7 @@ export function expandRecurringSeries(
           goldenRuleBucketId: series.goldenRuleBucketId,
           recurrenceSeriesId: series.id,
           isRecurrenceException: false,
+          isLocked: series.isLocked ?? false,
         });
       }
     }

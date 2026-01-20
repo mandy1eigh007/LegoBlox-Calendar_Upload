@@ -357,6 +357,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
         goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
         recurrenceSeriesId: null,
         isRecurrenceException: false,
+        isLocked: true,
       };
 
       dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
@@ -437,6 +438,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
         goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
         recurrenceSeriesId: null,
         isRecurrenceException: false,
+        isLocked: false,
       };
       
       dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });

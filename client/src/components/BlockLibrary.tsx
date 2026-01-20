@@ -16,6 +16,7 @@ function DraggableTemplate({ template, onEdit }: DraggableTemplateProps) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `template-${template.id}`,
     data: { type: 'template', template },
+    disabled: !!template.isArchived,
   });
 
   return (
@@ -23,7 +24,7 @@ function DraggableTemplate({ template, onEdit }: DraggableTemplateProps) {
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      className={`p-3 rounded border cursor-grab active:cursor-grabbing transition-opacity ${isDragging ? 'opacity-50' : ''}`}
+      className={`p-3 rounded border transition-opacity ${template.isArchived ? 'cursor-not-allowed opacity-60' : 'cursor-grab active:cursor-grabbing'} ${isDragging ? 'opacity-50' : ''}`}
       style={{ 
         backgroundColor: template.colorHex + '20',
         borderColor: template.colorHex,
@@ -35,6 +36,9 @@ function DraggableTemplate({ template, onEdit }: DraggableTemplateProps) {
           <p className="font-medium text-sm truncate">{template.title}</p>
           <p className="text-xs text-gray-500">{template.category}</p>
           <p className="text-xs text-gray-400 mt-1">{formatDuration(template.defaultDurationMinutes)}</p>
+          {template.isArchived && (
+            <p className="text-[10px] text-amber-600 mt-1">Archived</p>
+          )}
         </div>
         <button
           onClick={(e) => {
@@ -84,11 +88,21 @@ export function BlockLibrary() {
   const { state, dispatch } = useStore();
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<Category | 'all'>('all');
+  const [showArchived, setShowArchived] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [formData, setFormData] = useState<TemplateFormData>(DEFAULT_FORM);
+
+  const isTemplateUsed = (templateId: string) => 
+    state.plans.some(plan => plan.blocks.some(block => block.templateId === templateId));
+  const isTemplateUsedInPublishedPlan = (templateId: string) =>
+    state.plans.some(plan => plan.isPublished && plan.blocks.some(block => block.templateId === templateId));
+
+  const editingTemplate = editingId ? state.templates.find(t => t.id === editingId) : null;
+  const isEditingArchived = !!editingTemplate?.isArchived;
+  const isEditingUsedInPublished = editingId ? isTemplateUsedInPublishedPlan(editingId) : false;
 
   const handleResetTemplates = () => {
     const defaultTemplates = createSeedTemplates();
@@ -97,6 +111,7 @@ export function BlockLibrary() {
   };
 
   const filteredTemplates = state.templates.filter(t => {
+    if (!showArchived && t.isArchived) return false;
     const matchesSearch = t.title.toLowerCase().includes(search.toLowerCase());
     const matchesCategory = categoryFilter === 'all' || t.category === categoryFilter;
     return matchesSearch && matchesCategory;
@@ -167,10 +182,19 @@ export function BlockLibrary() {
   };
 
   const handleDelete = () => {
-    if (deleteId) {
-      dispatch({ type: 'DELETE_TEMPLATE', payload: deleteId });
+    if (!deleteId) return;
+    const template = state.templates.find(t => t.id === deleteId);
+    if (!template) {
       setDeleteId(null);
+      return;
     }
+    const usedInPublished = isTemplateUsedInPublishedPlan(deleteId);
+    if (usedInPublished) {
+      dispatch({ type: 'UPDATE_TEMPLATE', payload: { ...template, isArchived: true } });
+    } else {
+      dispatch({ type: 'DELETE_TEMPLATE', payload: deleteId });
+    }
+    setDeleteId(null);
   };
 
   const handleDuplicate = () => {
@@ -201,6 +225,9 @@ export function BlockLibrary() {
     const newDuration = Math.max(15, Math.min(formData.defaultDurationMinutes + delta, 540));
     setFormData({ ...formData, defaultDurationMinutes: newDuration });
   };
+
+  const deleteUsed = deleteId ? isTemplateUsed(deleteId) : false;
+  const deleteUsedInPublished = deleteId ? isTemplateUsedInPublishedPlan(deleteId) : false;
 
   const TemplateForm = ({ isEdit }: { isEdit: boolean }) => (
     <div className="space-y-4">
@@ -366,17 +393,31 @@ export function BlockLibrary() {
       <div className="flex justify-between pt-4">
         {isEdit && (
           <div className="flex gap-2">
-            <button
-              onClick={() => setDeleteId(editingId)}
-              className="px-4 py-2 text-sm border border-red-500/30 text-red-400 rounded-lg hover:bg-red-500/10 transition-all"
-              data-testid="delete-template-button"
-            >
-              Delete
-            </button>
+            {isEditingArchived ? (
+              <button
+                onClick={() => {
+                  if (!editingTemplate) return;
+                  dispatch({ type: 'UPDATE_TEMPLATE', payload: { ...editingTemplate, isArchived: false } });
+                }}
+                className="px-4 py-2 text-sm border border-amber-500/30 text-amber-300 rounded-lg hover:bg-amber-500/10 transition-all"
+                data-testid="restore-template-button"
+              >
+                Restore
+              </button>
+            ) : (
+              <button
+                onClick={() => setDeleteId(editingId)}
+                className="px-4 py-2 text-sm border border-red-500/30 text-red-300 rounded-lg hover:bg-red-500/10 transition-all"
+                data-testid="delete-template-button"
+              >
+                {isEditingUsedInPublished ? 'Archive' : 'Delete'}
+              </button>
+            )}
             <button
               onClick={handleDuplicate}
               className="px-4 py-2 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
               data-testid="duplicate-template-button"
+              disabled={isEditingArchived}
             >
               Duplicate
             </button>
@@ -450,6 +491,17 @@ export function BlockLibrary() {
             <option key={cat} value={cat}>{cat}</option>
           ))}
         </select>
+        
+        <label className="flex items-center gap-2 text-xs text-muted-foreground mt-2">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={e => setShowArchived(e.target.checked)}
+            className="accent-primary"
+            data-testid="toggle-archived-templates"
+          />
+          Show archived templates
+        </label>
       </div>
 
       <div className="flex-1 overflow-auto p-4 scrollbar-thin">
@@ -480,9 +532,15 @@ export function BlockLibrary() {
         open={deleteId !== null}
         onClose={() => setDeleteId(null)}
         onConfirm={handleDelete}
-        title="Delete Template"
-        message="Are you sure you want to delete this template? Placed blocks using this template will remain."
-        confirmText="Delete"
+        title={deleteUsedInPublished ? 'Archive Template' : 'Delete Template'}
+        message={
+          deleteUsedInPublished
+            ? 'This template is used in a published plan. It will be archived and hidden, but kept so student views stay intact.'
+            : deleteUsed
+              ? 'This template is used in schedules. Deleting will keep existing blocks but they will no longer have a template.'
+              : 'Are you sure you want to delete this template?'
+        }
+        confirmText={deleteUsedInPublished ? 'Archive' : 'Delete'}
       />
 
       <ConfirmModal

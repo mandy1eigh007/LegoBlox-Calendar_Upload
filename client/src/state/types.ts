@@ -122,6 +122,7 @@ export interface BlockTemplate {
   engagementId?: string | null;
   defaultResource?: string;
   matchKeywords?: string[];
+  isArchived?: boolean;
 }
 
 export interface PlacedBlock {
@@ -148,6 +149,7 @@ export interface PlacedBlock {
   partnerAddress?: string;
   partnerPPE?: string;
   partnerParking?: string;
+  isLocked?: boolean;
 }
 
 export interface RecurrenceSeries {
@@ -160,6 +162,7 @@ export interface RecurrenceSeries {
   baseNotes: string;
   countsTowardGoldenRule: boolean;
   goldenRuleBucketId: GoldenRuleBucketId | null;
+  isLocked?: boolean;
 }
 
 export type SchedulerMode = 'manual' | 'predictive';

@@ -177,6 +177,7 @@ export function PlanList() {
         goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
         recurrenceSeriesId: null,
         isRecurrenceException: false,
+        isLocked: false,
       });
     }
 
@@ -287,6 +288,7 @@ export function PlanList() {
             goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
             recurrenceSeriesId: null,
             isRecurrenceException: false,
+            isLocked: true,
           };
         });
 

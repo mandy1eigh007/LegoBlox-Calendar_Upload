@@ -59,6 +59,7 @@ function DraggablePlacedBlock({
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `block-${block.id}`,
     data: { type: 'placed-block', block },
+    disabled: !!block.isLocked,
   });
 
   const [isResizing, setIsResizing] = useState(false);
@@ -69,6 +70,7 @@ function DraggablePlacedBlock({
   const blockHeight = durationToPixelHeight(block.durationMinutes);
   
   const isUnassigned = block.templateId === null;
+  const isLocked = !!block.isLocked;
   const title = block.titleOverride || template?.title || 'Unknown';
   const colorHex = isUnassigned ? '#9CA3AF' : (template?.colorHex || '#6B7280');
 
@@ -130,10 +132,13 @@ function DraggablePlacedBlock({
           e.stopPropagation();
           onDoubleClick?.();
         }}
-        className="px-2 py-1 cursor-grab active:cursor-grabbing h-full"
+        className={`px-2 py-1 h-full ${isLocked ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'}`}
       >
         {isUnassigned && (
           <p className="text-xs font-bold bg-white/30 px-1 rounded mb-0.5 inline-block">Unassigned</p>
+        )}
+        {isLocked && (
+          <p className="text-[10px] font-semibold bg-black/30 px-1 rounded mb-0.5 inline-block">Locked</p>
         )}
         <p className="text-xs font-medium truncate">{title}</p>
         {blockHeight > 30 && (
@@ -146,11 +151,13 @@ function DraggablePlacedBlock({
         )}
       </div>
       
-      <div
-        onMouseDown={handleResizeStart}
-        className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize bg-black/20 hover:bg-black/40 transition-colors"
-        title="Drag to resize"
-      />
+      {!isLocked && (
+        <div
+          onMouseDown={handleResizeStart}
+          className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize bg-black/20 hover:bg-black/40 transition-colors"
+          title="Drag to resize"
+        />
+      )}
     </div>
   );
 }

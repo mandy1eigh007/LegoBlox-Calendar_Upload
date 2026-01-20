@@ -156,6 +156,10 @@ export function Builder() {
       placeNewBlock(template, day, dropMinutes);
     } else if (activeData?.type === 'placed-block') {
       const block = activeData.block as PlacedBlock;
+      if (block.isLocked) {
+        setErrorMessage('This block is locked. Unlock it in the edit panel to move it.');
+        return;
+      }
       moveBlock(block, day, dropMinutes);
     }
   };
@@ -221,12 +225,17 @@ export function Builder() {
       recurrenceSeriesId: null,
       isRecurrenceException: false,
       resource: template.defaultResource || undefined,
+      isLocked: false,
     };
     
     dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
   };
 
   const moveBlock = (block: PlacedBlock, newDay: Day, newStartMinutes: number) => {
+    if (block.isLocked) {
+      setErrorMessage('This block is locked. Unlock it in the edit panel to move it.');
+      return;
+    }
     const duration = block.durationMinutes;
     
     if (!wouldFitInDay(newStartMinutes, duration, settings.dayEndMinutes)) {
@@ -267,6 +276,10 @@ export function Builder() {
   const handleBlockResize = (blockId: string, newDuration: number) => {
     const block = plan.blocks.find(b => b.id === blockId);
     if (!block) return;
+    if (block.isLocked) {
+      setErrorMessage('This block is locked. Unlock it in the edit panel to resize it.');
+      return;
+    }
     
     if (newDuration % 15 !== 0) return;
     
@@ -288,6 +301,17 @@ export function Builder() {
   };
 
   const handleBlockUpdate = (updatedBlock: PlacedBlock, scope?: ApplyScope) => {
+    const existingBlock = plan.blocks.find(b => b.id === updatedBlock.id);
+    if (existingBlock?.isLocked) {
+      const placementChanged = existingBlock.week !== updatedBlock.week ||
+        existingBlock.day !== updatedBlock.day ||
+        existingBlock.startMinutes !== updatedBlock.startMinutes ||
+        existingBlock.durationMinutes !== updatedBlock.durationMinutes;
+      if (placementChanged) {
+        setErrorMessage('This block is locked. Unlock it to change time or duration.');
+        return;
+      }
+    }
     if (updatedBlock.durationMinutes % 15 !== 0) {
       setErrorMessage('Duration must be a multiple of 15 minutes.');
       return;

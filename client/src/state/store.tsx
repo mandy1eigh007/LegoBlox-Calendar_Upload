@@ -102,6 +102,16 @@ function reducer(state: AppState, action: Action): AppState {
                     notes: block.notes,
                     countsTowardGoldenRule: block.countsTowardGoldenRule,
                     goldenRuleBucketId: block.goldenRuleBucketId,
+                    resource: block.resource,
+                    category: block.category,
+                    partnerOrg: block.partnerOrg,
+                    partnerContact: block.partnerContact,
+                    partnerEmail: block.partnerEmail,
+                    partnerPhone: block.partnerPhone,
+                    partnerAddress: block.partnerAddress,
+                    partnerPPE: block.partnerPPE,
+                    partnerParking: block.partnerParking,
+                    isLocked: block.isLocked,
                   };
                 }
                 return b;
@@ -124,6 +134,16 @@ function reducer(state: AppState, action: Action): AppState {
                     notes: block.notes,
                     countsTowardGoldenRule: block.countsTowardGoldenRule,
                     goldenRuleBucketId: block.goldenRuleBucketId,
+                    resource: block.resource,
+                    category: block.category,
+                    partnerOrg: block.partnerOrg,
+                    partnerContact: block.partnerContact,
+                    partnerEmail: block.partnerEmail,
+                    partnerPhone: block.partnerPhone,
+                    partnerAddress: block.partnerAddress,
+                    partnerPPE: block.partnerPPE,
+                    partnerParking: block.partnerParking,
+                    isLocked: block.isLocked,
                   };
                 }
                 return b;
@@ -138,6 +158,7 @@ function reducer(state: AppState, action: Action): AppState {
                     baseNotes: block.notes,
                     countsTowardGoldenRule: block.countsTowardGoldenRule,
                     goldenRuleBucketId: block.goldenRuleBucketId,
+                    isLocked: block.isLocked,
                   };
                 }
                 return s;

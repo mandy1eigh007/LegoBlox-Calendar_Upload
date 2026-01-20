@@ -206,6 +206,7 @@ function placeBlockInSlot(
     recurrenceSeriesId: null,
     isRecurrenceException: false,
     resource: template.defaultResource,
+    isLocked: false,
     isNew: true,
     bucketLabel,
     confidence: 0.5,

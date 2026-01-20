@@ -43,6 +43,7 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
   const [partnerAddress, setPartnerAddress] = useState(block.partnerAddress || '');
   const [partnerPPE, setPartnerPPE] = useState(block.partnerPPE || '');
   const [partnerParking, setPartnerParking] = useState(block.partnerParking || '');
+  const [isLocked, setIsLocked] = useState(!!block.isLocked);
   const [showPartnerInfo, setShowPartnerInfo] = useState(Boolean(block.partnerOrg || block.partnerContact));
   
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -74,6 +75,7 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
     setPartnerAddress(block.partnerAddress || '');
     setPartnerPPE(block.partnerPPE || '');
     setPartnerParking(block.partnerParking || '');
+    setIsLocked(!!block.isLocked);
     setShowPartnerInfo(Boolean(block.partnerOrg || block.partnerContact));
     setRecurrenceDays([block.day]);
     setRecurrenceStartWeek(block.week);
@@ -129,10 +131,12 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
       partnerAddress: partnerAddress || undefined,
       partnerPPE: partnerPPE || undefined,
       partnerParking: partnerParking || undefined,
+      isLocked,
     }, scope);
   };
   
   const adjustDuration = (delta: number) => {
+    if (isLocked) return;
     const newDuration = Math.max(15, Math.min(durationMinutes + delta, 540));
     setDurationMinutes(newDuration);
   };
@@ -166,6 +170,7 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
       goldenRuleBucketId: countsTowardGoldenRule && goldenRuleBucketId ? goldenRuleBucketId : null,
       resource: resource || undefined,
       category: category || undefined,
+      isLocked,
     };
 
     if (existingSeries && onUpdateRecurrence) {
@@ -233,8 +238,9 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
               <select
                 value={startMinutes}
                 onChange={e => setStartMinutes(parseInt(e.target.value))}
-                className="w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
                 data-testid="block-start-time-select"
+                disabled={isLocked}
               >
                 {timeOptions.map(m => (
                   <option key={m} value={m}>{minutesToTimeDisplay(m)}</option>
@@ -246,8 +252,9 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
               <select
                 value={durationMinutes}
                 onChange={e => setDurationMinutes(parseInt(e.target.value))}
-                className="w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
                 data-testid="block-duration-select"
+                disabled={isLocked}
               >
                 {DURATION_OPTIONS.map(dur => (
                   <option key={dur} value={dur}>{formatDuration(dur)}</option>
@@ -259,7 +266,7 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
           <div className="flex items-center gap-2">
             <button
               onClick={() => adjustDuration(-15)}
-              disabled={durationMinutes <= 15}
+              disabled={durationMinutes <= 15 || isLocked}
               className="px-3 py-1 text-sm border rounded hover:bg-gray-50 disabled:opacity-50"
               data-testid="duration-minus-15"
             >
@@ -268,13 +275,32 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
             <span className="text-sm text-gray-600 flex-1 text-center">{formatDuration(durationMinutes)}</span>
             <button
               onClick={() => adjustDuration(15)}
-              disabled={durationMinutes >= 540}
+              disabled={durationMinutes >= 540 || isLocked}
               className="px-3 py-1 text-sm border rounded hover:bg-gray-50 disabled:opacity-50"
               data-testid="duration-plus-15"
             >
               +15 min
             </button>
           </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              id="lock-placement"
+              type="checkbox"
+              checked={isLocked}
+              onChange={(e) => setIsLocked(e.target.checked)}
+              className="rounded"
+              data-testid="lock-placement-toggle"
+            />
+            <label htmlFor="lock-placement" className="text-sm text-foreground">
+              Lock placement (partner scheduled)
+            </label>
+          </div>
+          {isLocked && (
+            <p className="text-xs text-amber-600">
+              Locked blocks cannot be dragged or resized. Unlock to change time or duration.
+            </p>
+          )}
           
           <div>
             <label className="block text-sm font-medium mb-1">Category</label>

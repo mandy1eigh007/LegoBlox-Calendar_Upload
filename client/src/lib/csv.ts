@@ -439,6 +439,7 @@ export function convertICSEventsToBlocks(
       recurrenceSeriesId: null,
       isRecurrenceException: false,
       resource: event.resource,
+      isLocked: true,
     });
     included++;
   }
@@ -510,6 +511,7 @@ export function importICSToBlocks(
       goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
       recurrenceSeriesId: null,
       isRecurrenceException: false,
+      isLocked: true,
     });
   }
   

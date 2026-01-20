@@ -141,5 +141,6 @@ export function createSeedTemplates(): BlockTemplate[] {
     goldenRuleBucketId: seed.goldenRuleBucketId,
     defaultLocation: seed.defaultLocation || '',
     defaultNotes: seed.defaultNotes || '',
+    isArchived: false,
   }));
 }
