@@ -463,14 +463,26 @@ export function Builder() {
     }
   };
 
-  const handleAssignBlock = (blockId: string, templateId: string) => {
+  const handleAssignBlock = (blockId: string, templateId: string | null) => {
     const timestamp = new Date().toISOString();
     dispatch({ type: 'ASSIGN_BLOCK_TEMPLATE', payload: { planId: plan.id, blockId, templateId, timestamp } });
   };
   
   // Assign with optional countsTowardGoldenRule override (single block)
-  const handleAssignBlockWithFlags = (blockId: string, templateId: string, countsOverride?: boolean) => {
+  const handleAssignBlockWithFlags = (blockId: string, templateId: string | null, countsOverride?: boolean) => {
     const timestamp = new Date().toISOString();
+    if (templateId === null) {
+      const block = plan.blocks.find(b => b.id === blockId);
+      if (!block) return;
+      const updated = {
+        ...block,
+        templateId: null,
+        countsTowardGoldenRule: false,
+        goldenRuleBucketId: null,
+      };
+      dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updated } });
+      return;
+    }
     const template = state.templates.find(t => t.id === templateId);
     if (typeof countsOverride === 'boolean') {
       const block = plan.blocks.find(b => b.id === blockId);
@@ -487,7 +499,7 @@ export function Builder() {
 
     dispatch({ type: 'ASSIGN_BLOCK_TEMPLATE', payload: { planId: plan.id, blockId, templateId, timestamp } });
   };
-  const handleAssignMultiple = (blockIds: string[], templateId: string) => {
+  const handleAssignMultiple = (blockIds: string[], templateId: string | null) => {
     const timestamp = new Date().toISOString();
     dispatch({ type: 'ASSIGN_MULTIPLE_BLOCKS_TEMPLATE', payload: { planId: plan.id, blockIds, templateId, timestamp } });
   };

@@ -8,8 +8,8 @@ interface UnassignedReviewPanelProps {
   templates: BlockTemplate[];
   open: boolean;
   onClose: () => void;
-  onAssignBlock: (blockId: string, templateId: string) => void;
-  onAssignMultiple: (blockIds: string[], templateId: string) => void;
+  onAssignBlock: (blockId: string, templateId: string | null) => void;
+  onAssignMultiple: (blockIds: string[], templateId: string | null) => void;
 }
 
 export function UnassignedReviewPanel({

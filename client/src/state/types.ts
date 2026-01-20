@@ -244,8 +244,8 @@ export type Action =
   | { type: 'PUBLISH_PLAN'; payload: { planId: string; publicId: string; timestamp: string } }
   | { type: 'UNPUBLISH_PLAN'; payload: { planId: string; timestamp: string } }
   | { type: 'REGENERATE_PUBLIC_ID'; payload: { planId: string; newPublicId: string; timestamp: string } }
-  | { type: 'ASSIGN_BLOCK_TEMPLATE'; payload: { planId: string; blockId: string; templateId: string; timestamp: string } }
-  | { type: 'ASSIGN_MULTIPLE_BLOCKS_TEMPLATE'; payload: { planId: string; blockIds: string[]; templateId: string; timestamp: string } };
+  | { type: 'ASSIGN_BLOCK_TEMPLATE'; payload: { planId: string; blockId: string; templateId: string | null; timestamp: string } }
+  | { type: 'ASSIGN_MULTIPLE_BLOCKS_TEMPLATE'; payload: { planId: string; blockIds: string[]; templateId: string | null; timestamp: string } };
 
 export function minutesToTimeString(minutes: number): string {
   const hours = Math.floor(minutes / 60);

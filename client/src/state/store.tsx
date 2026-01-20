@@ -476,7 +476,9 @@ function reducer(state: AppState, action: Action): AppState {
 
     case 'ASSIGN_BLOCK_TEMPLATE': {
       const { planId, blockId, templateId, timestamp } = action.payload;
-      const template = state.templates.find(t => t.id === templateId);
+      const template = templateId ? state.templates.find(t => t.id === templateId) : null;
+      const countsTowardGoldenRule = template?.countsTowardGoldenRule ?? false;
+      const goldenRuleBucketId = template?.goldenRuleBucketId ?? null;
       return {
         ...state,
         plans: state.plans.map(p => {
@@ -489,8 +491,8 @@ function reducer(state: AppState, action: Action): AppState {
               return {
                 ...b,
                 templateId,
-                countsTowardGoldenRule: template?.countsTowardGoldenRule ?? false,
-                goldenRuleBucketId: template?.goldenRuleBucketId ?? null,
+                countsTowardGoldenRule,
+                goldenRuleBucketId,
               };
             }),
           };
@@ -500,7 +502,9 @@ function reducer(state: AppState, action: Action): AppState {
 
     case 'ASSIGN_MULTIPLE_BLOCKS_TEMPLATE': {
       const { planId, blockIds, templateId, timestamp } = action.payload;
-      const template = state.templates.find(t => t.id === templateId);
+      const template = templateId ? state.templates.find(t => t.id === templateId) : null;
+      const countsTowardGoldenRule = template?.countsTowardGoldenRule ?? false;
+      const goldenRuleBucketId = template?.goldenRuleBucketId ?? null;
       const blockIdSet = new Set(blockIds);
       return {
         ...state,
@@ -514,8 +518,8 @@ function reducer(state: AppState, action: Action): AppState {
               return {
                 ...b,
                 templateId,
-                countsTowardGoldenRule: template?.countsTowardGoldenRule ?? false,
-                goldenRuleBucketId: template?.goldenRuleBucketId ?? null,
+                countsTowardGoldenRule,
+                goldenRuleBucketId,
               };
             }),
           };
