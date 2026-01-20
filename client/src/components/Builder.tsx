@@ -58,6 +58,7 @@ export function Builder() {
   const [showUnassigned, setShowUnassigned] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [reassignBlock, setReassignBlock] = useState<PlacedBlock | null>(null);
+  const [editTemplateId, setEditTemplateId] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(
@@ -492,7 +493,6 @@ export function Builder() {
   };
 
   const selectedBlock = selectedBlockId ? plan.blocks.find(b => b.id === selectedBlockId) : null;
-  const selectedTemplate = selectedBlock ? state.templates.find(t => t.id === selectedBlock.templateId) : undefined;
 
   if (showPrint) {
     return (
@@ -705,7 +705,10 @@ export function Builder() {
 
         <div className="flex-1 flex overflow-hidden" onMouseMove={handleMouseMove} ref={gridRef}>
           <div className="w-64 flex-shrink-0">
-            <BlockLibrary />
+            <BlockLibrary
+              externalEditTemplateId={editTemplateId}
+              onExternalEditHandled={() => setEditTemplateId(null)}
+            />
           </div>
           
           <WeekGrid
@@ -731,7 +734,7 @@ export function Builder() {
           {selectedBlock ? (
             <BlockEditPanel
               block={selectedBlock}
-              template={selectedTemplate}
+              templates={state.templates}
               plan={plan}
               onUpdate={handleBlockUpdate}
               onDelete={handleBlockDelete}
@@ -739,6 +742,7 @@ export function Builder() {
               onClose={() => setSelectedBlockId(null)}
               onCreateRecurrence={handleCreateRecurrence}
               onUpdateRecurrence={handleUpdateRecurrence}
+              onEditTemplate={(templateId) => setEditTemplateId(templateId)}
             />
           ) : (
             <div className="w-72 flex-shrink-0">

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { useStore } from '@/state/store';
 import { BlockTemplate, CATEGORIES, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId, COLOR_PALETTE, Category, DEFAULT_RESOURCES } from '@/state/types';
@@ -84,7 +84,12 @@ const DEFAULT_FORM: TemplateFormData = {
 
 const DURATION_OPTIONS = Array.from({ length: 36 }, (_, i) => (i + 1) * 15);
 
-export function BlockLibrary() {
+interface BlockLibraryProps {
+  externalEditTemplateId?: string | null;
+  onExternalEditHandled?: () => void;
+}
+
+export function BlockLibrary({ externalEditTemplateId, onExternalEditHandled }: BlockLibraryProps) {
   const { state, dispatch } = useStore();
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<Category | 'all'>('all');
@@ -220,6 +225,15 @@ export function BlockLibrary() {
     });
     setEditingId(template.id);
   };
+
+  useEffect(() => {
+    if (!externalEditTemplateId) return;
+    const template = state.templates.find(t => t.id === externalEditTemplateId);
+    if (template) {
+      openEdit(template);
+    }
+    onExternalEditHandled?.();
+  }, [externalEditTemplateId, onExternalEditHandled, state.templates]);
   
   const adjustFormDuration = (delta: number) => {
     const newDuration = Math.max(15, Math.min(formData.defaultDurationMinutes + delta, 540));
