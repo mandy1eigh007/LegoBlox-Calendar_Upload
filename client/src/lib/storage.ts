@@ -28,6 +28,7 @@ export function createDefaultPlanSettings() {
     allowOverlaps: true,
     showNotesOnPrint: true,
     schedulerMode: 'manual' as const,
+    bucketAdjustments: {},
   };
 }
 
@@ -115,6 +116,7 @@ function migrateV1ToV2(oldState: unknown): AppState | null {
           allowOverlaps: true,
           showNotesOnPrint: true,
           schedulerMode: 'manual' as const,
+          bucketAdjustments: {},
         },
         blocks: newBlocks,
         recurrenceSeries: [],
@@ -160,6 +162,9 @@ export function loadState(): { state: AppState; error?: string } {
     for (const plan of parsed.plans) {
       if (!plan.settings.schedulerMode) {
         plan.settings.schedulerMode = 'manual';
+      }
+      if (!plan.settings.bucketAdjustments) {
+        plan.settings.bucketAdjustments = {};
       }
       for (const block of plan.blocks) {
         if (block.isLocked === undefined) {

@@ -308,17 +308,18 @@ export function generateScheduleSuggestions(
     const existing = existingTotals.find(t => t.id === bucket.id);
     const scheduled = existing?.scheduled || 0;
     const isFlexible = !!existing?.isFlexible;
+    const adjustedBudget = existing?.budget ?? bucket.budgetMinutes;
     const suggested = suggestions
       .filter(s => s.goldenRuleBucketId === bucket.id)
       .reduce((sum, s) => sum + s.durationMinutes, 0);
-    const effectiveBudget = isFlexible ? scheduled + suggested : bucket.budgetMinutes;
+    const effectiveBudget = isFlexible ? scheduled + suggested : adjustedBudget;
     
     return {
       bucketId: bucket.id,
       label: bucket.label,
       needed: effectiveBudget,
       scheduled: scheduled + suggested,
-      gap: isFlexible ? 0 : bucket.budgetMinutes - (scheduled + suggested),
+      gap: isFlexible ? 0 : adjustedBudget - (scheduled + suggested),
     };
   });
   

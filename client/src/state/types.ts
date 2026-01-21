@@ -186,6 +186,7 @@ export interface PlanSettings {
   showNotesOnPrint: boolean;
   schedulerMode: SchedulerMode;
   hardDates?: HardDate[];
+  bucketAdjustments?: Partial<Record<GoldenRuleBucketId, number>>;
 }
 
 export interface Plan {

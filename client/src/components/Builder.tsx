@@ -786,6 +786,9 @@ export function Builder() {
                 plan={plan} 
                 templates={state.templates} 
                 onShowUnassigned={() => setShowUnassigned(true)}
+                onUpdatePlan={(nextPlan) => {
+                  dispatch({ type: 'UPDATE_PLAN', payload: nextPlan });
+                }}
               />
             </div>
           )}
