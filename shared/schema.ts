@@ -9,10 +9,10 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
+export const insertUserSchema = (createInsertSchema(users).pick({
   username: true,
   password: true,
-}) as ZodTypeAny;
+}) as unknown) as ZodTypeAny;
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
