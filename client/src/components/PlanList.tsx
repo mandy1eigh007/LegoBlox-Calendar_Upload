@@ -4,7 +4,7 @@ import { useStore } from '@/state/store';
 import { Plan, PlanSettings, DEFAULT_RESOURCES, AppState, PlacedBlock, Day, DAYS, GOLDEN_RULE_BUCKETS, SchedulerMode, AnchorPromptId } from '@/state/types';
 import { Modal, ConfirmModal } from './Modal';
 import { createDefaultPlanSettings } from '@/lib/storage';
-import { ANCHOR_PROMPTS, createEmptyAnchorChecklist } from '@/lib/anchorPrompts';
+import { ANCHOR_PROMPTS, createAnchorSelections, createEmptyAnchorChecklist, buildAnchorDraft, buildAnchorBlock, AnchorScheduleSelection } from '@/lib/anchorPrompts';
 import { v4 as uuidv4 } from 'uuid';
 import { validateAppState } from '@/state/validators';
 import { processImageWithOCR, OCREvent } from '@/lib/ocr';
@@ -58,6 +58,9 @@ export function PlanList() {
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [manualEvents, setManualEvents] = useState<Array<{id: string; title: string; day: Day; startMinutes: number; durationMinutes: number}>>([]);
   const [anchorChecklist, setAnchorChecklist] = useState<Record<AnchorPromptId, boolean>>(createEmptyAnchorChecklist());
+  const [anchorSelections, setAnchorSelections] = useState<Record<AnchorPromptId, AnchorScheduleSelection>>(
+    createAnchorSelections(390)
+  );
   const [icsImportPlanName, setIcsImportPlanName] = useState('');
   const [pendingICSEvents, setPendingICSEvents] = useState<ICSEventWithDate[]>([]);
   const [icsMinDate, setIcsMinDate] = useState<Date | null>(null);
@@ -115,6 +118,12 @@ export function PlanList() {
     } catch {}
   }, [csvPresets]);
 
+  useEffect(() => {
+    if (!showCreate) return;
+    setAnchorChecklist(createEmptyAnchorChecklist());
+    setAnchorSelections(createAnchorSelections(formData.dayStartMinutes));
+  }, [showCreate, formData.dayStartMinutes]);
+
   const normalizeCsvHeaders = (headers: string[]) => headers.map(h => h.trim().toLowerCase());
   const headersMatch = (a: string[], b: string[]) => a.length === b.length && a.every((h, i) => h === b[i]);
 
@@ -153,11 +162,36 @@ export function PlanList() {
 
   const handleCreate = () => {
     if (!formData.name.trim()) return;
+
+    const anchorSchedule: PlanSettings['anchorSchedule'] = {};
+    const anchorBlocks: PlacedBlock[] = [];
+    const nextAnchorChecklist = { ...anchorChecklist };
+
+    for (const prompt of ANCHOR_PROMPTS) {
+      const selection = anchorSelections[prompt.id];
+      if (!selection || !selection.enabled) {
+        nextAnchorChecklist[prompt.id] = false;
+        continue;
+      }
+
+      nextAnchorChecklist[prompt.id] = true;
+      const draft = buildAnchorDraft(prompt, selection);
+      anchorSchedule[prompt.id] = draft;
+
+      if (selection.createNow) {
+        anchorBlocks.push(buildAnchorBlock(draft, state.templates));
+      }
+    }
     
     const plan: Plan = {
       id: uuidv4(),
-      settings: { ...formData, anchorChecklist },
-      blocks: [],
+      settings: { 
+        ...formData, 
+        anchorChecklist: nextAnchorChecklist,
+        anchorSchedule,
+        anchorWizardDismissed: false,
+      },
+      blocks: anchorBlocks,
       recurrenceSeries: [],
     };
     
@@ -165,6 +199,7 @@ export function PlanList() {
     setShowCreate(false);
     setFormData(createDefaultPlanSettings());
     setAnchorChecklist(createEmptyAnchorChecklist());
+    setAnchorSelections(createAnchorSelections(formData.dayStartMinutes));
     navigate(`/plan/${plan.id}`);
   };
 
@@ -1012,6 +1047,7 @@ export function PlanList() {
         onClose={() => {
           setShowCreate(false);
           setAnchorChecklist(createEmptyAnchorChecklist());
+          setAnchorSelections(createAnchorSelections(formData.dayStartMinutes));
         }}
         title="Create New Plan"
       >
@@ -1082,14 +1118,119 @@ export function PlanList() {
             </div>
             <div className="space-y-2">
               {ANCHOR_PROMPTS.map(prompt => (
-                <label key={prompt.id} className="flex items-center gap-2 text-sm text-foreground">
-                  <input
-                    type="checkbox"
-                    checked={anchorChecklist[prompt.id]}
-                    onChange={e => setAnchorChecklist({ ...anchorChecklist, [prompt.id]: e.target.checked })}
-                  />
-                  {prompt.label}
-                </label>
+                <div key={prompt.id} className="rounded border border-border bg-background/40 p-2">
+                  <label className="flex items-center gap-2 text-sm text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={anchorChecklist[prompt.id]}
+                      onChange={e => {
+                        const next = { ...anchorChecklist, [prompt.id]: e.target.checked };
+                        setAnchorChecklist(next);
+                        setAnchorSelections({
+                          ...anchorSelections,
+                          [prompt.id]: {
+                            ...anchorSelections[prompt.id],
+                            enabled: e.target.checked,
+                            createNow: e.target.checked ? anchorSelections[prompt.id].createNow : false,
+                          },
+                        });
+                      }}
+                    />
+                    {prompt.label}
+                  </label>
+                  {anchorChecklist[prompt.id] && (
+                    <div className="mt-2 space-y-2">
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={anchorSelections[prompt.id]?.createNow}
+                          onChange={e => setAnchorSelections({
+                            ...anchorSelections,
+                            [prompt.id]: {
+                              ...anchorSelections[prompt.id],
+                              createNow: e.target.checked,
+                            },
+                          })}
+                        />
+                        Create locked event now
+                      </label>
+                      {anchorSelections[prompt.id]?.createNow && (
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <label className="block text-muted-foreground mb-1">Week</label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={formData.weeks}
+                              value={anchorSelections[prompt.id].week}
+                              onChange={e => setAnchorSelections({
+                                ...anchorSelections,
+                                [prompt.id]: {
+                                  ...anchorSelections[prompt.id],
+                                  week: parseInt(e.target.value) || 1,
+                                },
+                              })}
+                              className="w-full px-2 py-1 border rounded bg-input"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-muted-foreground mb-1">Day</label>
+                            <select
+                              value={anchorSelections[prompt.id].day}
+                              onChange={e => setAnchorSelections({
+                                ...anchorSelections,
+                                [prompt.id]: {
+                                  ...anchorSelections[prompt.id],
+                                  day: e.target.value as Day,
+                                },
+                              })}
+                              className="w-full px-2 py-1 border rounded bg-input"
+                            >
+                              {DAYS.map(d => (
+                                <option key={d} value={d}>{d}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-muted-foreground mb-1">Start Time</label>
+                            <select
+                              value={anchorSelections[prompt.id].startMinutes}
+                              onChange={e => setAnchorSelections({
+                                ...anchorSelections,
+                                [prompt.id]: {
+                                  ...anchorSelections[prompt.id],
+                                  startMinutes: parseInt(e.target.value),
+                                },
+                              })}
+                              className="w-full px-2 py-1 border rounded bg-input"
+                            >
+                              {timeOptions.map(m => (
+                                <option key={m} value={m}>{minutesToTimeDisplay(m)}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-muted-foreground mb-1">Duration (min)</label>
+                            <input
+                              type="number"
+                              min={15}
+                              step={15}
+                              value={anchorSelections[prompt.id].durationMinutes}
+                              onChange={e => setAnchorSelections({
+                                ...anchorSelections,
+                                [prompt.id]: {
+                                  ...anchorSelections[prompt.id],
+                                  durationMinutes: parseInt(e.target.value) || 60,
+                                },
+                              })}
+                              className="w-full px-2 py-1 border rounded bg-input"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           </div>

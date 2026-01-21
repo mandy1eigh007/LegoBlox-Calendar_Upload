@@ -1,4 +1,6 @@
-import { AnchorPromptId } from '@/state/types';
+import { AnchorEventDraft, AnchorPromptId, BlockTemplate, Day, PlacedBlock } from '@/state/types';
+import { resolveTemplateForImportedTitle } from '@/lib/templateMatcher';
+import { v4 as uuidv4 } from 'uuid';
 
 export type AnchorPromptConfig = {
   id: AnchorPromptId;
@@ -6,6 +8,15 @@ export type AnchorPromptConfig = {
   defaultTitle: string;
   countsTowardGoldenRule: boolean;
   defaultDurationMinutes?: number;
+};
+
+export type AnchorScheduleSelection = {
+  enabled: boolean;
+  createNow: boolean;
+  week: number;
+  day: Day;
+  startMinutes: number;
+  durationMinutes: number;
 };
 
 export const ANCHOR_PROMPTS: AnchorPromptConfig[] = [
@@ -58,4 +69,60 @@ export function createEmptyAnchorChecklist(): Record<AnchorPromptId, boolean> {
     acc[prompt.id] = false;
     return acc;
   }, {} as Record<AnchorPromptId, boolean>);
+}
+
+export function createAnchorSelections(dayStartMinutes: number): Record<AnchorPromptId, AnchorScheduleSelection> {
+  return ANCHOR_PROMPTS.reduce((acc, prompt) => {
+    acc[prompt.id] = {
+      enabled: false,
+      createNow: true,
+      week: 1,
+      day: 'Monday',
+      startMinutes: dayStartMinutes,
+      durationMinutes: prompt.defaultDurationMinutes ?? 60,
+    };
+    return acc;
+  }, {} as Record<AnchorPromptId, AnchorScheduleSelection>);
+}
+
+export function buildAnchorDraft(
+  prompt: AnchorPromptConfig,
+  selection: AnchorScheduleSelection
+): AnchorEventDraft {
+  return {
+    week: selection.week,
+    day: selection.day,
+    startMinutes: selection.startMinutes,
+    durationMinutes: selection.durationMinutes,
+    title: prompt.defaultTitle,
+    countsTowardGoldenRule: prompt.countsTowardGoldenRule,
+    isLocked: true,
+    created: selection.createNow,
+  };
+}
+
+export function buildAnchorBlock(draft: AnchorEventDraft, templates: BlockTemplate[]): PlacedBlock {
+  const matchResult = resolveTemplateForImportedTitle(draft.title, templates);
+  const matchedTemplate = matchResult.templateId ? templates.find(t => t.id === matchResult.templateId) : null;
+  const resolvedBucketId = draft.countsTowardGoldenRule
+    ? (matchResult.bucketId ?? matchedTemplate?.goldenRuleBucketId ?? null)
+    : null;
+
+  return {
+    id: uuidv4(),
+    templateId: matchedTemplate?.id ?? null,
+    week: draft.week,
+    day: draft.day,
+    startMinutes: draft.startMinutes,
+    durationMinutes: draft.durationMinutes,
+    titleOverride: draft.title,
+    location: matchedTemplate?.defaultLocation ?? '',
+    notes: '',
+    countsTowardGoldenRule: draft.countsTowardGoldenRule,
+    goldenRuleBucketId: resolvedBucketId,
+    recurrenceSeriesId: null,
+    isRecurrenceException: false,
+    resource: matchedTemplate?.defaultResource || undefined,
+    isLocked: draft.isLocked,
+  };
 }

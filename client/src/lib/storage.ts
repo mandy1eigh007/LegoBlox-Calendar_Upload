@@ -30,6 +30,8 @@ export function createDefaultPlanSettings() {
     schedulerMode: 'manual' as const,
     bucketAdjustments: {},
     anchorChecklist: {},
+    anchorSchedule: {},
+    anchorWizardDismissed: false,
   };
 }
 
@@ -119,6 +121,8 @@ function migrateV1ToV2(oldState: unknown): AppState | null {
           schedulerMode: 'manual' as const,
           bucketAdjustments: {},
           anchorChecklist: {},
+          anchorSchedule: {},
+          anchorWizardDismissed: false,
         },
         blocks: newBlocks,
         recurrenceSeries: [],
@@ -170,6 +174,12 @@ export function loadState(): { state: AppState; error?: string } {
       }
       if (!plan.settings.anchorChecklist) {
         plan.settings.anchorChecklist = {};
+      }
+      if (!plan.settings.anchorSchedule) {
+        plan.settings.anchorSchedule = {};
+      }
+      if (plan.settings.anchorWizardDismissed === undefined) {
+        plan.settings.anchorWizardDismissed = false;
       }
       for (const block of plan.blocks) {
         if (block.isLocked === undefined) {

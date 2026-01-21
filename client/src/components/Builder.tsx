@@ -21,6 +21,7 @@ import { TemplateReassignDialog } from './TemplateReassignDialog';
 import { ComparePlans } from './ComparePlans';
 import { CreateEventDialog, CreateEventDefaults } from './CreateEventDialog';
 import { ANCHOR_PROMPTS } from '@/lib/anchorPrompts';
+import { AnchorScheduleWizard } from './AnchorScheduleWizard';
 import { generatePublicId, getStudentUrl } from '@/lib/publish';
 import { findTimeConflicts, findNextAvailableSlot, wouldFitInDay } from '@/lib/collision';
 import { findAlternativeResource } from '@/lib/calendarCompare';
@@ -56,6 +57,7 @@ export function Builder() {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [showCreateEvent, setShowCreateEvent] = useState(false);
   const [createEventDefaults, setCreateEventDefaults] = useState<CreateEventDefaults | null>(null);
+  const [showAnchorWizard, setShowAnchorWizard] = useState(false);
   const [hoverMinutes, setHoverMinutes] = useState<number | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showUnassigned, setShowUnassigned] = useState(false);
@@ -87,6 +89,19 @@ export function Builder() {
       setHoverMinutes(null);
     }
   }, [showDiagnostics]);
+
+  useEffect(() => {
+    const checklist = plan.settings.anchorChecklist || {};
+    const schedule = plan.settings.anchorSchedule || {};
+    const hasAnchors = ANCHOR_PROMPTS.some(prompt => checklist[prompt.id]);
+    if (!hasAnchors) return;
+    const hasUnscheduled = ANCHOR_PROMPTS.some(
+      prompt => checklist[prompt.id] && !schedule[prompt.id]?.created
+    );
+    if (hasUnscheduled && !plan.settings.anchorWizardDismissed) {
+      setShowAnchorWizard(true);
+    }
+  }, [plan.settings.anchorChecklist, plan.settings.anchorSchedule, plan.settings.anchorWizardDismissed]);
 
   useEffect(() => {
     if (!showSuggestions || plan.settings.schedulerMode !== 'predictive') return;
@@ -796,6 +811,12 @@ export function Builder() {
                           These depend on partner schedules. Add them as locked events first.
                         </p>
                       </div>
+                      <button
+                        onClick={() => setShowAnchorWizard(true)}
+                        className="w-full px-2 py-1 text-xs border border-border rounded-lg text-foreground hover:bg-secondary/50"
+                      >
+                        Schedule anchors
+                      </button>
                       <div className="space-y-2">
                         {selectedAnchors.map(anchor => (
                           <div key={anchor.id} className="flex items-center justify-between gap-2 text-xs text-foreground">
@@ -882,6 +903,32 @@ export function Builder() {
           dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block: b } });
         }}
       />
+
+      {showAnchorWizard && (
+        <AnchorScheduleWizard
+          open={showAnchorWizard}
+          plan={plan}
+          templates={state.templates}
+          onClose={() => setShowAnchorWizard(false)}
+          onApply={({ anchorSchedule, blocks }) => {
+            for (const block of blocks) {
+              dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
+            }
+            dispatch({
+              type: 'UPDATE_PLAN',
+              payload: {
+                ...plan,
+                settings: {
+                  ...plan.settings,
+                  anchorSchedule,
+                  anchorWizardDismissed: true,
+                },
+              },
+            });
+            setShowAnchorWizard(false);
+          }}
+        />
+      )}
       
       {showPartners && (
         <PartnersPanel

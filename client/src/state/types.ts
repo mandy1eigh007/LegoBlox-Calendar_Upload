@@ -12,6 +12,17 @@ export type AnchorPromptId =
   | 'apprenticeship_tours'
   | 'job_site_tours';
 
+export interface AnchorEventDraft {
+  week: number;
+  day: Day;
+  startMinutes: number;
+  durationMinutes: number;
+  title: string;
+  countsTowardGoldenRule: boolean;
+  isLocked: boolean;
+  created?: boolean;
+}
+
 export const COLOR_PALETTE = [
   { name: 'Blue', hex: '#3B82F6' },
   { name: 'Green', hex: '#22C55E' },
@@ -196,6 +207,8 @@ export interface PlanSettings {
   hardDates?: HardDate[];
   bucketAdjustments?: Partial<Record<GoldenRuleBucketId, number>>;
   anchorChecklist?: Partial<Record<AnchorPromptId, boolean>>;
+  anchorSchedule?: Partial<Record<AnchorPromptId, AnchorEventDraft>>;
+  anchorWizardDismissed?: boolean;
 }
 
 export interface Plan {
