@@ -19,7 +19,8 @@ import { getProbabilityTableStats, loadProbabilityTable, trainFromBlocks } from 
 import { UnassignedReviewPanel } from './UnassignedReviewPanel';
 import { TemplateReassignDialog } from './TemplateReassignDialog';
 import { ComparePlans } from './ComparePlans';
-import { CreateEventDialog } from './CreateEventDialog';
+import { CreateEventDialog, CreateEventDefaults } from './CreateEventDialog';
+import { ANCHOR_PROMPTS } from '@/lib/anchorPrompts';
 import { generatePublicId, getStudentUrl } from '@/lib/publish';
 import { findTimeConflicts, findNextAvailableSlot, wouldFitInDay } from '@/lib/collision';
 import { findAlternativeResource } from '@/lib/calendarCompare';
@@ -54,6 +55,7 @@ export function Builder() {
   const [draggedItem, setDraggedItem] = useState<{ type: 'template' | 'placed-block'; data: BlockTemplate | PlacedBlock } | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [showCreateEvent, setShowCreateEvent] = useState(false);
+  const [createEventDefaults, setCreateEventDefaults] = useState<CreateEventDefaults | null>(null);
   const [hoverMinutes, setHoverMinutes] = useState<number | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showUnassigned, setShowUnassigned] = useState(false);
@@ -635,7 +637,7 @@ export function Builder() {
               Partners
             </button>
             <button
-              onClick={() => setShowCreateEvent(true)}
+              onClick={() => { setCreateEventDefaults(null); setShowCreateEvent(true); }}
               className="px-3 py-1 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
               data-testid="create-event-button"
             >
@@ -781,7 +783,44 @@ export function Builder() {
               onEditTemplate={(templateId) => setEditTemplateId(templateId)}
             />
           ) : (
-            <div className="w-72 flex-shrink-0">
+            <div className="w-72 flex-shrink-0 space-y-3">
+              {plan.settings.anchorChecklist && (
+                (() => {
+                  const selectedAnchors = ANCHOR_PROMPTS.filter(prompt => plan.settings.anchorChecklist?.[prompt.id]);
+                  if (selectedAnchors.length === 0) return null;
+                  return (
+                    <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-2">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Anchor events</p>
+                        <p className="text-xs text-muted-foreground">
+                          These depend on partner schedules. Add them as locked events first.
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        {selectedAnchors.map(anchor => (
+                          <div key={anchor.id} className="flex items-center justify-between gap-2 text-xs text-foreground">
+                            <span className="truncate">{anchor.label.replace('Do you have ', '').replace(' scheduled?', '?')}</span>
+                            <button
+                              onClick={() => {
+                                setCreateEventDefaults({
+                                  title: anchor.defaultTitle,
+                                  countsTowardGoldenRule: anchor.countsTowardGoldenRule,
+                                  durationMinutes: anchor.defaultDurationMinutes,
+                                  isLocked: true,
+                                });
+                                setShowCreateEvent(true);
+                              }}
+                              className="px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:opacity-90"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
               <GoldenRuleTotals 
                 plan={plan} 
                 templates={state.templates} 
@@ -830,7 +869,8 @@ export function Builder() {
 
       <CreateEventDialog
         open={showCreateEvent}
-        onClose={() => setShowCreateEvent(false)}
+        initialValues={createEventDefaults ?? undefined}
+        onClose={() => { setShowCreateEvent(false); setCreateEventDefaults(null); }}
         templates={state.templates}
         onCreate={(block: any, newTemplate?: any) => {
           // add optional template first

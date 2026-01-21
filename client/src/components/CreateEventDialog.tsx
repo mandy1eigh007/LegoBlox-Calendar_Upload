@@ -1,18 +1,33 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { BlockTemplate, Day, DAYS, GoldenRuleBucketId } from '@/state/types';
 import { v4 as uuidv4 } from 'uuid';
+import { resolveTemplateForImportedTitle } from '@/lib/templateMatcher';
+
+export type CreateEventDefaults = {
+  title?: string;
+  countsTowardGoldenRule?: boolean;
+  week?: number;
+  day?: Day;
+  startMinutes?: number;
+  durationMinutes?: number;
+  location?: string;
+  resource?: string;
+  notes?: string;
+  isLocked?: boolean;
+};
 
 interface CreateEventDialogProps {
   open: boolean;
   onClose: () => void;
   onCreate: (block: any, saveAsTemplate?: BlockTemplate | null) => void;
   templates: BlockTemplate[];
+  initialValues?: CreateEventDefaults;
 }
 
-export function CreateEventDialog({ open, onClose, onCreate, templates }: CreateEventDialogProps) {
+export function CreateEventDialog({ open, onClose, onCreate, templates, initialValues }: CreateEventDialogProps) {
   const [title, setTitle] = useState('');
   const [eventType, setEventType] = useState('guest_speaker');
   const [organization, setOrganization] = useState('');
@@ -30,11 +45,30 @@ export function CreateEventDialog({ open, onClose, onCreate, templates }: Create
   const [saveAsTemplate, setSaveAsTemplate] = useState(false);
   const [isLocked, setIsLocked] = useState(true);
 
+  useEffect(() => {
+    if (!open || !initialValues) return;
+    setTitle(initialValues.title ?? '');
+    setCountsTowardGoldenRule(initialValues.countsTowardGoldenRule ?? false);
+    setWeek(initialValues.week ?? 1);
+    setDay(initialValues.day ?? 'Monday');
+    setStartMinutes(initialValues.startMinutes ?? 390);
+    setDurationMinutes(initialValues.durationMinutes ?? 60);
+    setLocation(initialValues.location ?? 'Other');
+    setResource(initialValues.resource ?? 'Other');
+    setNotes(initialValues.notes ?? '');
+    setIsLocked(initialValues.isLocked ?? true);
+  }, [open, initialValues]);
+
   const handleCreate = () => {
     if (!title) return;
+    const matchResult = resolveTemplateForImportedTitle(title, templates);
+    const matchedTemplate = matchResult.templateId ? templates.find(t => t.id === matchResult.templateId) : null;
+    const resolvedBucketId = countsTowardGoldenRule
+      ? (matchResult.bucketId ?? matchedTemplate?.goldenRuleBucketId ?? null)
+      : null;
     const block = {
       id: uuidv4(),
-      templateId: null as string | null,
+      templateId: matchedTemplate?.id ?? null,
       week,
       day,
       startMinutes,
@@ -43,7 +77,7 @@ export function CreateEventDialog({ open, onClose, onCreate, templates }: Create
       location,
       notes: `${notes}\nContact: ${contactName} ${contactEmail} ${contactPhone}`,
       countsTowardGoldenRule,
-      goldenRuleBucketId: countsTowardGoldenRule ? (templates.find(t => t.title === title)?.goldenRuleBucketId ?? null) : null,
+      goldenRuleBucketId: resolvedBucketId,
       recurrenceSeriesId: null,
       isRecurrenceException: false,
       resource,

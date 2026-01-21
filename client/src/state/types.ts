@@ -4,6 +4,14 @@ export type Category = typeof CATEGORIES[number];
 export const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as const;
 export type Day = typeof DAYS[number];
 
+export type AnchorPromptId =
+  | 'math'
+  | 'mock_interviews'
+  | 'speed_mentoring'
+  | 'guest_speakers'
+  | 'apprenticeship_tours'
+  | 'job_site_tours';
+
 export const COLOR_PALETTE = [
   { name: 'Blue', hex: '#3B82F6' },
   { name: 'Green', hex: '#22C55E' },
@@ -187,6 +195,7 @@ export interface PlanSettings {
   schedulerMode: SchedulerMode;
   hardDates?: HardDate[];
   bucketAdjustments?: Partial<Record<GoldenRuleBucketId, number>>;
+  anchorChecklist?: Partial<Record<AnchorPromptId, boolean>>;
 }
 
 export interface Plan {

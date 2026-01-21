@@ -1,9 +1,10 @@
 import { useState, useRef, useMemo, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { useStore } from '@/state/store';
-import { Plan, PlanSettings, DEFAULT_RESOURCES, AppState, PlacedBlock, Day, DAYS, GOLDEN_RULE_BUCKETS, SchedulerMode } from '@/state/types';
+import { Plan, PlanSettings, DEFAULT_RESOURCES, AppState, PlacedBlock, Day, DAYS, GOLDEN_RULE_BUCKETS, SchedulerMode, AnchorPromptId } from '@/state/types';
 import { Modal, ConfirmModal } from './Modal';
 import { createDefaultPlanSettings } from '@/lib/storage';
+import { ANCHOR_PROMPTS, createEmptyAnchorChecklist } from '@/lib/anchorPrompts';
 import { v4 as uuidv4 } from 'uuid';
 import { validateAppState } from '@/state/validators';
 import { processImageWithOCR, OCREvent } from '@/lib/ocr';
@@ -56,6 +57,7 @@ export function PlanList() {
   const [isDragging, setIsDragging] = useState(false);
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [manualEvents, setManualEvents] = useState<Array<{id: string; title: string; day: Day; startMinutes: number; durationMinutes: number}>>([]);
+  const [anchorChecklist, setAnchorChecklist] = useState<Record<AnchorPromptId, boolean>>(createEmptyAnchorChecklist());
   const [icsImportPlanName, setIcsImportPlanName] = useState('');
   const [pendingICSEvents, setPendingICSEvents] = useState<ICSEventWithDate[]>([]);
   const [icsMinDate, setIcsMinDate] = useState<Date | null>(null);
@@ -154,7 +156,7 @@ export function PlanList() {
     
     const plan: Plan = {
       id: uuidv4(),
-      settings: { ...formData },
+      settings: { ...formData, anchorChecklist },
       blocks: [],
       recurrenceSeries: [],
     };
@@ -162,6 +164,7 @@ export function PlanList() {
     dispatch({ type: 'ADD_PLAN', payload: plan });
     setShowCreate(false);
     setFormData(createDefaultPlanSettings());
+    setAnchorChecklist(createEmptyAnchorChecklist());
     navigate(`/plan/${plan.id}`);
   };
 
@@ -1004,7 +1007,14 @@ export function PlanList() {
         </div>
       </div>
 
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create New Plan">
+      <Modal
+        open={showCreate}
+        onClose={() => {
+          setShowCreate(false);
+          setAnchorChecklist(createEmptyAnchorChecklist());
+        }}
+        title="Create New Plan"
+      >
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-foreground mb-1">Plan Name *</label>
@@ -1060,6 +1070,27 @@ export function PlanList() {
                 <div className="font-medium text-sm text-foreground">Predictive Builder</div>
                 <div className="text-xs text-muted-foreground mt-1">AI-powered schedule suggestions</div>
               </button>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-2">
+            <div>
+              <p className="text-sm font-medium text-foreground">Anchor schedule prompts</p>
+              <p className="text-xs text-muted-foreground">
+                These items depend on partner schedules. Check anything already scheduled so you remember to lock them in first.
+              </p>
+            </div>
+            <div className="space-y-2">
+              {ANCHOR_PROMPTS.map(prompt => (
+                <label key={prompt.id} className="flex items-center gap-2 text-sm text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={anchorChecklist[prompt.id]}
+                    onChange={e => setAnchorChecklist({ ...anchorChecklist, [prompt.id]: e.target.checked })}
+                  />
+                  {prompt.label}
+                </label>
+              ))}
             </div>
           </div>
 

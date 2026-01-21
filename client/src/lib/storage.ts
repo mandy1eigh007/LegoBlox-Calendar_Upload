@@ -29,6 +29,7 @@ export function createDefaultPlanSettings() {
     showNotesOnPrint: true,
     schedulerMode: 'manual' as const,
     bucketAdjustments: {},
+    anchorChecklist: {},
   };
 }
 
@@ -117,6 +118,7 @@ function migrateV1ToV2(oldState: unknown): AppState | null {
           showNotesOnPrint: true,
           schedulerMode: 'manual' as const,
           bucketAdjustments: {},
+          anchorChecklist: {},
         },
         blocks: newBlocks,
         recurrenceSeries: [],
@@ -165,6 +167,9 @@ export function loadState(): { state: AppState; error?: string } {
       }
       if (!plan.settings.bucketAdjustments) {
         plan.settings.bucketAdjustments = {};
+      }
+      if (!plan.settings.anchorChecklist) {
+        plan.settings.anchorChecklist = {};
       }
       for (const block of plan.blocks) {
         if (block.isLocked === undefined) {
