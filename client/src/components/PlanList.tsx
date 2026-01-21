@@ -79,6 +79,8 @@ export function PlanList() {
   });
   const [csvDrafts, setCSVDrafts] = useState<CSVDraftEvent[]>([]);
   const [csvPlanName, setCsvPlanName] = useState('');
+  const [lockCsvEvents, setLockCsvEvents] = useState(true);
+  const [lockIcsEvents, setLockIcsEvents] = useState(true);
 
   const timeOptions = useMemo(() => {
     const options: number[] = [];
@@ -331,6 +333,7 @@ export function PlanList() {
         setCSVMapping(mapping);
         setCsvPlanName(`Imported from ${file.name.replace(/\.[^/.]+$/, '')}`);
         setCSVDrafts([]);
+        setLockCsvEvents(true);
         setImportError(null);
         setImportSuccess(null);
       } catch (err) {
@@ -383,7 +386,7 @@ export function PlanList() {
         goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
         recurrenceSeriesId: null,
         isRecurrenceException: false,
-        isLocked: true,
+        isLocked: lockCsvEvents,
       };
     });
 
@@ -424,6 +427,7 @@ export function PlanList() {
       location: 8,
       notes: 9,
     });
+    setLockCsvEvents(true);
     setImportError(null);
   };
 
@@ -475,10 +479,15 @@ export function PlanList() {
       return block;
     });
     
+    const finalBlocks = blocksWithAssignments.map(block => ({
+      ...block,
+      isLocked: lockIcsEvents,
+    }));
+
     const plan: Plan = {
       id: uuidv4(),
       settings: { ...createDefaultPlanSettings(), name: icsImportPlanName },
-      blocks: blocksWithAssignments,
+      blocks: finalBlocks,
       recurrenceSeries: [],
     };
     
@@ -508,6 +517,7 @@ export function PlanList() {
     setIcsBulkBucketId('');
     setIcsTemplateAssignments({});
     setExpandedEventId(null);
+    setLockIcsEvents(true);
   };
   
   const handlePasteICSParse = () => {
@@ -1212,6 +1222,15 @@ export function PlanList() {
             <p className="text-sm text-gray-600">
               {csvDrafts.length} events detected. Review and click Create Plan to import.
             </p>
+
+            <div className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={lockCsvEvents}
+                onChange={e => setLockCsvEvents(e.target.checked)}
+              />
+              <span>Lock imported events (prevents drag/resize until unlocked)</span>
+            </div>
             
             <div className="max-h-64 overflow-auto border rounded">
               <table className="w-full text-xs">
@@ -1306,6 +1325,15 @@ export function PlanList() {
                   </select>
                 </div>
               ))}
+            </div>
+
+            <div className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={lockCsvEvents}
+                onChange={e => setLockCsvEvents(e.target.checked)}
+              />
+              <span>Lock imported events (prevents drag/resize until unlocked)</span>
             </div>
 
             {importError && (
@@ -1449,6 +1477,19 @@ export function PlanList() {
                   data-testid="ics-include-outside-hours"
                 />
                 Include events outside 6:30 AM - 3:30 PM ({outsideHoursCount} events)
+              </label>
+            </div>
+
+            <div className="flex items-center gap-4 text-sm">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={lockIcsEvents}
+                  onChange={e => setLockIcsEvents(e.target.checked)}
+                  className="rounded"
+                  data-testid="ics-lock-events"
+                />
+                Lock imported events (prevents drag/resize until unlocked)
               </label>
             </div>
             

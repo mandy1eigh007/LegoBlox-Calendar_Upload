@@ -119,6 +119,8 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   }>(null);
   const [icsRangeStart, setIcsRangeStart] = useState<string | null>(null);
   const [icsRangeEnd, setIcsRangeEnd] = useState<string | null>(null);
+  const [lockIcsEvents, setLockIcsEvents] = useState(true);
+  const [lockCsvEvents, setLockCsvEvents] = useState(true);
   
   const aliasInputRef = useRef<HTMLInputElement>(null);
   const resourceInputRef = useRef<HTMLInputElement>(null);
@@ -335,7 +337,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
     }
 
     for (const block of blocks) {
-      dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
+      dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block: { ...block, isLocked: lockIcsEvents } } });
     }
 
     setImportSuccess(`Imported ${included} events${skipped > 0 ? ` (${skipped} skipped)` : ''}.`);
@@ -409,7 +411,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
         goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
         recurrenceSeriesId: null,
         isRecurrenceException: false,
-        isLocked: true,
+        isLocked: lockCsvEvents,
       };
 
       dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
@@ -747,6 +749,15 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
             </div>
           </div>
 
+          <div className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={lockIcsEvents}
+              onChange={(e) => setLockIcsEvents(e.target.checked)}
+            />
+            <span>Lock imported events (prevents drag/resize until unlocked)</span>
+          </div>
+
           <div className="max-h-64 overflow-auto border rounded">
             <table className="w-full text-xs">
               <thead className="bg-gray-50 sticky top-0">
@@ -818,6 +829,15 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
           <p className="text-sm text-gray-600">
             {csvDrafts.length} events detected. Review and click Apply to import.
           </p>
+
+          <div className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={lockCsvEvents}
+              onChange={(e) => setLockCsvEvents(e.target.checked)}
+            />
+            <span>Lock imported events (prevents drag/resize until unlocked)</span>
+          </div>
           
           <div className="max-h-64 overflow-auto border rounded">
             <table className="w-full text-xs">
