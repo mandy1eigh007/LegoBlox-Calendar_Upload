@@ -9,10 +9,18 @@ import { validateAppState } from '@/state/validators';
 import { processImageWithOCR, OCREvent } from '@/lib/ocr';
 import { parseICSWithDateRange, convertICSEventsToBlocks, ICSEventWithDate, importCSVToBlocks, getCSVHeaders } from '@/lib/csv';
 import { resolveTemplateForImportedTitle, TemplateCandidate, getBucketLabel } from '@/lib/templateMatcher';
+import { minutesToTimeDisplay } from '@/lib/time';
 import { Loader2, AlertTriangle } from 'lucide-react';
 
 type DateRangeMode = 'all' | 'range' | 'week';
 type ImportTarget = 'new' | 'existing';
+type OCRDraft = OCREvent & {
+  confirmed: boolean;
+  titleInput: string;
+  dayInput: Day | null;
+  startMinutesInput: number | null;
+  endMinutesInput: number | null;
+};
 
 export function PlanList() {
   const { state, dispatch } = useStore();
@@ -29,9 +37,10 @@ export function PlanList() {
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const [ocrProcessing, setOCRProcessing] = useState(false);
   const [ocrProgress, setOCRProgress] = useState(0);
-  const [ocrEvents, setOCREvents] = useState<OCREvent[]>([]);
+  const [ocrDrafts, setOCRDrafts] = useState<OCRDraft[]>([]);
   const [ocrPlanName, setOCRPlanName] = useState('');
   const [ocrRawText, setOCRRawText] = useState('');
+  const [ocrConfirmError, setOcrConfirmError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [manualEvents, setManualEvents] = useState<Array<{id: string; title: string; day: Day; startMinutes: number; durationMinutes: number}>>([]);
@@ -57,6 +66,39 @@ export function PlanList() {
   const csvInputRef = useRef<HTMLInputElement>(null);
   const [icsTemplateAssignments, setIcsTemplateAssignments] = useState<Record<string, string | null>>({});
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+
+  const timeOptions = useMemo(() => {
+    const options: number[] = [];
+    for (let m = 390; m <= 930; m += 15) {
+      options.push(m);
+    }
+    return options;
+  }, []);
+
+  const normalizeOcrMinutes = (value: number | null): number | null => {
+    if (value === null || Number.isNaN(value)) return null;
+    const rounded = Math.round(value / 15) * 15;
+    if (rounded < 390 || rounded > 930) return null;
+    return rounded;
+  };
+
+  const updateOcrDraft = (id: string, updates: Partial<OCRDraft>) => {
+    setOCRDrafts(prev => prev.map(draft => {
+      if (draft.id !== id) return draft;
+      const next = { ...draft, ...updates };
+      if (!isDraftValid(next)) {
+        next.confirmed = false;
+      }
+      return next;
+    }));
+  };
+
+  const isDraftValid = (draft: OCRDraft): boolean => {
+    if (!draft.titleInput.trim()) return false;
+    if (!draft.dayInput) return false;
+    if (draft.startMinutesInput === null || draft.endMinutesInput === null) return false;
+    return draft.endMinutesInput > draft.startMinutesInput;
+  };
 
   const handleCreate = () => {
     if (!formData.name.trim()) return;
@@ -121,15 +163,25 @@ export function PlanList() {
     setOCRProcessing(true);
     setOCRProgress(0);
     setImportError(null);
+    setOcrConfirmError(null);
 
     try {
       const { events, rawText } = await processImageWithOCR(file, setOCRProgress);
-      setOCREvents(events);
+      const drafts: OCRDraft[] = events.map(event => ({
+        ...event,
+        confirmed: false,
+        titleInput: event.title || 'Untitled',
+        dayInput: event.day,
+        startMinutesInput: normalizeOcrMinutes(event.startMinutes),
+        endMinutesInput: normalizeOcrMinutes(event.endMinutes),
+      }));
+      setOCRDrafts(drafts);
       setOCRRawText(rawText);
       setOCRPlanName(`Imported from ${file.name.replace(/\.[^/.]+$/, '')}`);
       
       if (events.length === 0) {
         setImportError('No schedule events detected. Screenshot import works best with clear text. For Google Calendar, try exporting as ICS instead (Calendar Settings → Export).');
+        setOCRDrafts([]);
       }
     } catch (err) {
       setImportError('Failed to process image. Please try again.');
@@ -143,36 +195,34 @@ export function PlanList() {
   };
 
   const handleCreatePlanFromOCR = () => {
-    if (!ocrPlanName.trim() || ocrEvents.length === 0) return;
+    if (!ocrPlanName.trim() || ocrDrafts.length === 0) return;
+
+    const confirmedDrafts = ocrDrafts.filter(draft => draft.confirmed && isDraftValid(draft));
+    if (confirmedDrafts.length === 0) {
+      setOcrConfirmError('Confirm at least one event with a valid title, day, start time, and end time.');
+      return;
+    }
 
     const blocks: PlacedBlock[] = [];
-    for (const event of ocrEvents) {
-      const hasValidTime = event.startMinutes !== null && event.endMinutes !== null && event.day;
-      const startMinutes = hasValidTime 
-        ? Math.max(390, Math.min(event.startMinutes!, 915))
-        : 390;
-      let durationMinutes = hasValidTime 
-        ? (event.endMinutes! - event.startMinutes!)
-        : 30;
+    for (const draft of confirmedDrafts) {
+      const startMinutes = draft.startMinutesInput!;
+      const endMinutes = draft.endMinutesInput!;
+      let durationMinutes = endMinutes - startMinutes;
       durationMinutes = Math.max(15, Math.ceil(durationMinutes / 15) * 15);
-      
-      if (startMinutes + durationMinutes > 930) {
-        durationMinutes = 930 - startMinutes;
-      }
-      
-      const matchResult = resolveTemplateForImportedTitle(event.title, state.templates);
+
+      const matchResult = resolveTemplateForImportedTitle(draft.titleInput, state.templates);
       const matchedTemplate = matchResult.templateId ? state.templates.find(t => t.id === matchResult.templateId) : null;
-      
+
       blocks.push({
         id: uuidv4(),
         templateId: matchResult.templateId,
         week: 1,
-        day: event.day || 'Monday',
+        day: draft.dayInput || 'Monday',
         startMinutes,
         durationMinutes,
-        titleOverride: event.title,
+        titleOverride: draft.titleInput,
         location: '',
-        notes: hasValidTime ? `Imported via OCR: ${event.rawText}` : `Draft block from OCR - adjust time as needed: ${event.rawText}`,
+        notes: `OCR confirmed: ${draft.rawText}`,
         countsTowardGoldenRule: matchedTemplate ? matchedTemplate.countsTowardGoldenRule : false,
         goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
         recurrenceSeriesId: null,
@@ -189,8 +239,10 @@ export function PlanList() {
     };
     
     dispatch({ type: 'ADD_PLAN', payload: plan });
-    setOCREvents([]);
+    setOCRDrafts([]);
     setOCRPlanName('');
+    setOCRRawText('');
+    setOcrConfirmError(null);
     navigate(`/plan/${plan.id}`);
   };
 
@@ -907,14 +959,17 @@ export function PlanList() {
         </Modal>
       )}
 
-      {ocrEvents.length > 0 && !ocrProcessing && (
-        <Modal open={true} onClose={() => { setOCREvents([]); setOCRPlanName(''); setOCRRawText(''); }} title="Screenshot Import Results">
+      {ocrDrafts.length > 0 && !ocrProcessing && (
+        <Modal
+          open={true}
+          onClose={() => { setOCRDrafts([]); setOCRPlanName(''); setOCRRawText(''); setOcrConfirmError(null); }}
+          title="Screenshot Import Results"
+        >
           <div className="space-y-4">
             <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm">
               <p className="font-medium text-amber-800 mb-1">OCR Has Limitations</p>
               <p className="text-amber-700">
-                Screenshot scanning cannot reliably detect times from calendar grids. Detected titles are shown below.
-                You can create draft blocks (titles only) and manually assign times in the schedule editor.
+                Screenshot scanning is unreliable. You must confirm the title and time for each event before scheduling.
               </p>
               <div className="text-amber-600 text-xs mt-2 space-y-1">
                 <p><strong>Better option:</strong> Export your calendar as ICS file instead:</p>
@@ -935,36 +990,116 @@ export function PlanList() {
               />
             </div>
             
-            <div>
-              <p className="text-sm text-gray-600 mb-2">
-                {ocrEvents.length} text items detected:
-              </p>
-              <div className="max-h-36 overflow-auto border rounded text-xs">
-                <table className="w-full">
-                  <thead className="bg-gray-50 sticky top-0">
-                    <tr>
-                      <th className="p-2 text-left">Detected Text (Title)</th>
-                      <th className="p-2 text-left">Suggested Time</th>
-                      <th className="p-2 text-left">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ocrEvents.map(event => (
-                      <tr key={event.id}>
-                        <td className="p-2 truncate max-w-[150px]" title={event.title}>{event.title}</td>
-                        <td className="p-2 text-gray-500">{event.startTime || '?'} - {event.endTime || '?'}</td>
-                        <td className="p-2">
-                          {event.startMinutes !== null ? (
-                            <span className="text-green-600">Has time</span>
-                          ) : (
-                            <span className="text-amber-600">Set manually</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            <div className="flex items-center justify-between text-xs text-gray-600">
+              <span>{ocrDrafts.length} items detected</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setOCRDrafts(prev => prev.map(d => isDraftValid(d) ? { ...d, confirmed: true } : d))}
+                  className="text-blue-600 hover:underline"
+                >
+                  Confirm all valid
+                </button>
+                <button
+                  onClick={() => setOCRDrafts(prev => prev.map(d => ({ ...d, confirmed: false })))}
+                  className="text-blue-600 hover:underline"
+                >
+                  Clear all
+                </button>
               </div>
+            </div>
+
+            <div className="max-h-64 overflow-auto border rounded text-xs">
+              <table className="w-full">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="p-2 text-left">Confirm</th>
+                    <th className="p-2 text-left">Day</th>
+                    <th className="p-2 text-left">Start</th>
+                    <th className="p-2 text-left">End</th>
+                    <th className="p-2 text-left">Title</th>
+                    <th className="p-2 text-left">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ocrDrafts.map(draft => {
+                    const valid = isDraftValid(draft);
+                    const status = !draft.titleInput.trim()
+                      ? 'Needs title'
+                      : !draft.dayInput
+                        ? 'Needs day'
+                        : draft.startMinutesInput === null || draft.endMinutesInput === null || draft.endMinutesInput <= draft.startMinutesInput
+                          ? 'Needs time'
+                          : draft.confirmed ? 'Confirmed' : 'Ready';
+                    return (
+                      <tr key={draft.id} className={valid ? '' : 'bg-red-50 text-gray-500'}>
+                        <td className="p-2">
+                          <input
+                            type="checkbox"
+                            checked={draft.confirmed}
+                            disabled={!valid}
+                            onChange={(e) => updateOcrDraft(draft.id, { confirmed: e.target.checked })}
+                          />
+                        </td>
+                        <td className="p-2">
+                          <select
+                            value={draft.dayInput || ''}
+                            onChange={(e) => updateOcrDraft(draft.id, { dayInput: e.target.value as Day })}
+                            className="border rounded px-1 py-0.5"
+                          >
+                            <option value="">Day...</option>
+                            {DAYS.map(day => (
+                              <option key={day} value={day}>{day}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-2">
+                          <select
+                            value={draft.startMinutesInput ?? ''}
+                            onChange={(e) => {
+                              const nextStart = e.target.value ? parseInt(e.target.value, 10) : null;
+                              let nextEnd = draft.endMinutesInput;
+                              if (nextStart !== null && (nextEnd === null || nextEnd <= nextStart)) {
+                                const candidate = nextStart + 60;
+                                nextEnd = candidate <= 930 ? candidate : nextStart + 15;
+                              }
+                              updateOcrDraft(draft.id, { startMinutesInput: nextStart, endMinutesInput: nextEnd });
+                            }}
+                            className="border rounded px-1 py-0.5"
+                          >
+                            <option value="">Start...</option>
+                            {timeOptions.slice(0, -1).map(m => (
+                              <option key={m} value={m}>{minutesToTimeDisplay(m)}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-2">
+                          <select
+                            value={draft.endMinutesInput ?? ''}
+                            onChange={(e) => {
+                              const nextEnd = e.target.value ? parseInt(e.target.value, 10) : null;
+                              updateOcrDraft(draft.id, { endMinutesInput: nextEnd });
+                            }}
+                            className="border rounded px-1 py-0.5"
+                          >
+                            <option value="">End...</option>
+                            {timeOptions.slice(1).map(m => (
+                              <option key={m} value={m}>{minutesToTimeDisplay(m)}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-2">
+                          <input
+                            value={draft.titleInput}
+                            onChange={(e) => updateOcrDraft(draft.id, { titleInput: e.target.value })}
+                            className="border rounded px-1 py-0.5 w-full"
+                          />
+                        </td>
+                        <td className="p-2">{status}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
             
             <details className="text-xs">
@@ -974,9 +1109,13 @@ export function PlanList() {
               </pre>
             </details>
 
+            {ocrConfirmError && (
+              <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{ocrConfirmError}</p>
+            )}
+
             <div className="flex justify-end gap-3 pt-2">
               <button
-                onClick={() => { setOCREvents([]); setOCRPlanName(''); setOCRRawText(''); }}
+                onClick={() => { setOCRDrafts([]); setOCRPlanName(''); setOCRRawText(''); setOcrConfirmError(null); }}
                 className="px-4 py-2 text-sm border rounded hover:bg-gray-50"
               >
                 Cancel
@@ -987,11 +1126,11 @@ export function PlanList() {
                 className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
                 data-testid="create-plan-from-ocr"
               >
-                Create Draft Plan
+                Create Plan from Confirmed Events
               </button>
             </div>
             <p className="text-xs text-gray-500 text-center">
-              Blocks without detected times will be placed at 6:30 AM. Edit times in the schedule view.
+              Only confirmed events will be scheduled. Unconfirmed items stay in this review list.
             </p>
           </div>
         </Modal>
