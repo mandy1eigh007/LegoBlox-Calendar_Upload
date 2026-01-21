@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plan, BlockTemplate, Day, DAYS, HardDate } from '@/state/types';
 import { generateScheduleSuggestions, SchedulerResult, SuggestedBlock } from '@/lib/predictiveScheduler';
+import { getProbabilityTableStats, loadProbabilityTable } from '@/lib/probabilityLearning';
 import { minutesToTimeDisplay } from '@/lib/time';
 import { Modal } from './Modal';
 import { Loader2, Check, X, AlertTriangle, Sparkles, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
@@ -14,6 +15,8 @@ interface ScheduleSuggestionPanelProps {
   onAccept: (blocks: SuggestedBlock[]) => void;
   onUpdateHardDates: (hardDates: HardDate[]) => void;
 }
+
+const MIN_TRAINING_EVENTS = 20;
 
 export function ScheduleSuggestionPanel({
   plan,
@@ -35,6 +38,8 @@ export function ScheduleSuggestionPanel({
     day: 'Monday',
     description: ''
   });
+  const trainingStats = getProbabilityTableStats(loadProbabilityTable());
+  const insufficientTraining = trainingStats.totalEvents < MIN_TRAINING_EVENTS;
 
   useEffect(() => {
     setHardDates(plan.settings.hardDates || []);
@@ -69,6 +74,20 @@ export function ScheduleSuggestionPanel({
         distributeAcrossWeeks: scope === 'all',
         hardDates: hardDates.map(hd => ({ week: hd.week, day: hd.day })),
       });
+
+      if (insufficientTraining) {
+        const fallback = {
+          ...local,
+          suggestions: local.suggestions.map(suggestion => ({
+            ...suggestion,
+            reason: suggestion.reason || 'Heuristic draft (insufficient training data)',
+          })),
+        };
+        setResult(fallback);
+        setSelectedBlocks(new Set(fallback.suggestions.map(s => s.id)));
+        setIsGenerating(false);
+        return;
+      }
 
       // Build a toPlace list from coverage gaps
       const toPlace: { templateId: string | null; durationMinutes: number; count?: number }[] = [];
@@ -223,6 +242,16 @@ export function ScheduleSuggestionPanel({
                 </div>
               </div>
             </div>
+            <div className={`rounded-lg border p-3 ${insufficientTraining ? 'bg-amber-900/20 border-amber-500/40' : 'bg-secondary/40 border-border'}`}>
+              <div className="text-sm text-foreground">
+                Training data: {trainingStats.totalEvents} events across {trainingStats.uniqueTemplates} templates.
+              </div>
+              {insufficientTraining && (
+                <p className="text-xs text-amber-300 mt-1">
+                  Insufficient training data. Suggestions will use a heuristic draft until you import more schedules or accept adjustments.
+                </p>
+              )}
+            </div>
 
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">Generation Scope</label>
@@ -352,6 +381,11 @@ export function ScheduleSuggestionPanel({
 
         {result && !isGenerating && (
           <div className="space-y-4">
+            {insufficientTraining && (
+              <div className="bg-amber-900/30 border border-amber-500/30 rounded-lg p-3 text-sm text-amber-200">
+                Insufficient training data. Showing a heuristic draft so you can still confirm or adjust placements.
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-3 text-center">
               <div className="bg-secondary/50 rounded-lg p-3">
                 <div className="text-2xl font-bold text-foreground">{result.stats.totalBlocks}</div>
