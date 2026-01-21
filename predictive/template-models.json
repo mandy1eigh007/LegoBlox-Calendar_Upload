@@ -1,60 +1,51 @@
 {
-  "generatedAt": "2026-01-21T04:48:00.466Z",
+  "generatedAt": "2026-01-21T05:01:33.546Z",
   "models": [
     {
-      "templateId": "UNASSIGNED",
-      "totalCount": 22,
+      "templateId": "Math",
+      "totalCount": 21,
       "weekCounts": {
         "1": 2,
         "2": 2,
         "3": 2,
         "4": 2,
-        "5": 3,
+        "5": 2,
         "6": 2,
         "7": 2,
         "8": 2,
         "9": 5
       },
       "dayCounts": {
-        "1": 1,
         "2": 10,
         "3": 11
       },
       "slotCounts": {
-        "0": 1,
         "6": 2,
         "12": 1,
         "24": 18
       },
       "durationCounts": {
         "60": 1,
-        "120": 20,
-        "300": 1
+        "120": 20
       },
       "locationCounts": {
         "Microsoft Teams Meeting": 2,
-        "Classroom 2": 19,
-        "": 1
+        "Classroom 2": 19
       },
       "topSlots": [
         {
           "slotIndex": 24,
-          "probability": 0.8181818181818182,
+          "probability": 0.8571428571428571,
           "count": 18
         },
         {
           "slotIndex": 6,
-          "probability": 0.09090909090909091,
+          "probability": 0.09523809523809523,
           "count": 2
         },
         {
-          "slotIndex": 0,
-          "probability": 0.045454545454545456,
-          "count": 1
-        },
-        {
           "slotIndex": 12,
-          "probability": 0.045454545454545456,
+          "probability": 0.047619047619047616,
           "count": 1
         }
       ]

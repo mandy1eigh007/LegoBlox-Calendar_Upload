@@ -53,6 +53,7 @@ const SKIP_TITLE_PATTERNS = [
   /hold for transit/i,
   /\btravel\b/i,
   /^lunch\b/i,
+  /\bua\b/i,
   /^eli out\b/i,
 ];
 

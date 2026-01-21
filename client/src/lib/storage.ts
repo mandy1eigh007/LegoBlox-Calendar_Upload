@@ -173,6 +173,16 @@ export function loadState(): { state: AppState; error?: string } {
         template.isArchived = false;
       }
     }
+
+    const mathTemplateExists = parsed.templates.some((template: { goldenRuleBucketId?: string; title?: string }) =>
+      template.goldenRuleBucketId === 'MATH' || (template.title || '').toLowerCase() === 'math'
+    );
+    if (!mathTemplateExists) {
+      const seedMath = createSeedTemplates().find(template => template.goldenRuleBucketId === 'MATH');
+      if (seedMath) {
+        parsed.templates.push(seedMath);
+      }
+    }
     
     return { state: parsed };
   } catch (e) {

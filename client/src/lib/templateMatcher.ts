@@ -35,6 +35,7 @@ const BUCKET_KEYWORDS: Record<GoldenRuleBucketId, string[]> = {
   'PORTFOLIO': ['portfolio', 'apprenticeship portfolio', 'work samples'],
   'CAREER_PLAN': ['career plan', 'career planning', 'individual career', 'icp', 'career path'],
   'APP_PREP': ['application prep', 'app prep', 'preparation'],
+  'MATH': ['math', 'mathematics', 'math lab', 'math class', 'pace math', 'trp math'],
   'ACE_INSTRUCTION': ['ace instruction', 'ace class'],
   'ACES': ['aces', 'ace', 'adverse childhood', 'trauma'],
   'SHOP_INTRO': ['shop intro', 'shop introduction', 'intro to shop', 'workshop intro', 'shop orientation', 'shop safety'],
