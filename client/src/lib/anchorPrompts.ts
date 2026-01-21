@@ -10,6 +10,7 @@ export type AnchorPromptConfig = {
   countsTowardGoldenRule: boolean;
   defaultDurationMinutes?: number;
   supportsWeekly?: boolean;
+  defaultAfterHours?: boolean;
 };
 
 export type AnchorDateSelection = {
@@ -58,6 +59,7 @@ export const ANCHOR_PROMPTS: AnchorPromptConfig[] = [
     defaultTitle: 'Speed Mentoring',
     countsTowardGoldenRule: false,
     defaultDurationMinutes: 120,
+    defaultAfterHours: true,
   },
   {
     id: 'guest_speakers',
@@ -136,6 +138,7 @@ export function buildAnchorDateDraft(
     title: prompt.defaultTitle,
     countsTowardGoldenRule: prompt.countsTowardGoldenRule,
     isLocked: true,
+    isAfterHours: prompt.defaultAfterHours ?? false,
     created: selection.createNow,
   };
 }
@@ -155,6 +158,7 @@ export function buildAnchorWeeklyDraft(
     title: prompt.defaultTitle,
     countsTowardGoldenRule: prompt.countsTowardGoldenRule,
     isLocked: true,
+    isAfterHours: prompt.defaultAfterHours ?? false,
     created: selection.createNow,
   };
 }
@@ -203,6 +207,7 @@ function buildAnchorBlockFromDate(
       isRecurrenceException: false,
       resource: matchedTemplate?.defaultResource || undefined,
       isLocked: draft.isLocked,
+      isAfterHours: draft.isAfterHours,
     },
   };
 }
@@ -259,6 +264,7 @@ export function buildBlocksFromDraft(
         isRecurrenceException: false,
         resource: matchedTemplate?.defaultResource || undefined,
         isLocked: draft.isLocked,
+        isAfterHours: draft.isAfterHours,
       });
     }
   }

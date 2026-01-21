@@ -221,6 +221,7 @@ export function PartnerAvailabilityPanel({
           isRecurrenceException: false,
           resource: matchedTemplate?.defaultResource || undefined,
           isLocked: true,
+          isAfterHours: false,
         };
         onAddBlock(block);
       }

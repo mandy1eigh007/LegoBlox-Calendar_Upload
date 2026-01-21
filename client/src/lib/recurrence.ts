@@ -19,6 +19,7 @@ export function createRecurringBlocks(
     countsTowardGoldenRule: baseBlock.countsTowardGoldenRule,
     goldenRuleBucketId: baseBlock.goldenRuleBucketId,
     isLocked: baseBlock.isLocked ?? false,
+    isAfterHours: baseBlock.isAfterHours ?? false,
   };
   
   const blocks: PlacedBlock[] = [];
@@ -59,6 +60,7 @@ export function createRecurringBlocks(
         partnerPPE: baseBlock.partnerPPE,
         partnerParking: baseBlock.partnerParking,
         isLocked: baseBlock.isLocked,
+        isAfterHours: baseBlock.isAfterHours,
       };
 
       if (week === baseBlock.week && day === baseBlock.day) {
@@ -136,6 +138,7 @@ export function expandRecurringSeries(
           recurrenceSeriesId: series.id,
           isRecurrenceException: false,
           isLocked: series.isLocked ?? false,
+          isAfterHours: series.isAfterHours ?? false,
         });
       }
     }

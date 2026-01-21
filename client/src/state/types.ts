@@ -21,6 +21,7 @@ export interface AnchorDateDraft {
   title: string;
   countsTowardGoldenRule: boolean;
   isLocked: boolean;
+  isAfterHours?: boolean;
   created?: boolean;
 }
 
@@ -35,6 +36,7 @@ export interface AnchorWeeklyDraft {
   title: string;
   countsTowardGoldenRule: boolean;
   isLocked: boolean;
+  isAfterHours?: boolean;
   created?: boolean;
 }
 
@@ -193,6 +195,7 @@ export interface PlacedBlock {
   partnerPPE?: string;
   partnerParking?: string;
   isLocked?: boolean;
+  isAfterHours?: boolean;
 }
 
 export interface RecurrenceSeries {
@@ -206,6 +209,7 @@ export interface RecurrenceSeries {
   countsTowardGoldenRule: boolean;
   goldenRuleBucketId: GoldenRuleBucketId | null;
   isLocked?: boolean;
+  isAfterHours?: boolean;
 }
 
 export type SchedulerMode = 'manual' | 'predictive';

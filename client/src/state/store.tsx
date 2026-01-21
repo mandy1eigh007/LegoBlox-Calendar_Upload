@@ -112,6 +112,7 @@ function reducer(state: AppState, action: Action): AppState {
                     partnerPPE: block.partnerPPE,
                     partnerParking: block.partnerParking,
                     isLocked: block.isLocked,
+                    isAfterHours: block.isAfterHours,
                   };
                 }
                 return b;
@@ -144,6 +145,7 @@ function reducer(state: AppState, action: Action): AppState {
                     partnerPPE: block.partnerPPE,
                     partnerParking: block.partnerParking,
                     isLocked: block.isLocked,
+                    isAfterHours: block.isAfterHours,
                   };
                 }
                 return b;
@@ -159,6 +161,7 @@ function reducer(state: AppState, action: Action): AppState {
                     countsTowardGoldenRule: block.countsTowardGoldenRule,
                     goldenRuleBucketId: block.goldenRuleBucketId,
                     isLocked: block.isLocked,
+                    isAfterHours: block.isAfterHours,
                   };
                 }
                 return s;

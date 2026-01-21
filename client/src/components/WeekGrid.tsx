@@ -140,6 +140,9 @@ function DraggablePlacedBlock({
         {isLocked && (
           <p className="text-[10px] font-semibold bg-black/30 px-1 rounded mb-0.5 inline-block">Locked</p>
         )}
+        {block.isAfterHours && (
+          <p className="text-[10px] font-semibold bg-black/30 px-1 rounded mb-0.5 inline-block">After hours</p>
+        )}
         <p className="text-xs font-medium truncate">{title}</p>
         {blockHeight > 30 && (
           <p className="text-xs opacity-80 truncate">

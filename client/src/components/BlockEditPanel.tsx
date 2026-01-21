@@ -47,6 +47,7 @@ export function BlockEditPanel({ block, templates, plan, onUpdate, onDelete, onD
   const [partnerPPE, setPartnerPPE] = useState(block.partnerPPE || '');
   const [partnerParking, setPartnerParking] = useState(block.partnerParking || '');
   const [isLocked, setIsLocked] = useState(!!block.isLocked);
+  const [isAfterHours, setIsAfterHours] = useState(!!block.isAfterHours);
   const [showPartnerInfo, setShowPartnerInfo] = useState(Boolean(block.partnerOrg || block.partnerContact));
   
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -80,6 +81,7 @@ export function BlockEditPanel({ block, templates, plan, onUpdate, onDelete, onD
     setPartnerPPE(block.partnerPPE || '');
     setPartnerParking(block.partnerParking || '');
     setIsLocked(!!block.isLocked);
+    setIsAfterHours(!!block.isAfterHours);
     setShowPartnerInfo(Boolean(block.partnerOrg || block.partnerContact));
     setRecurrenceDays([block.day]);
     setRecurrenceStartWeek(block.week);
@@ -184,6 +186,7 @@ export function BlockEditPanel({ block, templates, plan, onUpdate, onDelete, onD
       partnerPPE: partnerPPE || undefined,
       partnerParking: partnerParking || undefined,
       isLocked,
+      isAfterHours,
     }, scope);
   };
   
@@ -223,6 +226,7 @@ export function BlockEditPanel({ block, templates, plan, onUpdate, onDelete, onD
       resource: resource || undefined,
       category: category || undefined,
       isLocked,
+      isAfterHours,
     };
 
     if (existingSeries && onUpdateRecurrence) {
@@ -387,6 +391,25 @@ export function BlockEditPanel({ block, templates, plan, onUpdate, onDelete, onD
           {isLocked && (
             <p className="text-xs text-amber-600">
               Locked blocks cannot be dragged or resized. Unlock to change time or duration.
+            </p>
+          )}
+
+          <div className="flex items-center gap-2">
+            <input
+              id="after-hours"
+              type="checkbox"
+              checked={isAfterHours}
+              onChange={(e) => setIsAfterHours(e.target.checked)}
+              className="rounded"
+              data-testid="after-hours-toggle"
+            />
+            <label htmlFor="after-hours" className="text-sm text-foreground">
+              After-hours (note on calendar)
+            </label>
+          </div>
+          {isAfterHours && (
+            <p className="text-xs text-muted-foreground">
+              Marks this event as after-hours without extending the schedule grid.
             </p>
           )}
           

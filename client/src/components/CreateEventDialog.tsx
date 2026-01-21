@@ -18,6 +18,7 @@ export type CreateEventDefaults = {
   resource?: string;
   notes?: string;
   isLocked?: boolean;
+  isAfterHours?: boolean;
 };
 
 interface CreateEventDialogProps {
@@ -47,6 +48,7 @@ export function CreateEventDialog({ open, onClose, onCreate, templates, plan, on
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [saveAsTemplate, setSaveAsTemplate] = useState(false);
   const [isLocked, setIsLocked] = useState(true);
+  const [isAfterHours, setIsAfterHours] = useState(false);
   const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>('none');
   const [recurrenceDays, setRecurrenceDays] = useState<Day[]>([day]);
   const [recurrenceStartWeek, setRecurrenceStartWeek] = useState(1);
@@ -64,6 +66,7 @@ export function CreateEventDialog({ open, onClose, onCreate, templates, plan, on
     setResource(initialValues.resource ?? 'Other');
     setNotes(initialValues.notes ?? '');
     setIsLocked(initialValues.isLocked ?? true);
+    setIsAfterHours(initialValues.isAfterHours ?? false);
     setRecurrenceType('none');
     setRecurrenceDays([initialValues.day ?? 'Monday']);
     setRecurrenceStartWeek(initialValues.week ?? 1);
@@ -100,6 +103,7 @@ export function CreateEventDialog({ open, onClose, onCreate, templates, plan, on
       isRecurrenceException: false,
       resource,
       isLocked,
+      isAfterHours,
     };
 
     let newTemplate: BlockTemplate | null = null;
@@ -129,12 +133,13 @@ export function CreateEventDialog({ open, onClose, onCreate, templates, plan, on
         return;
       }
       const { series, blocks } = createRecurringBlocks(block, pattern, plan);
+      series.isAfterHours = isAfterHours;
       onCreateRecurrence(blocks, series, newTemplate);
     } else {
       onCreate(block, newTemplate);
     }
     // reset
-    setTitle(''); setOrganization(''); setContactName(''); setContactEmail(''); setContactPhone(''); setNotes(''); setSaveAsTemplate(false); setIsLocked(true);
+    setTitle(''); setOrganization(''); setContactName(''); setContactEmail(''); setContactPhone(''); setNotes(''); setSaveAsTemplate(false); setIsLocked(true); setIsAfterHours(false);
     setRecurrenceType('none'); setRecurrenceDays([day]); setRecurrenceStartWeek(week); setRecurrenceEndWeek(plan.settings.weeks);
     onClose();
   };
@@ -203,6 +208,10 @@ export function CreateEventDialog({ open, onClose, onCreate, templates, plan, on
           <div className="flex items-center gap-2">
             <input id="lock-placement" type="checkbox" checked={isLocked} onChange={(e) => setIsLocked(e.target.checked)} />
             <label htmlFor="lock-placement" className="text-sm">Lock placement (partner scheduled)</label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input id="after-hours" type="checkbox" checked={isAfterHours} onChange={(e) => setIsAfterHours(e.target.checked)} />
+            <label htmlFor="after-hours" className="text-sm">After-hours note</label>
           </div>
 
           <div className="border border-border rounded-lg p-3 space-y-3">

@@ -337,7 +337,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
     }
 
     for (const block of blocks) {
-      dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block: { ...block, isLocked: lockIcsEvents } } });
+      dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block: { ...block, isLocked: lockIcsEvents, isAfterHours: false } } });
     }
 
     setImportSuccess(`Imported ${included} events${skipped > 0 ? ` (${skipped} skipped)` : ''}.`);
@@ -412,6 +412,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
         recurrenceSeriesId: null,
         isRecurrenceException: false,
         isLocked: lockCsvEvents,
+        isAfterHours: false,
       };
 
       dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });

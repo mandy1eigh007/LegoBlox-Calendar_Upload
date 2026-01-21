@@ -167,6 +167,7 @@ export function ScheduleSuggestionPanel({
               isRecurrenceException: false,
               resource: undefined,
               isLocked: false,
+              isAfterHours: false,
               isNew: true,
               bucketLabel: p.templateId ? (templates.find(t => t.id === p.templateId)?.title || '') : 'Unassigned',
               confidence,

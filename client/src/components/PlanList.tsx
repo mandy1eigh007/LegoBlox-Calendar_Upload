@@ -512,6 +512,7 @@ export function PlanList() {
         recurrenceSeriesId: null,
         isRecurrenceException: false,
         isLocked: lockCsvEvents,
+        isAfterHours: false,
       };
     });
 
@@ -644,6 +645,7 @@ export function PlanList() {
     const finalBlocks = blocksWithAssignments.map(block => ({
       ...block,
       isLocked: lockIcsEvents,
+      isAfterHours: false,
     }));
 
     const plan: Plan = {

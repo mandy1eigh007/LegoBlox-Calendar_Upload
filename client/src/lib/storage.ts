@@ -207,6 +207,9 @@ export function loadState(): { state: AppState; error?: string } {
                   : plan.settings.startDate || '';
                 (entry as any).date = date;
               }
+              if ((entry as any).isAfterHours === undefined) {
+                (entry as any).isAfterHours = false;
+              }
             }
             continue;
           }
@@ -224,6 +227,7 @@ export function loadState(): { state: AppState; error?: string } {
               title: legacy.title || '',
               countsTowardGoldenRule: !!legacy.countsTowardGoldenRule,
               isLocked: legacy.isLocked ?? true,
+              isAfterHours: false,
               created: legacy.created,
             },
           ];
@@ -245,6 +249,9 @@ export function loadState(): { state: AppState; error?: string } {
       for (const block of plan.blocks) {
         if (block.isLocked === undefined) {
           block.isLocked = false;
+        }
+        if (block.isAfterHours === undefined) {
+          block.isAfterHours = false;
         }
       }
     }

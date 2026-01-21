@@ -261,6 +261,7 @@ export function Builder() {
       isRecurrenceException: false,
       resource: template.defaultResource || undefined,
       isLocked: false,
+      isAfterHours: false,
     };
     
     dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
@@ -854,6 +855,36 @@ export function Builder() {
                   );
                 })()
               )}
+              {(() => {
+                const afterHoursBlocks = plan.blocks.filter(b => b.week === currentWeek && b.isAfterHours);
+                if (afterHoursBlocks.length === 0) return null;
+                return (
+                  <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-2">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">After-hours notes</p>
+                      <p className="text-xs text-muted-foreground">
+                        These events happen after hours and are noted without extending the grid.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      {afterHoursBlocks.map(block => (
+                        <button
+                          key={block.id}
+                          onClick={() => setSelectedBlockId(block.id)}
+                          className="w-full text-left text-xs px-2 py-1 border border-border rounded hover:bg-secondary/50"
+                        >
+                          <div className="font-medium truncate">
+                            {block.titleOverride || state.templates.find(t => t.id === block.templateId)?.title || 'Untitled'}
+                          </div>
+                          <div className="text-muted-foreground">
+                            {block.day.slice(0, 3)} {minutesToTimeDisplay(block.startMinutes)} ({block.durationMinutes}m)
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
               <GoldenRuleTotals 
                 plan={plan} 
                 templates={state.templates} 
