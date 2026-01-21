@@ -143,6 +143,172 @@ interface ParsedICSEvent {
   description?: string;
   originalTimezone?: string;
   isUTC?: boolean;
+  rrule?: string;
+  recurrenceId?: Date;
+  exdates?: Date[];
+  status?: string;
+}
+
+interface ParsedRRule {
+  freq: string;
+  interval: number;
+  byDay: string[];
+  count?: number;
+  until?: Date;
+}
+
+const RRULE_DAY_TO_INDEX: Record<string, number> = {
+  SU: 0,
+  MO: 1,
+  TU: 2,
+  WE: 3,
+  TH: 4,
+  FR: 5,
+  SA: 6,
+};
+
+function parseRRule(rrule: string): ParsedRRule | null {
+  const parts = rrule.split(';');
+  const data: ParsedRRule = {
+    freq: '',
+    interval: 1,
+    byDay: [],
+  };
+  for (const part of parts) {
+    const [rawKey, rawValue] = part.split('=');
+    if (!rawKey || !rawValue) continue;
+    const key = rawKey.toUpperCase();
+    const value = rawValue.toUpperCase();
+    if (key === 'FREQ') data.freq = value;
+    if (key === 'INTERVAL') data.interval = Math.max(1, parseInt(value, 10) || 1);
+    if (key === 'COUNT') data.count = Math.max(1, parseInt(value, 10) || 0);
+    if (key === 'BYDAY') {
+      data.byDay = value.split(',').map(v => v.trim()).filter(Boolean);
+    }
+    if (key === 'UNTIL') {
+      const parsed = parseICSDate(value);
+      if (parsed.date) data.until = parsed.date;
+    }
+  }
+  if (!data.freq) return null;
+  return data;
+}
+
+function getWeekStartMonday(date: Date): Date {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function getDayOffsetFromMonday(dayToken: string): number | null {
+  const idx = RRULE_DAY_TO_INDEX[dayToken];
+  if (idx === undefined) return null;
+  return idx === 0 ? 6 : idx - 1;
+}
+
+function expandRecurringEvents(events: ParsedICSEvent[]): ParsedICSEvent[] {
+  const exceptions = new Map<string, ParsedICSEvent>();
+  const exceptionKeys = new Set<string>();
+  const exceptionEvents = events.filter(e => e.recurrenceId && e.uid);
+  for (const ex of exceptionEvents) {
+    const key = `${ex.uid}-${ex.recurrenceId!.getTime()}`;
+    exceptions.set(key, ex);
+    exceptionKeys.add(key);
+  }
+
+  const expanded: ParsedICSEvent[] = [];
+  const nonRecurring = events.filter(e => !e.rrule || e.recurrenceId);
+  for (const e of nonRecurring) {
+    if (e.status && e.status.toUpperCase() === 'CANCELLED') continue;
+    expanded.push(e);
+  }
+
+  const recurringBases = events.filter(e => e.rrule && !e.recurrenceId);
+  const MAX_OCCURRENCES = 2000;
+
+  for (const base of recurringBases) {
+    if (base.status && base.status.toUpperCase() === 'CANCELLED') continue;
+    const parsed = base.rrule ? parseRRule(base.rrule) : null;
+    if (!parsed || parsed.freq !== 'WEEKLY') {
+      expanded.push(base);
+      continue;
+    }
+
+    const byDays = parsed.byDay.length > 0
+      ? parsed.byDay
+      : [Object.keys(RRULE_DAY_TO_INDEX).find(k => RRULE_DAY_TO_INDEX[k] === base.dtstart.getDay()) || 'MO'];
+
+    const durationMs = base.dtend.getTime() - base.dtstart.getTime();
+    const startWeek = getWeekStartMonday(base.dtstart);
+    const until = parsed.until ?? new Date(base.dtstart.getTime() + 365 * 24 * 60 * 60 * 1000);
+
+    let occurrences = 0;
+    for (let weekOffset = 0; ; weekOffset += parsed.interval) {
+      const weekBase = new Date(startWeek);
+      weekBase.setDate(startWeek.getDate() + weekOffset * 7);
+
+      for (const dayToken of byDays) {
+        const offset = getDayOffsetFromMonday(dayToken);
+        if (offset === null) continue;
+        const occDate = new Date(weekBase);
+        occDate.setDate(weekBase.getDate() + offset);
+        occDate.setHours(base.dtstart.getHours(), base.dtstart.getMinutes(), base.dtstart.getSeconds(), base.dtstart.getMilliseconds());
+
+        if (occDate < base.dtstart) continue;
+        if (occDate > until) {
+          weekOffset = Number.MAX_SAFE_INTEGER;
+          break;
+        }
+
+        if (parsed.count && occurrences >= parsed.count) {
+          weekOffset = Number.MAX_SAFE_INTEGER;
+          break;
+        }
+
+        if (occurrences >= MAX_OCCURRENCES) {
+          weekOffset = Number.MAX_SAFE_INTEGER;
+          break;
+        }
+
+        if (base.exdates && base.exdates.some(ex => ex.getTime() === occDate.getTime())) {
+          occurrences++;
+          continue;
+        }
+
+        const key = `${base.uid}-${occDate.getTime()}`;
+        const exception = exceptions.get(key);
+        if (exception) {
+          if (!exception.status || exception.status.toUpperCase() !== 'CANCELLED') {
+            expanded.push(exception);
+          }
+          exceptionKeys.delete(key);
+        } else {
+          expanded.push({
+            ...base,
+            dtstart: occDate,
+            dtend: new Date(occDate.getTime() + durationMs),
+            rrule: undefined,
+            recurrenceId: undefined,
+          });
+        }
+
+        occurrences++;
+      }
+
+      if (weekOffset >= Number.MAX_SAFE_INTEGER) break;
+    }
+  }
+
+  for (const [key, ex] of Array.from(exceptions.entries())) {
+    if (!exceptionKeys.has(key)) continue;
+    if (ex.status && ex.status.toUpperCase() === 'CANCELLED') continue;
+    expanded.push(ex);
+  }
+
+  return expanded;
 }
 
 function parseICSDate(dateStr: string, tzid?: string): { date: Date | null; isUTC: boolean; tzid?: string } {
@@ -225,6 +391,24 @@ export function parseICS(content: string): { events: ParsedICSEvent[]; detectedT
       case 'SUMMARY':
         currentEvent.summary = value;
         break;
+      case 'RRULE':
+        currentEvent.rrule = value;
+        break;
+      case 'RECURRENCE-ID': {
+        const parsed = parseICSDate(value, tzid);
+        currentEvent.recurrenceId = parsed.date || undefined;
+        break;
+      }
+      case 'EXDATE': {
+        const values = value.split(',').map(v => v.trim()).filter(Boolean);
+        const parsedDates = values
+          .map(v => parseICSDate(v, tzid).date)
+          .filter((d): d is Date => !!d);
+        if (parsedDates.length > 0) {
+          currentEvent.exdates = (currentEvent.exdates || []).concat(parsedDates);
+        }
+        break;
+      }
       case 'DTSTART': {
         const parsed = parseICSDate(value, tzid);
         currentEvent.dtstart = parsed.date || undefined;
@@ -242,6 +426,9 @@ export function parseICS(content: string): { events: ParsedICSEvent[]; detectedT
         break;
       case 'DESCRIPTION':
         currentEvent.description = value.replace(/\\n/g, '\n');
+        break;
+      case 'STATUS':
+        currentEvent.status = value;
         break;
     }
   }
@@ -291,8 +478,9 @@ export function parseICSWithDateRange(content: string): {
   detectedTimezone: string | null;
 } {
   const { events: rawEvents, detectedTimezone } = parseICS(content);
+  const expandedEvents = expandRecurringEvents(rawEvents);
   
-  const events: ICSEventWithDate[] = rawEvents.map(e => {
+  const events: ICSEventWithDate[] = expandedEvents.map(e => {
     const startMinutesOriginal = e.dtstart.getHours() * 60 + e.dtstart.getMinutes();
     const endMinutesOriginal = e.dtend.getHours() * 60 + e.dtend.getMinutes();
     const durationMinutesOriginal = endMinutesOriginal - startMinutesOriginal;
@@ -452,7 +640,8 @@ export function importICSToBlocks(
   templates: BlockTemplate[],
   referenceDate: Date = new Date()
 ): { blocks: PlacedBlock[]; skipped: number } {
-  const { events } = parseICS(content);
+  const { events: rawEvents } = parseICS(content);
+  const events = expandRecurringEvents(rawEvents);
   const blocks: PlacedBlock[] = [];
   let skipped = 0;
   
