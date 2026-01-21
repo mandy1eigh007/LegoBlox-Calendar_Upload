@@ -413,11 +413,17 @@ export function ScheduleSuggestionPanel({
               </div>
               <div className="bg-secondary/50 rounded-lg p-3">
                 <div className="text-2xl font-bold text-foreground">
-                  {result.coverage.filter(c => c.gap <= 15).length}/{result.coverage.length}
+                  {result.coverage.filter(c => Math.abs(c.gap) <= 15).length}/{result.coverage.length}
                 </div>
                 <div className="text-xs text-muted-foreground">Budgets Met</div>
               </div>
             </div>
+
+            {result.suggestions.length === 0 && (
+              <div className="bg-secondary/30 border border-border rounded-lg p-3 text-sm text-muted-foreground">
+                No gaps detected for the selected scope. If you expected suggestions, check that blocks are assigned to Golden Rule templates.
+              </div>
+            )}
 
             {result.conflicts.length > 0 && (
               <div className="bg-amber-900/30 border border-amber-500/30 rounded-lg p-3">
