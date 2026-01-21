@@ -30,7 +30,7 @@ type CsvColumnMapping = {
   location: number;
   notes: number;
 };
-type CsvMappingPreset = { name: string; mapping: CsvColumnMapping };
+type CsvMappingPreset = { name: string; mapping: CsvColumnMapping; headers?: string[] };
 
 const CSV_PRESET_STORAGE_KEY = 'homeCsvMappingPresets';
 
@@ -112,6 +112,9 @@ export function PlanList() {
       localStorage.setItem(CSV_PRESET_STORAGE_KEY, JSON.stringify(csvPresets));
     } catch {}
   }, [csvPresets]);
+
+  const normalizeCsvHeaders = (headers: string[]) => headers.map(h => h.trim().toLowerCase());
+  const headersMatch = (a: string[], b: string[]) => a.length === b.length && a.every((h, i) => h === b[i]);
 
   const timeOptions = useMemo(() => {
     const options: number[] = [];
@@ -359,14 +362,22 @@ export function PlanList() {
           else if (lowerH.includes('note') || lowerH.includes('description')) mapping.notes = i;
         });
 
+        const normalizedHeaders = normalizeCsvHeaders(headers);
+        const matchingPreset = csvPresets.find(preset => preset.headers && headersMatch(preset.headers, normalizedHeaders));
+        const appliedMapping = matchingPreset ? matchingPreset.mapping : mapping;
+
         setCSVContent(content);
         setCSVHeaders(headers);
-        setCSVMapping(mapping);
+        setCSVMapping(appliedMapping);
         setCsvPlanName(`Imported from ${file.name.replace(/\.[^/.]+$/, '')}`);
         setCSVDrafts([]);
-        setSelectedCsvPreset('');
+        setSelectedCsvPreset(matchingPreset ? matchingPreset.name : '');
         setCsvPresetName('');
-        setCsvPresetNotice(null);
+        setCsvPresetNotice(
+          matchingPreset
+            ? `Auto-applied mapping preset "${matchingPreset.name}" based on matching headers.`
+            : null
+        );
         setLockCsvEvents(true);
         setImportError(null);
         setImportSuccess(null);
@@ -473,6 +484,9 @@ export function PlanList() {
     const preset = csvPresets.find(p => p.name === name);
     if (preset) {
       setCSVMapping(preset.mapping);
+      setCsvPresetNotice(`Applied mapping preset "${preset.name}".`);
+    } else {
+      setCsvPresetNotice(null);
     }
   };
 
@@ -482,7 +496,8 @@ export function PlanList() {
       setCsvPresetNotice('Enter a name to save this mapping.');
       return;
     }
-    const next: CsvMappingPreset = { name, mapping: { ...csvMapping } };
+    const headerSignature = csvHeaders.length > 0 ? normalizeCsvHeaders(csvHeaders) : [];
+    const next: CsvMappingPreset = { name, mapping: { ...csvMapping }, headers: headerSignature };
     setCsvPresets(prev => {
       const without = prev.filter(p => p.name !== name);
       return [...without, next];
