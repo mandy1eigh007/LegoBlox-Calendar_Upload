@@ -78,6 +78,12 @@ export const GOLDEN_RULE_BUCKETS = [
 ] as const satisfies ReadonlyArray<{ id: string; label: string; budgetMinutes: number; isFlexible?: boolean }>;
 
 export type GoldenRuleBucketId = typeof GOLDEN_RULE_BUCKETS[number]['id'];
+export type GoldenRuleBucket = {
+  id: GoldenRuleBucketId;
+  label: string;
+  budgetMinutes: number;
+  isFlexible?: boolean;
+};
 
 export const DEFAULT_RESOURCES = ['Classroom 1', 'Classroom 2', 'Shop', 'Offsite', 'Administration'] as const;
 

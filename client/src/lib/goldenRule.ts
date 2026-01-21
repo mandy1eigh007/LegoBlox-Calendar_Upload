@@ -2,6 +2,7 @@ import {
   Plan, 
   BlockTemplate, 
   GOLDEN_RULE_BUCKETS,
+  GoldenRuleBucket,
   GoldenRuleBucketId,
 } from '@/state/types';
 
@@ -28,8 +29,9 @@ export function calculateGoldenRuleTotals(
   templates: BlockTemplate[]
 ): BucketTotal[] {
   const totals: Record<string, number> = {};
+  const buckets = GOLDEN_RULE_BUCKETS as ReadonlyArray<GoldenRuleBucket>;
   
-  for (const bucket of GOLDEN_RULE_BUCKETS) {
+  for (const bucket of buckets) {
     totals[bucket.id] = 0;
   }
   
@@ -51,7 +53,7 @@ export function calculateGoldenRuleTotals(
   
   const adjustments = plan.settings.bucketAdjustments || {};
 
-  return GOLDEN_RULE_BUCKETS.map(bucket => {
+  return buckets.map(bucket => {
     const scheduled = totals[bucket.id];
     const isFlexible = !!bucket.isFlexible;
     const adjustment = isFlexible ? 0 : (adjustments[bucket.id] || 0);

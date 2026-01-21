@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plan, BlockTemplate, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId } from '@/state/types';
+import { Plan, BlockTemplate, GOLDEN_RULE_BUCKETS, GoldenRuleBucket, GoldenRuleBucketId } from '@/state/types';
 import { calculateGoldenRuleSummary } from '@/lib/goldenRule';
 import { formatDuration, formatMinutesAsHoursMinutes } from '@/lib/time';
 
@@ -15,7 +15,7 @@ export function GoldenRuleTotals({ plan, templates, onShowUnassigned, onUpdatePl
   const totals = summary.buckets;
   
   const activeTopics = totals.filter(t => t.scheduled > 0 || t.budget > 0);
-  const borrowableBuckets = GOLDEN_RULE_BUCKETS.filter(b => !b.isFlexible);
+  const borrowableBuckets = (GOLDEN_RULE_BUCKETS as ReadonlyArray<GoldenRuleBucket>).filter(b => !b.isFlexible);
   const adjustmentEntries = Object.entries(plan.settings.bucketAdjustments || {})
     .filter(([, value]) => value !== 0)
     .map(([id, value]) => ({ id: id as GoldenRuleBucketId, value }));
