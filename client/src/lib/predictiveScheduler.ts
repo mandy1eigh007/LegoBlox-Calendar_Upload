@@ -163,6 +163,7 @@ function calculateBucketDeficits(
   const deficits: { bucketId: GoldenRuleBucketId; label: string; deficit: number; perWeek: number }[] = [];
   
   for (const total of totals) {
+    if (total.isFlexible) continue;
     if (total.difference < -15) {
       const deficit = Math.abs(total.difference);
       deficits.push({
@@ -306,16 +307,18 @@ export function generateScheduleSuggestions(
     const existingTotals = calculateGoldenRuleTotals(plan, templates);
     const existing = existingTotals.find(t => t.id === bucket.id);
     const scheduled = existing?.scheduled || 0;
+    const isFlexible = !!existing?.isFlexible;
     const suggested = suggestions
       .filter(s => s.goldenRuleBucketId === bucket.id)
       .reduce((sum, s) => sum + s.durationMinutes, 0);
+    const effectiveBudget = isFlexible ? scheduled + suggested : bucket.budgetMinutes;
     
     return {
       bucketId: bucket.id,
       label: bucket.label,
-      needed: bucket.budgetMinutes,
+      needed: effectiveBudget,
       scheduled: scheduled + suggested,
-      gap: bucket.budgetMinutes - (scheduled + suggested),
+      gap: isFlexible ? 0 : bucket.budgetMinutes - (scheduled + suggested),
     };
   });
   

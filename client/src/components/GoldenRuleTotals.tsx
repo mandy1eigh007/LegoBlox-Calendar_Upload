@@ -32,13 +32,15 @@ export function GoldenRuleTotals({ plan, templates, onShowUnassigned }: GoldenRu
               <div
                 key={item.id}
                 className={`p-2 rounded text-xs transition-all ${
-                  item.met && item.status !== 'over'
-                    ? 'bg-green-100 border-2 border-green-500 shadow-sm'
-                    : item.status === 'over' 
-                      ? 'bg-red-50 border border-red-200' 
-                      : item.status === 'on-target' 
-                        ? 'bg-green-50 border border-green-200' 
-                        : 'bg-gray-50 border border-gray-200'
+                  item.isFlexible
+                    ? 'bg-indigo-50 border border-indigo-200'
+                    : item.met && item.status !== 'over'
+                      ? 'bg-green-100 border-2 border-green-500 shadow-sm'
+                      : item.status === 'over' 
+                        ? 'bg-red-50 border border-red-200' 
+                        : item.status === 'on-target' 
+                          ? 'bg-green-50 border border-green-200' 
+                          : 'bg-gray-50 border border-gray-200'
                 }`}
                 data-testid={`golden-rule-${item.id}`}
               >
@@ -46,18 +48,24 @@ export function GoldenRuleTotals({ plan, templates, onShowUnassigned }: GoldenRu
                   <p className="font-medium truncate flex-1" title={item.label}>
                     {item.label}
                   </p>
-                  {item.met && (
+                  {item.isFlexible ? (
+                    <span className="flex-shrink-0 bg-indigo-500 text-white rounded-full px-1.5 py-0.5 text-xs" title="Flexible target">
+                      Flexible
+                    </span>
+                  ) : item.met ? (
                     <span className="flex-shrink-0 bg-green-500 text-white rounded-full px-1.5 py-0.5 text-xs" title="Hours met!">
                       Done
                     </span>
-                  )}
+                  ) : null}
                 </div>
                 <div className="flex items-center justify-between mt-1">
                   <span className="font-mono">
                     {formatDuration(item.scheduled)} / {formatDuration(item.budget)}
                   </span>
                   <span className={`${
-                    item.status === 'over' 
+                    item.isFlexible
+                      ? 'text-indigo-600'
+                      : item.status === 'over' 
                       ? 'text-red-600' 
                       : item.met 
                         ? 'text-green-700 font-semibold'
@@ -65,6 +73,7 @@ export function GoldenRuleTotals({ plan, templates, onShowUnassigned }: GoldenRu
                           ? 'text-green-600' 
                           : 'text-gray-500'
                   }`}>
+                    {item.isFlexible && 'Tracked only'}
                     {item.status === 'over' && `Over ${formatMinutesAsHoursMinutes(item.difference)}`}
                     {item.status === 'under' && `Under ${formatMinutesAsHoursMinutes(Math.abs(item.difference))}`}
                     {item.status === 'on-target' && (item.met ? 'Complete!' : 'On target')}
@@ -100,6 +109,7 @@ export function GoldenRuleTotals({ plan, templates, onShowUnassigned }: GoldenRu
       <div className="p-3 border-t bg-gray-50">
         <div className="text-xs text-gray-500">
           <p className="font-medium mb-1">Status Legend:</p>
+          <p className="text-indigo-600">Flexible: tracked only (no target)</p>
           <p className="flex items-center gap-1">
             <span className="inline-flex bg-green-500 text-white rounded-full px-1.5 py-0.5 text-xs">Done</span>
             <span className="text-green-700">Complete: hours met</span>

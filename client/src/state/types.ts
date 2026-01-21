@@ -33,7 +33,7 @@ export const GOLDEN_RULE_BUCKETS = [
   { id: 'PORTFOLIO', label: 'Apprenticeship Portfolio', budgetMinutes: 240 },
   { id: 'CAREER_PLAN', label: 'Individual Career Plan', budgetMinutes: 180 },
   { id: 'APP_PREP', label: 'Application Prep', budgetMinutes: 120 },
-  { id: 'MATH', label: 'Math', budgetMinutes: 2400 },
+  { id: 'MATH', label: 'Math', budgetMinutes: 0, isFlexible: true },
   { id: 'ACE_INSTRUCTION', label: 'ACE Instruction', budgetMinutes: 240 },
   { id: 'ACES', label: 'ACEs', budgetMinutes: 2160 },
   { id: 'SHOP_INTRO', label: 'Shop Introduction', budgetMinutes: 60 },

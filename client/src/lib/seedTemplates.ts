@@ -97,7 +97,7 @@ function createGoldenRuleTemplates(): SeedTemplate[] {
   return GOLDEN_RULE_BUCKETS.map(bucket => ({
     title: bucket.label,
     category: BUCKET_CATEGORY_MAP[bucket.id as GoldenRuleBucketId],
-    defaultDurationMinutes: Math.min(bucket.budgetMinutes, 240),
+    defaultDurationMinutes: bucket.isFlexible ? 120 : Math.min(bucket.budgetMinutes, 240),
     countsTowardGoldenRule: true,
     goldenRuleBucketId: bucket.id as GoldenRuleBucketId,
     defaultLocation: BUCKET_LOCATION_MAP[bucket.id as GoldenRuleBucketId] || '',

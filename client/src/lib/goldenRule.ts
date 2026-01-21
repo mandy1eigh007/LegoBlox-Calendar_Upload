@@ -13,6 +13,7 @@ export interface BucketTotal {
   difference: number;
   status: 'under' | 'on-target' | 'over';
   met: boolean;
+  isFlexible?: boolean;
 }
 
 export interface GoldenRuleSummary {
@@ -49,10 +50,14 @@ export function calculateGoldenRuleTotals(
   
   return GOLDEN_RULE_BUCKETS.map(bucket => {
     const scheduled = totals[bucket.id];
-    const difference = scheduled - bucket.budgetMinutes;
+    const isFlexible = !!bucket.isFlexible;
+    const budget = isFlexible ? scheduled : bucket.budgetMinutes;
+    const difference = isFlexible ? 0 : scheduled - bucket.budgetMinutes;
     
     let status: 'under' | 'on-target' | 'over';
-    if (difference < -15) {
+    if (isFlexible) {
+      status = 'on-target';
+    } else if (difference < -15) {
       status = 'under';
     } else if (difference > 15) {
       status = 'over';
@@ -64,10 +69,11 @@ export function calculateGoldenRuleTotals(
       id: bucket.id,
       label: bucket.label, 
       scheduled, 
-      budget: bucket.budgetMinutes, 
+      budget, 
       difference, 
       status,
-      met: scheduled >= bucket.budgetMinutes,
+      met: isFlexible ? false : scheduled >= bucket.budgetMinutes,
+      isFlexible,
     };
   });
 }
