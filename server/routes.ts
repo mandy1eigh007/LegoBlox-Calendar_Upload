@@ -17,13 +17,14 @@ export async function registerRoutes(
 
   app.post('/api/predictive/solve', async (req, res) => {
     try {
-      const { toPlace, week, existingBlocks, dayStartMinutes, dayEndMinutes, slotMinutes } = req.body as {
+      const { toPlace, week, existingBlocks, dayStartMinutes, dayEndMinutes, slotMinutes, templateTitlesById } = req.body as {
         toPlace: ToPlaceItem[];
         week?: number;
         existingBlocks?: any[];
         dayStartMinutes?: number;
         dayEndMinutes?: number;
         slotMinutes?: number;
+        templateTitlesById?: Record<string, string>;
       };
 
       const wk = week || 1;
@@ -31,7 +32,7 @@ export async function registerRoutes(
       const de = dayEndMinutes || 930;
       const sm = slotMinutes || 15;
 
-      const result = suggestSchedule(toPlace || [], undefined, existingBlocks || [], wk, ds, de, sm);
+      const result = suggestSchedule(toPlace || [], undefined, existingBlocks || [], wk, ds, de, sm, templateTitlesById);
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ message: e?.message || 'predictive error' });

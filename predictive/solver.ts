@@ -37,30 +37,43 @@ export function suggestSchedule(
   week = 1,
   dayStartMinutes = 390,
   dayEndMinutes = 930,
-  slotMinutes = 15
+  slotMinutes = 15,
+  templateTitlesById?: Record<string, string>
 ): { placed: SuggestedPlacedBlock[]; unplaced: { templateId: string | null; count: number }[] } {
   const models = loadModels(modelsPath);
   const placed: SuggestedPlacedBlock[] = [];
+  const allowedDays = [0, 1, 2, 3, 4];
 
   // simple availability list starts with existing blocks
   const occupied: ExistingBlock[] = [...existingBlocks];
 
   const unplaced: Record<string, number> = {};
 
+  const normalizeKey = (value: string) =>
+    value.toLowerCase().replace(/[\u0300-\u036f]/g, '').replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
   for (const item of toPlace) {
     const targetCount = item.count ?? 1;
     let placedCount = 0;
-    const model = models.find(m => m.templateId === (item.templateId || 'UNASSIGNED')) || null;
+    const modelKey = item.templateId || 'UNASSIGNED';
+    let model = models.find(m => m.templateId === modelKey) || null;
+    if (!model && item.templateId && templateTitlesById) {
+      const title = templateTitlesById[item.templateId];
+      if (title) {
+        const normalizedTitle = normalizeKey(title);
+        model = models.find(m => normalizeKey(m.templateId) === normalizedTitle) || null;
+      }
+    }
 
     // derive preferred days order from dayCounts in model
-    let preferredDays: number[] = [0,1,2,3,4,5,6];
+    let preferredDays: number[] = [...allowedDays];
     if (model && model.dayCounts) {
       preferredDays = Object.entries(model.dayCounts)
         .map(([k,v]) => ({ day: parseInt(k === 'UNASSIGNED' ? '-1' : k, 10), count: v }))
-        .filter(d => d.day >= 0)
+        .filter(d => allowedDays.includes(d.day))
         .sort((a,b) => b.count - a.count)
         .map(d => d.day);
-      if (preferredDays.length === 0) preferredDays = [0,1,2,3,4,5,6];
+      if (preferredDays.length === 0) preferredDays = [...allowedDays];
     }
 
     const slotCandidates = model ? (model.topSlots || []).map(s => s.slotIndex).filter(i => i >= 0) : [Math.floor(( (dayStartMinutes+60) - dayStartMinutes) / slotMinutes)];
@@ -68,7 +81,7 @@ export function suggestSchedule(
     for (let i = 0; i < targetCount; i++) {
       let placedThis = false;
       // try preferred days then fallback
-      const daysToTry = preferredDays.concat([0,1,2,3,4,5,6].filter(d => !preferredDays.includes(d)));
+      const daysToTry = preferredDays.concat(allowedDays.filter(d => !preferredDays.includes(d)));
       for (const day of daysToTry) {
         for (const slotIndex of slotCandidates) {
           const startMinutes = dayStartMinutes + slotIndex * slotMinutes;
@@ -96,7 +109,8 @@ export function suggestSchedule(
       if (!placedThis) {
         // try brute force over all possible slots
         let found = false;
-        for (let day = 0; day < 7 && !found; day++) {
+        for (const day of allowedDays) {
+          if (found) break;
           for (let m = dayStartMinutes; m + item.durationMinutes <= dayEndMinutes; m += slotMinutes) {
             const candidate = { week, day, startMinutes: m, durationMinutes: item.durationMinutes };
             const conflict = occupied.some(o => overlaps(o as any, candidate));

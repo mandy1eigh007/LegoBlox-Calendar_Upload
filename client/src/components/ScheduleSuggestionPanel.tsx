@@ -45,6 +45,9 @@ export function ScheduleSuggestionPanel({
     setHardDates(plan.settings.hardDates || []);
   }, [plan.settings.hardDates]);
 
+  const normalizeKey = (value: string) =>
+    value.toLowerCase().replace(/[\u0300-\u036f]/g, '').replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
   const addHardDate = () => {
     if (!newHardDate.description.trim()) return;
     const id = `hd-${Date.now()}`;
@@ -104,6 +107,11 @@ export function ScheduleSuggestionPanel({
         }
       }
 
+      const templateTitlesById = templates.reduce((acc, template) => {
+        acc[template.id] = template.title;
+        return acc;
+      }, {} as Record<string, string>);
+
       // fetch predictive models (if any), then call server solver for placements
       fetch('/api/predictive/models')
         .then(r => r.ok ? r.json() : Promise.resolve(null))
@@ -120,6 +128,7 @@ export function ScheduleSuggestionPanel({
               dayStartMinutes: plan.settings.dayStartMinutes,
               dayEndMinutes: plan.settings.dayEndMinutes,
               slotMinutes: plan.settings.slotMinutes,
+              templateTitlesById,
             }),
           }).then(r => r.json()).then((solverResult) => ({ solverResult, models }));
         })
@@ -128,8 +137,14 @@ export function ScheduleSuggestionPanel({
           const mapped: SuggestedBlock[] = (solverResult.placed || []).map((p: any) => {
             const slotIndex = p.startMinutes != null ? Math.round((p.startMinutes - plan.settings.dayStartMinutes) / plan.settings.slotMinutes) : -1;
             let confidence: number | undefined = undefined;
+            const dayValue = typeof p.day === 'number' ? (DAYS[p.day] || DAYS[0]) : p.day;
             if (models) {
-              const modelFor = models.find((x: any) => x.templateId === (p.templateId || 'UNASSIGNED')) || models.find((x: any) => x.templateId === 'UNASSIGNED');
+              const templateTitle = p.templateId ? templateTitlesById[p.templateId] : null;
+              const normalizedTitle = templateTitle ? normalizeKey(templateTitle) : null;
+              const modelFor =
+                models.find((x: any) => x.templateId === (p.templateId || 'UNASSIGNED')) ||
+                (normalizedTitle ? models.find((x: any) => normalizeKey(String(x.templateId || '')) === normalizedTitle) : null) ||
+                models.find((x: any) => x.templateId === 'UNASSIGNED');
               if (modelFor && Array.isArray(modelFor.topSlots)) {
                 const match = modelFor.topSlots.find((s: any) => s.slotIndex === slotIndex);
                 if (match) confidence = match.probability;
@@ -140,7 +155,7 @@ export function ScheduleSuggestionPanel({
               id: p.id,
               templateId: p.templateId,
               week: p.week,
-              day: p.day,
+              day: dayValue,
               startMinutes: p.startMinutes,
               durationMinutes: p.durationMinutes,
               titleOverride: '',

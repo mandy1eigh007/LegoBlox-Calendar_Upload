@@ -1,27 +1,286 @@
 {
-  "generatedAt": "2026-01-13T22:04:55.270Z",
+  "generatedAt": "2026-01-21T04:48:00.466Z",
   "models": [
     {
-      "templateId": "OSHA_10",
-      "totalCount": 1,
+      "templateId": "UNASSIGNED",
+      "totalCount": 22,
       "weekCounts": {
-        "1": 1
+        "1": 2,
+        "2": 2,
+        "3": 2,
+        "4": 2,
+        "5": 3,
+        "6": 2,
+        "7": 2,
+        "8": 2,
+        "9": 5
       },
       "dayCounts": {
-        "0": 1
+        "1": 1,
+        "2": 10,
+        "3": 11
       },
       "slotCounts": {
-        "0": 1
+        "0": 1,
+        "6": 2,
+        "12": 1,
+        "24": 18
       },
       "durationCounts": {
+        "60": 1,
+        "120": 20,
         "300": 1
+      },
+      "locationCounts": {
+        "Microsoft Teams Meeting": 2,
+        "Classroom 2": 19,
+        "": 1
+      },
+      "topSlots": [
+        {
+          "slotIndex": 24,
+          "probability": 0.8181818181818182,
+          "count": 18
+        },
+        {
+          "slotIndex": 6,
+          "probability": 0.09090909090909091,
+          "count": 2
+        },
+        {
+          "slotIndex": 0,
+          "probability": 0.045454545454545456,
+          "count": 1
+        },
+        {
+          "slotIndex": 12,
+          "probability": 0.045454545454545456,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "templateId": "OSHA 10",
+      "totalCount": 4,
+      "weekCounts": {
+        "9": 4
+      },
+      "dayCounts": {
+        "1": 2,
+        "2": 2
+      },
+      "slotCounts": {
+        "6": 4
+      },
+      "durationCounts": {
+        "390": 4
+      },
+      "locationCounts": {
+        "": 4
+      },
+      "topSlots": [
+        {
+          "slotIndex": 6,
+          "probability": 1,
+          "count": 4
+        }
+      ]
+    },
+    {
+      "templateId": "ACEs",
+      "totalCount": 1,
+      "weekCounts": {
+        "5": 1
+      },
+      "dayCounts": {
+        "2": 1
+      },
+      "slotCounts": {
+        "18": 1
+      },
+      "durationCounts": {
+        "90": 1
+      },
+      "locationCounts": {
+        "": 1
+      },
+      "topSlots": [
+        {
+          "slotIndex": 18,
+          "probability": 1,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "templateId": "Financial Education",
+      "totalCount": 1,
+      "weekCounts": {
+        "5": 1
+      },
+      "dayCounts": {
+        "2": 1
+      },
+      "slotCounts": {
+        "6": 1
+      },
+      "durationCounts": {
+        "150": 1
       },
       "locationCounts": {
         "Classroom 1": 1
       },
       "topSlots": [
         {
-          "slotIndex": 0,
+          "slotIndex": 6,
+          "probability": 1,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "templateId": "Forklift Certification",
+      "totalCount": 1,
+      "weekCounts": {
+        "5": 1
+      },
+      "dayCounts": {
+        "3": 1
+      },
+      "slotCounts": {
+        "6": 1
+      },
+      "durationCounts": {
+        "150": 1
+      },
+      "locationCounts": {
+        "Classroom 1": 1
+      },
+      "topSlots": [
+        {
+          "slotIndex": 6,
+          "probability": 1,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "templateId": "Resumes",
+      "totalCount": 3,
+      "weekCounts": {
+        "5": 1,
+        "9": 2
+      },
+      "dayCounts": {
+        "1": 2,
+        "2": 1
+      },
+      "slotCounts": {
+        "6": 1,
+        "10": 2
+      },
+      "durationCounts": {
+        "60": 2,
+        "90": 1
+      },
+      "locationCounts": {
+        "Classroom 1": 3
+      },
+      "topSlots": [
+        {
+          "slotIndex": 10,
+          "probability": 0.6666666666666666,
+          "count": 2
+        },
+        {
+          "slotIndex": 6,
+          "probability": 0.3333333333333333,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "templateId": "Elevator Pitch",
+      "totalCount": 2,
+      "weekCounts": {
+        "5": 1,
+        "9": 1
+      },
+      "dayCounts": {
+        "1": 1,
+        "2": 1
+      },
+      "slotCounts": {
+        "4": 1,
+        "24": 1
+      },
+      "durationCounts": {
+        "60": 1,
+        "90": 1
+      },
+      "locationCounts": {
+        "Classroom 1": 2
+      },
+      "topSlots": [
+        {
+          "slotIndex": 4,
+          "probability": 0.5,
+          "count": 1
+        },
+        {
+          "slotIndex": 24,
+          "probability": 0.5,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "templateId": "Flagger Certification",
+      "totalCount": 1,
+      "weekCounts": {
+        "5": 1
+      },
+      "dayCounts": {
+        "0": 1
+      },
+      "slotCounts": {
+        "6": 1
+      },
+      "durationCounts": {
+        "450": 1
+      },
+      "locationCounts": {
+        "Classroom 1": 1
+      },
+      "topSlots": [
+        {
+          "slotIndex": 6,
+          "probability": 1,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "templateId": "Individual Career Plan",
+      "totalCount": 1,
+      "weekCounts": {
+        "5": 1
+      },
+      "dayCounts": {
+        "2": 1
+      },
+      "slotCounts": {
+        "20": 1
+      },
+      "durationCounts": {
+        "60": 1
+      },
+      "locationCounts": {
+        "Classroom 1": 1
+      },
+      "topSlots": [
+        {
+          "slotIndex": 20,
           "probability": 1,
           "count": 1
         }

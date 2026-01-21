@@ -1,9 +1,218 @@
 {
-  "Intro to Pre-Apprenticeship": ["orientation", "program intro", "welcome", "cohort orientation"],
-  "Resumes": ["resume", "résumé", "resume lab", "resume workshop"],
-  "Mock Interviews": ["mock interview", "mocks", "interview practice"],
-  "OSHA 10": ["osha", "osha10", "osha-10"],
-  "Shop Introduction": ["shop intro", "shop orientation"],
-  "ACES": ["aces", "ace stations", "stations"],
-  "Skills Project": ["skills", "project", "crate", "wall project", "cleanup"]
+  "Introduction to Pre-Apprenticeship": [
+    "intro to pre-apprenticeship",
+    "intro to pre apprenticeship",
+    "orientation",
+    "program intro",
+    "welcome",
+    "cohort orientation"
+  ],
+  "Professional Development Principles (Intro+Mid+Final)": [
+    "professional development principles",
+    "professional development practices",
+    "pdp",
+    "pd principles",
+    "pd principles intro",
+    "pd principles mid",
+    "pd principles final"
+  ],
+  "Grit/Growth Mindset": [
+    "grit",
+    "growth mindset",
+    "grit growth",
+    "grit/growth",
+    "grit, growth mindset"
+  ],
+  "How to be a Successful Apprentice": [
+    "successful apprentice",
+    "how to be a successful apprentice",
+    "making of a successful apprentice"
+  ],
+  "Elevator Pitch": [
+    "elevator pitch",
+    "intro to elevator pitch",
+    "elevator pitch work time",
+    "elevator pitch rough draft",
+    "elevator pitch presentation"
+  ],
+  "Resumes": [
+    "resume",
+    "résumé",
+    "resume lab",
+    "resume workshop",
+    "intro to resumes",
+    "resumes part",
+    "resume final",
+    "resume rough draft"
+  ],
+  "Interviews (Interview Skills + Group Interviews + Mock Prep)": [
+    "interview",
+    "interview skills",
+    "mock interview",
+    "mock interviews",
+    "group interviews",
+    "mock interview 1",
+    "mock interview 2",
+    "mock interview (1/2)",
+    "mock interview (2/2)",
+    "mock prep"
+  ],
+  "Applying for Apprenticeships & Job Search": [
+    "apply for apprenticeship",
+    "applying for apprenticeships",
+    "job search",
+    "apprenticeship applications",
+    "application report"
+  ],
+  "Financial Education": [
+    "financial education",
+    "financial tools for the trades",
+    "money mindset",
+    "qualstar",
+    "financial tools for the trades and money mindset"
+  ],
+  "Emotional Intelligence": [
+    "emotional intelligence",
+    "eq"
+  ],
+  "RISE Up Advocacy & Bystander Intervention": [
+    "rise up",
+    "rise up training",
+    "bystander intervention",
+    "advocacy"
+  ],
+  "Workers Compensation/Unemployment Insurance": [
+    "workers compensation",
+    "worker's compensation",
+    "unemployment insurance",
+    "workers comp",
+    "workers compensation/unemployment"
+  ],
+  "Apprenticeship Portfolio": [
+    "apprenticeship portfolio",
+    "portfolio",
+    "intro to portfolio"
+  ],
+  "Individual Career Plan": [
+    "career plan",
+    "individual career plan",
+    "career plan pt",
+    "career plan part"
+  ],
+  "Application Prep": [
+    "application prep",
+    "application preparation",
+    "application prepping"
+  ],
+  "ACE Instruction": [
+    "ace instruction",
+    "ace station instruction",
+    "station instruction and teaching",
+    "ace instruction and teaching"
+  ],
+  "ACEs": [
+    "aces",
+    "ace's",
+    "ace stations",
+    "station circuit practice",
+    "unit 2 station circuit practice",
+    "stations"
+  ],
+  "Shop Introduction": [
+    "shop intro",
+    "shop introduction",
+    "shop orientation"
+  ],
+  "Introduction to the Construction Trades": [
+    "intro to construction trades",
+    "introduction to construction trades",
+    "construction trades"
+  ],
+  "Construction Trade Awareness + Poster Project": [
+    "construction trade awareness",
+    "trade awareness",
+    "poster project",
+    "construction trade awareness poster project"
+  ],
+  "Labor History": [
+    "labor history"
+  ],
+  "Hand Tools": [
+    "hand tools",
+    "hand tools introduction",
+    "hand tools intro"
+  ],
+  "Power Tools": [
+    "power tools",
+    "power tools introduction",
+    "power tools intro"
+  ],
+  "Materials Knowledge": [
+    "materials knowledge"
+  ],
+  "Intro to Measuring Tape + Measuring Tape Exercises": [
+    "measuring tape",
+    "intro to measuring tape",
+    "measuring tape exercises",
+    "tape measure math",
+    "tape measure math and exercise"
+  ],
+  "Skills Project": [
+    "skills project",
+    "unit 8 skills project",
+    "skills project: (crate, anchor, saw horse, wall)",
+    "project",
+    "crate",
+    "wall project",
+    "saw horse",
+    "anchor"
+  ],
+  "Intro to Scaffolding": [
+    "scaffolding",
+    "intro to scaffolding"
+  ],
+  "Ladder Safety": [
+    "ladder safety"
+  ],
+  "Intro to Clean Energy": [
+    "clean energy",
+    "intro to clean energy"
+  ],
+  "Apprenticeship Tours": [
+    "apprenticeship tour",
+    "apprenticeship tours"
+  ],
+  "Worksite Tours": [
+    "worksite tour",
+    "worksite tours"
+  ],
+  "Speaker Presentations": [
+    "speaker presentation",
+    "speaker presentations"
+  ],
+  "OSHA 10": [
+    "osha",
+    "osha10",
+    "osha-10",
+    "osha 10 day 1",
+    "osha 10 day 2"
+  ],
+  "Forklift Certification": [
+    "forklift",
+    "forklift certification"
+  ],
+  "Flagger Certification": [
+    "flagger",
+    "flaggers",
+    "flaggers cert",
+    "flagger certification",
+    "flaggers certification"
+  ],
+  "Physical Fitness": [
+    "physical fitness",
+    "physical fitness intro"
+  ],
+  "Nutrition": [
+    "nutrition"
+  ]
 }

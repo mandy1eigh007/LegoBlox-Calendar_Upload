@@ -13,6 +13,7 @@
     "test": "vitest",
     "timeline:update": "node script/update-dev-timeline.mjs",
     "timeline:snapshot": "node script/snapshot-working-tree.mjs",
+    "predictive:ics": "tsx predictive/ics-to-training.ts attached_assets predictive/training-calendars.json predictive/template-synonyms.json",
     "predictive:ingest": "tsx predictive/ingest.ts predictive/training-calendars.json predictive/template-synonyms.json",
     "predictive:build-model": "tsx predictive/model.ts predictive/normalized-events.json predictive/template-models.json",
     "predictive:solve": "tsx predictive/solver.ts predictive/template-models.json predictive/to-place.json",
