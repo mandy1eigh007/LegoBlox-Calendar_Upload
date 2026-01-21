@@ -905,6 +905,16 @@ export function Builder() {
         initialValues={createEventDefaults ?? undefined}
         onClose={() => { setShowCreateEvent(false); setCreateEventDefaults(null); }}
         templates={state.templates}
+        plan={plan}
+        onCreateRecurrence={(blocks, series, newTemplate) => {
+          if (newTemplate) {
+            dispatch({ type: 'ADD_TEMPLATE', payload: newTemplate });
+          }
+          dispatch({ type: 'ADD_RECURRENCE_SERIES', payload: { planId: plan.id, series } });
+          for (const block of blocks) {
+            dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
+          }
+        }}
         onCreate={(block: any, newTemplate?: any) => {
           // add optional template first
           if (newTemplate) {

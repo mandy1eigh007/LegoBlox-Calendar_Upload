@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { BlockTemplate, Day, DAYS, GoldenRuleBucketId } from '@/state/types';
+import { BlockTemplate, Day, DAYS, GoldenRuleBucketId, Plan, RecurrencePattern, RecurrenceType, RecurrenceSeries } from '@/state/types';
 import { v4 as uuidv4 } from 'uuid';
 import { resolveTemplateForImportedTitle } from '@/lib/templateMatcher';
+import { createRecurringBlocks } from '@/lib/recurrence';
 
 export type CreateEventDefaults = {
   title?: string;
@@ -24,10 +25,12 @@ interface CreateEventDialogProps {
   onClose: () => void;
   onCreate: (block: any, saveAsTemplate?: BlockTemplate | null) => void;
   templates: BlockTemplate[];
+  plan: Plan;
+  onCreateRecurrence?: (blocks: any[], series: RecurrenceSeries, saveAsTemplate?: BlockTemplate | null) => void;
   initialValues?: CreateEventDefaults;
 }
 
-export function CreateEventDialog({ open, onClose, onCreate, templates, initialValues }: CreateEventDialogProps) {
+export function CreateEventDialog({ open, onClose, onCreate, templates, plan, onCreateRecurrence, initialValues }: CreateEventDialogProps) {
   const [title, setTitle] = useState('');
   const [eventType, setEventType] = useState('guest_speaker');
   const [organization, setOrganization] = useState('');
@@ -44,6 +47,10 @@ export function CreateEventDialog({ open, onClose, onCreate, templates, initialV
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [saveAsTemplate, setSaveAsTemplate] = useState(false);
   const [isLocked, setIsLocked] = useState(true);
+  const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>('none');
+  const [recurrenceDays, setRecurrenceDays] = useState<Day[]>([day]);
+  const [recurrenceStartWeek, setRecurrenceStartWeek] = useState(1);
+  const [recurrenceEndWeek, setRecurrenceEndWeek] = useState(plan.settings.weeks);
 
   useEffect(() => {
     if (!open || !initialValues) return;
@@ -57,7 +64,18 @@ export function CreateEventDialog({ open, onClose, onCreate, templates, initialV
     setResource(initialValues.resource ?? 'Other');
     setNotes(initialValues.notes ?? '');
     setIsLocked(initialValues.isLocked ?? true);
+    setRecurrenceType('none');
+    setRecurrenceDays([initialValues.day ?? 'Monday']);
+    setRecurrenceStartWeek(initialValues.week ?? 1);
+    setRecurrenceEndWeek(plan.settings.weeks);
   }, [open, initialValues]);
+
+  useEffect(() => {
+    if (!open || initialValues) return;
+    setRecurrenceDays([day]);
+    setRecurrenceStartWeek(week);
+    setRecurrenceEndWeek(plan.settings.weeks);
+  }, [open, day, week, plan.settings.weeks, initialValues]);
 
   const handleCreate = () => {
     if (!title) return;
@@ -99,9 +117,25 @@ export function CreateEventDialog({ open, onClose, onCreate, templates, initialV
       };
     }
 
-    onCreate(block, newTemplate);
+    if (recurrenceType !== 'none' && onCreateRecurrence) {
+      const pattern: RecurrencePattern = {
+        type: recurrenceType,
+        daysOfWeek: recurrenceType === 'weekly' ? [day] : recurrenceDays,
+        startWeek: recurrenceStartWeek,
+        endWeek: recurrenceEndWeek,
+      };
+      if (pattern.type === 'custom' && pattern.daysOfWeek.length === 0) {
+        setRecurrenceDays([day]);
+        return;
+      }
+      const { series, blocks } = createRecurringBlocks(block, pattern, plan);
+      onCreateRecurrence(blocks, series, newTemplate);
+    } else {
+      onCreate(block, newTemplate);
+    }
     // reset
     setTitle(''); setOrganization(''); setContactName(''); setContactEmail(''); setContactPhone(''); setNotes(''); setSaveAsTemplate(false); setIsLocked(true);
+    setRecurrenceType('none'); setRecurrenceDays([day]); setRecurrenceStartWeek(week); setRecurrenceEndWeek(plan.settings.weeks);
     onClose();
   };
 
@@ -169,6 +203,73 @@ export function CreateEventDialog({ open, onClose, onCreate, templates, initialV
           <div className="flex items-center gap-2">
             <input id="lock-placement" type="checkbox" checked={isLocked} onChange={(e) => setIsLocked(e.target.checked)} />
             <label htmlFor="lock-placement" className="text-sm">Lock placement (partner scheduled)</label>
+          </div>
+
+          <div className="border border-border rounded-lg p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">Repeat</label>
+              <select
+                value={recurrenceType}
+                onChange={e => setRecurrenceType(e.target.value as RecurrenceType)}
+                className="px-2 py-1 border rounded text-sm"
+              >
+                <option value="none">No repeat</option>
+                <option value="weekly">Weekly (same day)</option>
+                <option value="custom">Custom days</option>
+              </select>
+            </div>
+
+            {recurrenceType !== 'none' && (
+              <div className="space-y-2">
+                {recurrenceType === 'custom' && (
+                  <div className="flex flex-wrap gap-2">
+                    {DAYS.map(d => (
+                      <label key={d} className="flex items-center gap-1 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={recurrenceDays.includes(d)}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              setRecurrenceDays([...recurrenceDays, d]);
+                            } else {
+                              setRecurrenceDays(recurrenceDays.filter(day => day !== d));
+                            }
+                          }}
+                        />
+                        {d.slice(0, 3)}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <label className="block text-muted-foreground mb-1">Start week</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={plan.settings.weeks}
+                      value={recurrenceStartWeek}
+                      onChange={e => setRecurrenceStartWeek(parseInt(e.target.value) || 1)}
+                      className="w-full px-2 py-1 border rounded bg-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-muted-foreground mb-1">End week</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={plan.settings.weeks}
+                      value={recurrenceEndWeek}
+                      onChange={e => setRecurrenceEndWeek(parseInt(e.target.value) || plan.settings.weeks)}
+                      className="w-full px-2 py-1 border rounded bg-input"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  This will create events from Week {recurrenceStartWeek} to Week {recurrenceEndWeek}.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
