@@ -7,7 +7,7 @@ import { createDefaultPlanSettings } from '@/lib/storage';
 import { v4 as uuidv4 } from 'uuid';
 import { validateAppState } from '@/state/validators';
 import { processImageWithOCR, OCREvent } from '@/lib/ocr';
-import { parseICSWithDateRange, convertICSEventsToBlocks, ICSEventWithDate, importCSVToBlocks, getCSVHeaders } from '@/lib/csv';
+import { parseICSWithDateRange, convertICSEventsToBlocks, ICSEventWithDate, importCSVToBlocks, getCSVHeaders, CSVDraftEvent } from '@/lib/csv';
 import { resolveTemplateForImportedTitle, TemplateCandidate, getBucketLabel } from '@/lib/templateMatcher';
 import { minutesToTimeDisplay } from '@/lib/time';
 import { Loader2, AlertTriangle } from 'lucide-react';
@@ -66,6 +66,19 @@ export function PlanList() {
   const csvInputRef = useRef<HTMLInputElement>(null);
   const [icsTemplateAssignments, setIcsTemplateAssignments] = useState<Record<string, string | null>>({});
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+  const [csvContent, setCSVContent] = useState<string | null>(null);
+  const [csvHeaders, setCSVHeaders] = useState<string[]>([]);
+  const [csvMapping, setCSVMapping] = useState({
+    week: 1,
+    day: 2,
+    startTime: 3,
+    endTime: 4,
+    title: 5,
+    location: 8,
+    notes: 9,
+  });
+  const [csvDrafts, setCSVDrafts] = useState<CSVDraftEvent[]>([]);
+  const [csvPlanName, setCsvPlanName] = useState('');
 
   const timeOptions = useMemo(() => {
     const options: number[] = [];
@@ -286,6 +299,12 @@ export function PlanList() {
       try {
         const content = event.target?.result as string;
         const headers = getCSVHeaders(content);
+        if (headers.length === 0) {
+          setImportError('CSV file must include a header row.');
+          setImportSuccess(null);
+          return;
+        }
+
         const mapping = {
           week: 1,
           day: 2,
@@ -307,66 +326,105 @@ export function PlanList() {
           else if (lowerH.includes('note') || lowerH.includes('description')) mapping.notes = i;
         });
 
-        const { drafts, errors } = importCSVToBlocks(content, mapping);
-        if (errors.length > 0) {
-          setImportError(errors.join('; '));
-          setImportSuccess(null);
-          return;
-        }
-        if (drafts.length === 0) {
-          setImportError('No events found in CSV file.');
-          setImportSuccess(null);
-          return;
-        }
-
-        const maxWeek = Math.max(...drafts.map(d => d.week), 1);
-        const planName = `Imported from ${file.name.replace(/\.[^/.]+$/, '')}`;
-        const blocks: PlacedBlock[] = drafts.map(draft => {
-          const match = resolveTemplateForImportedTitle(draft.title, state.templates);
-          const matchedTemplate = match.templateId ? state.templates.find(t => t.id === match.templateId) : null;
-          const warningNote = draft.needsReview && draft.warning ? `CSV Import Warning: ${draft.warning}` : '';
-          const notes = [draft.notes, warningNote].filter(Boolean).join('\n');
-          return {
-            id: uuidv4(),
-            templateId: match.templateId,
-            week: draft.week,
-            day: draft.day,
-            startMinutes: draft.startMinutes,
-            durationMinutes: draft.durationMinutes,
-            titleOverride: draft.title,
-            location: draft.location,
-            notes,
-            countsTowardGoldenRule: matchedTemplate ? matchedTemplate.countsTowardGoldenRule : false,
-            goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
-            recurrenceSeriesId: null,
-            isRecurrenceException: false,
-            isLocked: true,
-          };
-        });
-
-        const defaults = createDefaultPlanSettings();
-        const plan: Plan = {
-          id: uuidv4(),
-          settings: { ...defaults, name: planName, weeks: Math.max(defaults.weeks, maxWeek) },
-          blocks,
-          recurrenceSeries: [],
-        };
-
-        const unassignedCount = blocks.filter(b => b.templateId === null).length;
-        dispatch({ type: 'ADD_PLAN', payload: plan });
+        setCSVContent(content);
+        setCSVHeaders(headers);
+        setCSVMapping(mapping);
+        setCsvPlanName(`Imported from ${file.name.replace(/\.[^/.]+$/, '')}`);
+        setCSVDrafts([]);
         setImportError(null);
-        setImportSuccess(
-          unassignedCount > 0
-            ? `Imported ${blocks.length} events (${unassignedCount} unassigned).`
-            : `Imported ${blocks.length} events from CSV.`
-        );
-        navigate(`/plan/${plan.id}`);
+        setImportSuccess(null);
       } catch (err) {
         setImportError('Failed to parse CSV file.');
         setImportSuccess(null);
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleCSVPreview = () => {
+    if (!csvContent) return;
+    const { drafts, errors } = importCSVToBlocks(csvContent, csvMapping);
+    if (errors.length > 0) {
+      setImportError(errors.join('; '));
+      return;
+    }
+    if (drafts.length === 0) {
+      setImportError('No events found in CSV file.');
+      return;
+    }
+    setCSVDrafts(drafts);
+    setImportError(null);
+  };
+
+  const handleApplyCSVDrafts = () => {
+    if (csvDrafts.length === 0) return;
+    if (!csvPlanName.trim()) {
+      setImportError('Plan name is required.');
+      return;
+    }
+
+    const maxWeek = Math.max(...csvDrafts.map(d => d.week), 1);
+    const blocks: PlacedBlock[] = csvDrafts.map(draft => {
+      const match = resolveTemplateForImportedTitle(draft.title, state.templates);
+      const matchedTemplate = match.templateId ? state.templates.find(t => t.id === match.templateId) : null;
+      const warningNote = draft.needsReview && draft.warning ? `CSV Import Warning: ${draft.warning}` : '';
+      const notes = [draft.notes, warningNote].filter(Boolean).join('\n');
+      return {
+        id: uuidv4(),
+        templateId: match.templateId,
+        week: draft.week,
+        day: draft.day,
+        startMinutes: draft.startMinutes,
+        durationMinutes: draft.durationMinutes,
+        titleOverride: draft.title,
+        location: draft.location,
+        notes,
+        countsTowardGoldenRule: matchedTemplate ? matchedTemplate.countsTowardGoldenRule : false,
+        goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
+        recurrenceSeriesId: null,
+        isRecurrenceException: false,
+        isLocked: true,
+      };
+    });
+
+    const defaults = createDefaultPlanSettings();
+    const plan: Plan = {
+      id: uuidv4(),
+      settings: { ...defaults, name: csvPlanName.trim(), weeks: Math.max(defaults.weeks, maxWeek) },
+      blocks,
+      recurrenceSeries: [],
+    };
+
+    const unassignedCount = blocks.filter(b => b.templateId === null).length;
+    dispatch({ type: 'ADD_PLAN', payload: plan });
+    setImportError(null);
+    setImportSuccess(
+      unassignedCount > 0
+        ? `Imported ${blocks.length} events (${unassignedCount} unassigned).`
+        : `Imported ${blocks.length} events from CSV.`
+    );
+    setCSVContent(null);
+    setCSVHeaders([]);
+    setCSVDrafts([]);
+    setCsvPlanName('');
+    navigate(`/plan/${plan.id}`);
+  };
+
+  const cancelCSVImport = () => {
+    setCSVContent(null);
+    setCSVHeaders([]);
+    setCSVDrafts([]);
+    setCsvPlanName('');
+    setCSVMapping({
+      week: 1,
+      day: 2,
+      startTime: 3,
+      endTime: 4,
+      title: 5,
+      location: 8,
+      notes: 9,
+    });
+    setImportError(null);
   };
 
   const handleICSFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1132,6 +1190,143 @@ export function PlanList() {
             <p className="text-xs text-gray-500 text-center">
               Only confirmed events will be scheduled. Unconfirmed items stay in this review list.
             </p>
+          </div>
+        </Modal>
+      )}
+
+      {csvDrafts.length > 0 && (
+        <Modal open={true} onClose={cancelCSVImport} title="Review CSV Import">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Plan Name *</label>
+              <input
+                type="text"
+                value={csvPlanName}
+                onChange={e => setCsvPlanName(e.target.value)}
+                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g. Imported Schedule"
+                data-testid="csv-plan-name-input"
+              />
+            </div>
+
+            <p className="text-sm text-gray-600">
+              {csvDrafts.length} events detected. Review and click Create Plan to import.
+            </p>
+            
+            <div className="max-h-64 overflow-auto border rounded">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="p-2 text-left">Week</th>
+                    <th className="p-2 text-left">Day</th>
+                    <th className="p-2 text-left">Time</th>
+                    <th className="p-2 text-left">Title</th>
+                    <th className="p-2 text-left">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {csvDrafts.map(draft => (
+                    <tr key={draft.id} className={draft.needsReview ? 'bg-yellow-50' : ''}>
+                      <td className="p-2">{draft.week}</td>
+                      <td className="p-2">{draft.day}</td>
+                      <td className="p-2">{minutesToTimeDisplay(draft.startMinutes)} - {minutesToTimeDisplay(draft.startMinutes + draft.durationMinutes)}</td>
+                      <td className="p-2 truncate max-w-[150px]">{draft.title}</td>
+                      <td className="p-2">
+                        {draft.needsReview ? (
+                          <span className="text-yellow-700">{draft.warning}</span>
+                        ) : (
+                          <span className="text-green-600">OK</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            
+            {importError && (
+              <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{importError}</p>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={cancelCSVImport}
+                className="flex-1 px-4 py-2 text-sm border rounded hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApplyCSVDrafts}
+                className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                data-testid="apply-csv-import"
+              >
+                Create Plan
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {csvContent && csvDrafts.length === 0 && (
+        <Modal open={true} onClose={cancelCSVImport} title="Map CSV Columns">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Plan Name *</label>
+              <input
+                type="text"
+                value={csvPlanName}
+                onChange={e => setCsvPlanName(e.target.value)}
+                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g. Imported Schedule"
+              />
+            </div>
+
+            <p className="text-sm text-gray-600">
+              Map your CSV columns to the schedule fields:
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              {(['week', 'day', 'startTime', 'endTime', 'title', 'location', 'notes'] as const).map(field => (
+                <div key={field}>
+                  <label className="block text-xs font-medium mb-1 capitalize">
+                    {field.replace(/([A-Z])/g, ' $1').trim()}
+                    {field === 'title' && ' *'}
+                  </label>
+                  <select
+                    value={csvMapping[field]}
+                    onChange={e => setCSVMapping({ ...csvMapping, [field]: parseInt(e.target.value, 10) })}
+                    className="w-full px-2 py-1 border rounded text-xs"
+                  >
+                    {field === 'location' || field === 'notes' ? (
+                      <option value={-1}>-- Not mapped --</option>
+                    ) : null}
+                    {csvHeaders.map((h, i) => (
+                      <option key={i} value={i}>{h || `Column ${i + 1}`}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+
+            {importError && (
+              <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{importError}</p>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={cancelCSVImport}
+                className="flex-1 px-4 py-2 text-sm border rounded hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCSVPreview}
+                className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                data-testid="preview-csv-button"
+              >
+                Preview Import
+              </button>
+            </div>
           </div>
         </Modal>
       )}
