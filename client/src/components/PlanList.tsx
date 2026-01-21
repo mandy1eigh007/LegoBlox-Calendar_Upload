@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { useStore } from '@/state/store';
 import { Plan, PlanSettings, DEFAULT_RESOURCES, AppState, PlacedBlock, Day, DAYS, GOLDEN_RULE_BUCKETS, SchedulerMode } from '@/state/types';
@@ -21,6 +21,18 @@ type OCRDraft = OCREvent & {
   startMinutesInput: number | null;
   endMinutesInput: number | null;
 };
+type CsvColumnMapping = {
+  week: number;
+  day: number;
+  startTime: number;
+  endTime: number;
+  title: number;
+  location: number;
+  notes: number;
+};
+type CsvMappingPreset = { name: string; mapping: CsvColumnMapping };
+
+const CSV_PRESET_STORAGE_KEY = 'homeCsvMappingPresets';
 
 export function PlanList() {
   const { state, dispatch } = useStore();
@@ -68,7 +80,7 @@ export function PlanList() {
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [csvContent, setCSVContent] = useState<string | null>(null);
   const [csvHeaders, setCSVHeaders] = useState<string[]>([]);
-  const [csvMapping, setCSVMapping] = useState({
+  const [csvMapping, setCSVMapping] = useState<CsvColumnMapping>({
     week: 1,
     day: 2,
     startTime: 3,
@@ -81,6 +93,25 @@ export function PlanList() {
   const [csvPlanName, setCsvPlanName] = useState('');
   const [lockCsvEvents, setLockCsvEvents] = useState(true);
   const [lockIcsEvents, setLockIcsEvents] = useState(true);
+  const [csvPresets, setCsvPresets] = useState<CsvMappingPreset[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const stored = localStorage.getItem(CSV_PRESET_STORAGE_KEY);
+      return stored ? (JSON.parse(stored) as CsvMappingPreset[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [selectedCsvPreset, setSelectedCsvPreset] = useState('');
+  const [csvPresetName, setCsvPresetName] = useState('');
+  const [csvPresetNotice, setCsvPresetNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(CSV_PRESET_STORAGE_KEY, JSON.stringify(csvPresets));
+    } catch {}
+  }, [csvPresets]);
 
   const timeOptions = useMemo(() => {
     const options: number[] = [];
@@ -333,6 +364,9 @@ export function PlanList() {
         setCSVMapping(mapping);
         setCsvPlanName(`Imported from ${file.name.replace(/\.[^/.]+$/, '')}`);
         setCSVDrafts([]);
+        setSelectedCsvPreset('');
+        setCsvPresetName('');
+        setCsvPresetNotice(null);
         setLockCsvEvents(true);
         setImportError(null);
         setImportSuccess(null);
@@ -428,7 +462,40 @@ export function PlanList() {
       notes: 9,
     });
     setLockCsvEvents(true);
+    setSelectedCsvPreset('');
+    setCsvPresetName('');
+    setCsvPresetNotice(null);
     setImportError(null);
+  };
+
+  const handleSelectCsvPreset = (name: string) => {
+    setSelectedCsvPreset(name);
+    const preset = csvPresets.find(p => p.name === name);
+    if (preset) {
+      setCSVMapping(preset.mapping);
+    }
+  };
+
+  const handleSaveCsvPreset = () => {
+    const name = csvPresetName.trim();
+    if (!name) {
+      setCsvPresetNotice('Enter a name to save this mapping.');
+      return;
+    }
+    const next: CsvMappingPreset = { name, mapping: { ...csvMapping } };
+    setCsvPresets(prev => {
+      const without = prev.filter(p => p.name !== name);
+      return [...without, next];
+    });
+    setSelectedCsvPreset(name);
+    setCsvPresetNotice('Saved mapping preset.');
+  };
+
+  const handleDeleteCsvPreset = () => {
+    if (!selectedCsvPreset) return;
+    setCsvPresets(prev => prev.filter(p => p.name !== selectedCsvPreset));
+    setSelectedCsvPreset('');
+    setCsvPresetNotice('Deleted mapping preset.');
   };
 
   const handleICSFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1303,6 +1370,46 @@ export function PlanList() {
             <p className="text-sm text-gray-600">
               Map your CSV columns to the schedule fields:
             </p>
+
+            <div className="border rounded p-3 space-y-2 text-sm">
+              <p className="text-xs text-gray-500">Saved column mappings</p>
+              <div className="flex gap-2 items-center">
+                <select
+                  value={selectedCsvPreset}
+                  onChange={(e) => handleSelectCsvPreset(e.target.value)}
+                  className="flex-1 px-2 py-1 border rounded text-xs"
+                >
+                  <option value="">Select saved mapping...</option>
+                  {csvPresets.map(preset => (
+                    <option key={preset.name} value={preset.name}>{preset.name}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleDeleteCsvPreset}
+                  disabled={!selectedCsvPreset}
+                  className="px-2 py-1 text-xs border rounded disabled:opacity-50"
+                >
+                  Delete
+                </button>
+              </div>
+              <div className="flex gap-2 items-center">
+                <input
+                  value={csvPresetName}
+                  onChange={(e) => setCsvPresetName(e.target.value)}
+                  placeholder="Save as..."
+                  className="flex-1 px-2 py-1 border rounded text-xs"
+                />
+                <button
+                  onClick={handleSaveCsvPreset}
+                  className="px-2 py-1 text-xs bg-blue-600 text-white rounded"
+                >
+                  Save
+                </button>
+              </div>
+              {csvPresetNotice && (
+                <p className="text-xs text-gray-500">{csvPresetNotice}</p>
+              )}
+            </div>
 
             <div className="grid grid-cols-2 gap-3 text-sm">
               {(['week', 'day', 'startTime', 'endTime', 'title', 'location', 'notes'] as const).map(field => (

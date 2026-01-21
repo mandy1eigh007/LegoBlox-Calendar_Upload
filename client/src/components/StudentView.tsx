@@ -1,8 +1,9 @@
 import { useParams } from 'wouter';
 import { useStore } from '@/state/store';
-import { Plan, DAYS, BlockTemplate } from '@/state/types';
+import { Plan, DAYS, BlockTemplate, DEFAULT_RESOURCES } from '@/state/types';
 import { minutesToTimeDisplay, getEndMinutes, durationToPixelHeight, minutesToPixelOffset, SLOT_HEIGHT_PX } from '@/lib/time';
 import { useEffect, useMemo, useState } from 'react';
+import { findAlternativeResource } from '@/lib/calendarCompare';
 
 interface ReadOnlyBlockProps {
   block: Plan['blocks'][0];
@@ -114,6 +115,62 @@ export function StudentView() {
         return a.startMinutes - b.startMinutes;
       });
   }, [plan, currentWeek, templates]);
+
+  const resourceConflicts = useMemo(() => {
+    if (!plan) return [];
+    const conflicts: Array<{
+      id: string;
+      resource: string;
+      day: string;
+      startMinutes: number;
+      endMinutes: number;
+      blockA: Plan['blocks'][0];
+      blockB: Plan['blocks'][0];
+      suggestion?: { blockId: string; resource: string };
+    }> = [];
+
+    const blocks = plan.blocks.filter(b => b.week === currentWeek);
+    const availableResources = plan.settings.resources?.length ? plan.settings.resources : DEFAULT_RESOURCES;
+
+    for (let i = 0; i < blocks.length; i++) {
+      for (let j = i + 1; j < blocks.length; j++) {
+        const a = blocks[i];
+        const b = blocks[j];
+        const resourceA = a.resource || a.location;
+        const resourceB = b.resource || b.location;
+        if (!resourceA || !resourceB) continue;
+        if (resourceA !== resourceB) continue;
+        if (a.day !== b.day) continue;
+        const aEnd = a.startMinutes + a.durationMinutes;
+        const bEnd = b.startMinutes + b.durationMinutes;
+        if (a.startMinutes >= bEnd || b.startMinutes >= aEnd) continue;
+
+        const conflictStart = Math.max(a.startMinutes, b.startMinutes);
+        const conflictEnd = Math.min(aEnd, bEnd);
+        let suggestion: { blockId: string; resource: string } | undefined;
+        const altA = findAlternativeResource(a, plan, availableResources);
+        if (altA) {
+          suggestion = { blockId: a.id, resource: altA };
+        } else {
+          const altB = findAlternativeResource(b, plan, availableResources);
+          if (altB) suggestion = { blockId: b.id, resource: altB };
+        }
+
+        conflicts.push({
+          id: `${a.id}-${b.id}`,
+          resource: resourceA,
+          day: a.day,
+          startMinutes: conflictStart,
+          endMinutes: conflictEnd,
+          blockA: a,
+          blockB: b,
+          suggestion,
+        });
+      }
+    }
+
+    return conflicts;
+  }, [plan, currentWeek]);
 
   useEffect(() => {
     if (plan) {
@@ -228,6 +285,33 @@ export function StudentView() {
                   </div>
                 </div>
               ))}
+            </div>
+          </section>
+        )}
+
+        {resourceConflicts.length > 0 && (
+          <section className="mb-6 bg-white rounded-lg border shadow-sm p-4" data-testid="student-conflict-section">
+            <h2 className="text-lg font-semibold mb-2">Resource Conflicts (Info)</h2>
+            <p className="text-xs text-gray-600 mb-3">
+              These events overlap in the same room/resource. If this affects you, notify your instructor.
+            </p>
+            <div className="space-y-3 text-sm">
+              {resourceConflicts.map(conflict => {
+                const aTitle = getBlockTitle(conflict.blockA);
+                const bTitle = getBlockTitle(conflict.blockB);
+                const timeRange = `${minutesToTimeDisplay(conflict.startMinutes)} - ${minutesToTimeDisplay(conflict.endMinutes)}`;
+                const suggestion = conflict.suggestion
+                  ? `Suggested alternate resource: ${conflict.suggestion.resource}`
+                  : 'No alternate resource suggested';
+                return (
+                  <div key={conflict.id} className="border rounded-md p-3">
+                    <p className="font-medium">{conflict.resource}</p>
+                    <p className="text-gray-600">{conflict.day} · {timeRange}</p>
+                    <p className="text-gray-700 mt-1">{aTitle} ↔ {bTitle}</p>
+                    <p className="text-xs text-gray-500 mt-1">{suggestion}</p>
+                  </div>
+                );
+              })}
             </div>
           </section>
         )}
