@@ -1,4 +1,4 @@
-import { AppState, DEFAULT_RESOURCES, DAYS } from '@/state/types';
+import { AppState, DEFAULT_RESOURCES, DAYS, AnchorEventDraft, AnchorPromptId, Day } from '@/state/types';
 import { createSeedTemplates } from './seedTemplates';
 import { DAY_START_DEFAULT, DAY_END_DEFAULT } from './time';
 import { getDateForWeekDay } from './dateMapping';
@@ -193,15 +193,15 @@ export function loadState(): { state: AppState; error?: string } {
         plan.settings.anchorWizardDismissed = false;
       }
       if (plan.settings.anchorSchedule) {
-        for (const [key, value] of Object.entries(plan.settings.anchorSchedule)) {
+        const anchorSchedule = plan.settings.anchorSchedule as Partial<Record<AnchorPromptId, AnchorEventDraft[] | AnchorEventDraft>>;
+        for (const [key, value] of Object.entries(anchorSchedule)) {
           if (!value) continue;
           if (Array.isArray(value)) continue;
-          const legacy = value as any;
-          const date =
-            plan.settings.startDate && legacy.week && legacy.day
-              ? getDateForWeekDay(plan.settings.startDate, legacy.week, legacy.day) || plan.settings.startDate
-              : plan.settings.startDate || '';
-          plan.settings.anchorSchedule[key as any] = [
+          const legacy = value as { week?: number; day?: Day; startMinutes?: number; durationMinutes?: number; title?: string; countsTowardGoldenRule?: boolean; isLocked?: boolean; created?: boolean };
+          const date = plan.settings.startDate && legacy.week && legacy.day
+            ? getDateForWeekDay(plan.settings.startDate, legacy.week, legacy.day) || plan.settings.startDate
+            : plan.settings.startDate || '';
+          anchorSchedule[key as AnchorPromptId] = [
             {
               id: `legacy_${Date.now().toString(36)}`,
               date: date || '',
@@ -241,7 +241,7 @@ export function loadState(): { state: AppState; error?: string } {
       }
     }
 
-    const mathTemplateExists = parsed.templates.some((template: { goldenRuleBucketId?: string; title?: string }) =>
+    const mathTemplateExists = parsed.templates.some((template: { goldenRuleBucketId?: string | null; title?: string }) =>
       template.goldenRuleBucketId === 'MATH' || (template.title || '').toLowerCase() === 'math'
     );
     if (!mathTemplateExists) {

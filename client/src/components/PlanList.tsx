@@ -1328,7 +1328,7 @@ export function PlanList() {
                             rows: [
                               ...anchorSelections[prompt.id].rows,
                               {
-                                id: crypto.randomUUID(),
+                                id: uuidv4(),
                                 date: formData.startDate || '',
                                 startMinutes: formData.dayStartMinutes,
                                 durationMinutes: prompt.defaultDurationMinutes ?? 60,

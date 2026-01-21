@@ -145,6 +145,7 @@ const BUCKET_ID_TO_TEMPLATE_ID: Record<GoldenRuleBucketId, string> = {
   'PORTFOLIO': 'portfolio',
   'CAREER_PLAN': 'career_plan',
   'APP_PREP': 'app_prep',
+  'MATH': 'math',
   'ACE_INSTRUCTION': 'ace_instruction',
   'ACES': 'aces',
   'SHOP_INTRO': 'shop_intro',

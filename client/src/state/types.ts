@@ -75,7 +75,7 @@ export const GOLDEN_RULE_BUCKETS = [
   { id: 'FLAGGER', label: 'Flagger Certification', budgetMinutes: 480 },
   { id: 'PHYSICAL_FITNESS', label: 'Physical Fitness', budgetMinutes: 1920 },
   { id: 'NUTRITION', label: 'Nutrition', budgetMinutes: 60 },
-] as const;
+] as const satisfies ReadonlyArray<{ id: string; label: string; budgetMinutes: number; isFlexible?: boolean }>;
 
 export type GoldenRuleBucketId = typeof GOLDEN_RULE_BUCKETS[number]['id'];
 

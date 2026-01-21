@@ -93,6 +93,7 @@ export function Builder() {
   }, [showDiagnostics]);
 
   useEffect(() => {
+    if (!plan) return;
     const checklist = plan.settings.anchorChecklist || {};
     const schedule = plan.settings.anchorSchedule || {};
     const hasAnchors = ANCHOR_PROMPTS.some(prompt => checklist[prompt.id]);
@@ -105,10 +106,10 @@ export function Builder() {
     if (hasUnscheduled && !plan.settings.anchorWizardDismissed) {
       setShowAnchorWizard(true);
     }
-  }, [plan.settings.anchorChecklist, plan.settings.anchorSchedule, plan.settings.anchorWizardDismissed]);
+  }, [plan]);
 
   useEffect(() => {
-    if (!showSuggestions || plan.settings.schedulerMode !== 'predictive') return;
+    if (!plan || !showSuggestions || plan.settings.schedulerMode !== 'predictive') return;
     const stats = getProbabilityTableStats(loadProbabilityTable());
     if (stats.totalEvents > 0) return;
     const plansWithData = state.plans.filter(p => p.blocks.some(b => b.templateId));
@@ -116,7 +117,7 @@ export function Builder() {
     for (const sourcePlan of plansWithData) {
       trainFromBlocks(sourcePlan.blocks, sourcePlan.settings.name);
     }
-  }, [showSuggestions, plan.settings.schedulerMode, state.plans]);
+  }, [plan, showSuggestions, state.plans]);
 
   if (!plan) {
     return (
