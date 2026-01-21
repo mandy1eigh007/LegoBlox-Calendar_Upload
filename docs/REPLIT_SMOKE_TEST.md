@@ -13,6 +13,7 @@
 - Set start date and active days
 - Check multiple anchor prompts
 - Add multiple dates per anchor and create locked events
+- Use Math weekly schedule option (days/time across weeks)
 - Confirm events appear locked and can be unlocked for edits
 
 ### Anchor wizard
@@ -33,4 +34,8 @@
 
 ### Golden Rule
 - Borrow hours between buckets and verify totals update
+
+### Recurrence + after-hours
+- Create an event with weekly/custom repeat
+- Mark an event as after-hours and confirm badge + side panel note
 
