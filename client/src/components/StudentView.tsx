@@ -130,7 +130,9 @@ export function StudentView() {
     }> = [];
 
     const blocks = plan.blocks.filter(b => b.week === currentWeek);
-    const availableResources = plan.settings.resources?.length ? plan.settings.resources : DEFAULT_RESOURCES;
+    const availableResources = plan.settings.resources?.length
+      ? [...plan.settings.resources]
+      : [...DEFAULT_RESOURCES];
 
     for (let i = 0; i < blocks.length; i++) {
       for (let j = i + 1; j < blocks.length; j++) {

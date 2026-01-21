@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { BlockTemplate, PlacedBlock, GOLDEN_RULE_BUCKETS } from '@/state/types';
 import { resolveTemplateForImportedTitle, TemplateCandidate } from '@/lib/templateMatcher';
 import { findSimilarBlocks, applyToAllSimilarTitles } from '@/lib/assignmentPersistence';
+import { ArrowRight } from 'lucide-react';
 
 interface TemplateReassignDialogProps {
   open: boolean;
