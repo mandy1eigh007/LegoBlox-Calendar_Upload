@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plan, BlockTemplate, Day, DAYS, HardDate } from '@/state/types';
 import { generateScheduleSuggestions, SchedulerResult, SuggestedBlock } from '@/lib/predictiveScheduler';
 import { getProbabilityTableStats, loadProbabilityTable } from '@/lib/probabilityLearning';
+import { calculateGoldenRuleTotals } from '@/lib/goldenRule';
 import { minutesToTimeDisplay } from '@/lib/time';
 import { Modal } from './Modal';
 import { Loader2, Check, X, AlertTriangle, Sparkles, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
@@ -17,6 +18,27 @@ interface ScheduleSuggestionPanelProps {
 }
 
 const MIN_TRAINING_EVENTS = 20;
+type BucketTotals = ReturnType<typeof calculateGoldenRuleTotals>;
+
+const buildCoverageFromTotals = (totals: BucketTotals): SchedulerResult['coverage'] =>
+  totals.map(total => ({
+    bucketId: total.id,
+    label: total.label,
+    needed: total.budget,
+    scheduled: total.scheduled,
+    gap: total.isFlexible ? 0 : total.budget - total.scheduled,
+  }));
+
+const buildToPlaceFromTotals = (totals: BucketTotals, templates: BlockTemplate[]) =>
+  totals
+    .filter(total => !total.isFlexible && total.difference < -15)
+    .map(total => {
+      const deficit = Math.abs(total.difference);
+      const template = templates.find(t => t.goldenRuleBucketId === total.id && t.countsTowardGoldenRule);
+      const durationMinutes = template?.defaultDurationMinutes || 60;
+      const count = Math.ceil(deficit / durationMinutes);
+      return { templateId: template?.id ?? null, durationMinutes, count };
+    });
 
 export function ScheduleSuggestionPanel({
   plan,
@@ -92,19 +114,14 @@ export function ScheduleSuggestionPanel({
         return;
       }
 
-      // Build a toPlace list from coverage gaps
-      const toPlace: { templateId: string | null; durationMinutes: number; count?: number }[] = [];
-      for (const cov of local.coverage) {
-        if (cov.gap > 0) {
-          const template = templates.find(t => t.goldenRuleBucketId === cov.bucketId && t.countsTowardGoldenRule);
-          if (template) {
-            const count = Math.ceil(cov.gap / template.defaultDurationMinutes);
-            toPlace.push({ templateId: template.id, durationMinutes: template.defaultDurationMinutes, count });
-          } else {
-            const count = Math.ceil(cov.gap / 60);
-            toPlace.push({ templateId: null, durationMinutes: 60, count });
-          }
-        }
+      const baseTotals = calculateGoldenRuleTotals(plan, templates);
+      const toPlace = buildToPlaceFromTotals(baseTotals, templates);
+
+      if (scope === 'all' || toPlace.length === 0) {
+        setResult(local);
+        setSelectedBlocks(new Set(local.suggestions.map(s => s.id)));
+        setIsGenerating(false);
+        return;
       }
 
       const templateTitlesById = templates.reduce((acc, template) => {
@@ -175,9 +192,13 @@ export function ScheduleSuggestionPanel({
             } as SuggestedBlock;
           });
 
+          const coverage = buildCoverageFromTotals(
+            calculateGoldenRuleTotals({ ...plan, blocks: [...plan.blocks, ...mapped] }, templates)
+          );
+
           const out: SchedulerResult = {
             suggestions: mapped,
-            coverage: local.coverage,
+            coverage,
             conflicts: (solverResult.unplaced || []).map((u: any) => typeof u === 'string' ? u : JSON.stringify(u)),
             stats: {
               totalBlocks: mapped.length,

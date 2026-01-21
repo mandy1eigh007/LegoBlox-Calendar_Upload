@@ -56,6 +56,8 @@ describe('ScheduleSuggestionPanel', () => {
     );
 
     // click the generate button
+    const scopeWeek = await screen.findByTestId('scope-week');
+    fireEvent.click(scopeWeek);
     const btn = await screen.findByTestId('generate-suggestions');
     fireEvent.click(btn);
 
