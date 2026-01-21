@@ -32,6 +32,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   const [importError, setImportError] = useState<string | null>(null);
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('merge');
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const icsInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -241,10 +242,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
     downloadJSON(state, filename);
   };
 
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const handleImportFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
@@ -269,16 +267,19 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    handleImportFile(file);
     
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
-  const handleImportICS = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const handleImportICSFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
@@ -309,6 +310,12 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleImportICS = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    handleImportICSFile(file);
     
     if (icsInputRef.current) {
       icsInputRef.current.value = '';
@@ -335,10 +342,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
     setIcsPreview(null);
   };
 
-  const handleCSVFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const handleCSVFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       const content = event.target?.result as string;
@@ -360,6 +364,12 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
       setCSVMapping(autoMapping);
     };
     reader.readAsText(file);
+  };
+
+  const handleCSVFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    handleCSVFile(file);
     
     if (csvInputRef.current) {
       csvInputRef.current.value = '';
@@ -421,10 +431,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
     setCSVDrafts([]);
   };
 
-  const handleOCRFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const handleOCRFile = async (file: File) => {
     setOCRProcessing(true);
     setOCRProgress(0);
     setImportError(null);
@@ -452,11 +459,67 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
     } finally {
       setOCRProcessing(false);
     }
+  };
+
+  const handleOCRFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await handleOCRFile(file);
 
     if (ocrInputRef.current) {
       ocrInputRef.current.value = '';
     }
   };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length === 0) return;
+    const file = files[0];
+    const fileName = file.name.toLowerCase();
+    const fileType = file.type;
+
+    if (fileName.endsWith('.ics') || fileName.endsWith('.ical') || fileType === 'text/calendar') {
+      handleImportICSFile(file);
+    } else if (fileName.endsWith('.csv') || fileType === 'text/csv') {
+      handleCSVFile(file);
+    } else if (fileName.endsWith('.json') || fileType === 'application/json') {
+      handleImportFile(file);
+    } else if (fileType.startsWith('image/')) {
+      await handleOCRFile(file);
+    } else {
+      setImportError('Unsupported file type. Drag an ICS, CSV, JSON, or image file.');
+    }
+  };
+
+  const wrapWithDropZone = (content: React.ReactNode) => (
+    <div onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} className="relative">
+      {isDragging && (
+        <div className="fixed inset-0 bg-purple-500/20 border-4 border-dashed border-purple-500 z-50 flex items-center justify-center pointer-events-none">
+          <div className="glass-card rounded-lg p-6 shadow-lg text-center">
+            <p className="text-lg font-medium text-foreground">Drop your file here</p>
+            <p className="text-sm text-muted-foreground">ICS, CSV, JSON, or image files</p>
+          </div>
+        </div>
+      )}
+      {content}
+    </div>
+  );
 
   const handleApplyOCREvents = () => {
     let imported = 0;
@@ -515,7 +578,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   };
 
   if (ocrDrafts.length > 0) {
-    return (
+    return wrapWithDropZone(
       <Modal open={open} onClose={onClose} title="Review OCR Import">
         <div className="space-y-4">
           <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm">
@@ -668,7 +731,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   }
 
   if (icsPreview) {
-    return (
+    return wrapWithDropZone(
       <Modal open={open} onClose={() => { setIcsPreview(null); onClose(); }} title="Preview ICS Import">
         <div className="space-y-4">
           <p className="text-sm text-gray-600">Detected events from {icsPreview.minDateStr} to {icsPreview.maxDateStr}. Select a date range to include before importing.</p>
@@ -730,7 +793,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   }
 
   if (ocrProcessing) {
-    return (
+    return wrapWithDropZone(
       <Modal open={open} onClose={() => {}} title="Processing Image...">
         <div className="py-8 text-center space-y-4">
           <Loader2 className="w-8 h-8 animate-spin mx-auto text-blue-600" />
@@ -749,7 +812,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   }
 
   if (csvDrafts.length > 0) {
-    return (
+    return wrapWithDropZone(
       <Modal open={open} onClose={onClose} title="Review CSV Import">
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
@@ -811,7 +874,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   }
 
   if (csvContent) {
-    return (
+    return wrapWithDropZone(
       <Modal open={open} onClose={onClose} title="Map CSV Columns">
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
@@ -865,7 +928,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
     );
   }
 
-  return (
+  return wrapWithDropZone(
     <Modal open={open} onClose={onClose} title="Export / Import">
       <div className="space-y-6">
         <div>
