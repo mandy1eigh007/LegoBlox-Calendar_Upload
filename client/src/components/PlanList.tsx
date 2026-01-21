@@ -5,6 +5,7 @@ import { Plan, PlanSettings, DEFAULT_RESOURCES, AppState, PlacedBlock, Day, DAYS
 import { Modal, ConfirmModal } from './Modal';
 import { createDefaultPlanSettings } from '@/lib/storage';
 import { ANCHOR_PROMPTS, createAnchorSelections, createEmptyAnchorChecklist, buildAnchorDraft, buildAnchorBlock, AnchorScheduleSelection } from '@/lib/anchorPrompts';
+import { getWeekDayFromDate } from '@/lib/dateMapping';
 import { v4 as uuidv4 } from 'uuid';
 import { validateAppState } from '@/state/validators';
 import { processImageWithOCR, OCREvent } from '@/lib/ocr';
@@ -61,6 +62,7 @@ export function PlanList() {
   const [anchorSelections, setAnchorSelections] = useState<Record<AnchorPromptId, AnchorScheduleSelection>>(
     createAnchorSelections(390)
   );
+  const [createPlanError, setCreatePlanError] = useState<string | null>(null);
   const [icsImportPlanName, setIcsImportPlanName] = useState('');
   const [pendingICSEvents, setPendingICSEvents] = useState<ICSEventWithDate[]>([]);
   const [icsMinDate, setIcsMinDate] = useState<Date | null>(null);
@@ -121,8 +123,9 @@ export function PlanList() {
   useEffect(() => {
     if (!showCreate) return;
     setAnchorChecklist(createEmptyAnchorChecklist());
-    setAnchorSelections(createAnchorSelections(formData.dayStartMinutes));
-  }, [showCreate, formData.dayStartMinutes]);
+    setAnchorSelections(createAnchorSelections(formData.dayStartMinutes, formData.startDate));
+    setCreatePlanError(null);
+  }, [showCreate, formData.dayStartMinutes, formData.startDate]);
 
   const normalizeCsvHeaders = (headers: string[]) => headers.map(h => h.trim().toLowerCase());
   const headersMatch = (a: string[], b: string[]) => a.length === b.length && a.every((h, i) => h === b[i]);
@@ -162,10 +165,12 @@ export function PlanList() {
 
   const handleCreate = () => {
     if (!formData.name.trim()) return;
+    setCreatePlanError(null);
 
     const anchorSchedule: PlanSettings['anchorSchedule'] = {};
     const anchorBlocks: PlacedBlock[] = [];
     const nextAnchorChecklist = { ...anchorChecklist };
+    const warnings: string[] = [];
 
     for (const prompt of ANCHOR_PROMPTS) {
       const selection = anchorSelections[prompt.id];
@@ -175,12 +180,33 @@ export function PlanList() {
       }
 
       nextAnchorChecklist[prompt.id] = true;
-      const draft = buildAnchorDraft(prompt, selection);
-      anchorSchedule[prompt.id] = draft;
+      const rows = selection.rows.filter(row => row.date);
+      const drafts = rows.map(row => buildAnchorDraft(prompt, row));
+      anchorSchedule[prompt.id] = drafts;
 
-      if (selection.createNow) {
-        anchorBlocks.push(buildAnchorBlock(draft, state.templates));
+      for (const draft of drafts) {
+        const row = selection.rows.find(r => r.id === draft.id);
+        if (!row?.createNow) continue;
+        const { block, warning } = buildAnchorBlock(
+          draft,
+          state.templates,
+          formData.startDate,
+          formData.activeDays,
+          formData.weeks
+        );
+        if (warning) {
+          warnings.push(`${prompt.defaultTitle}: ${warning}`);
+          continue;
+        }
+        if (block) {
+          anchorBlocks.push(block);
+        }
       }
+    }
+
+    if (warnings.length > 0) {
+      setCreatePlanError(warnings.join(' '));
+      return;
     }
     
     const plan: Plan = {
@@ -199,7 +225,7 @@ export function PlanList() {
     setShowCreate(false);
     setFormData(createDefaultPlanSettings());
     setAnchorChecklist(createEmptyAnchorChecklist());
-    setAnchorSelections(createAnchorSelections(formData.dayStartMinutes));
+    setAnchorSelections(createAnchorSelections(formData.dayStartMinutes, formData.startDate));
     navigate(`/plan/${plan.id}`);
   };
 
@@ -1047,7 +1073,7 @@ export function PlanList() {
         onClose={() => {
           setShowCreate(false);
           setAnchorChecklist(createEmptyAnchorChecklist());
-          setAnchorSelections(createAnchorSelections(formData.dayStartMinutes));
+          setAnchorSelections(createAnchorSelections(formData.dayStartMinutes, formData.startDate));
         }}
         title="Create New Plan"
       >
@@ -1075,6 +1101,58 @@ export function PlanList() {
               className="w-full px-3 py-2 bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               data-testid="plan-weeks-input"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">Cohort Start Date</label>
+            <input
+              type="date"
+              value={formData.startDate || ''}
+              onChange={e => setFormData({ ...formData, startDate: e.target.value })}
+              className="w-full px-3 py-2 bg-input border border-border rounded-lg text-foreground"
+              data-testid="plan-start-date-input"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-foreground">Active Days</label>
+            <div className="flex flex-wrap gap-2">
+              {DAYS.map(day => (
+                <label key={day} className="flex items-center gap-2 text-xs text-foreground border border-border rounded-lg px-2 py-1">
+                  <input
+                    type="checkbox"
+                    checked={formData.activeDays?.includes(day)}
+                    onChange={e => {
+                      const activeDays = new Set(formData.activeDays || DAYS);
+                      if (e.target.checked) {
+                        activeDays.add(day);
+                      } else {
+                        activeDays.delete(day);
+                      }
+                      const nextDays = Array.from(activeDays);
+                      setFormData({ ...formData, activeDays: nextDays.length > 0 ? nextDays : [day] });
+                    }}
+                  />
+                  {day.slice(0, 3)}
+                </label>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, activeDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday'] })}
+                className="text-xs px-2 py-1 border border-border rounded-lg text-foreground hover:bg-secondary/50"
+              >
+                Mon–Thu
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, activeDays: ['Tuesday', 'Wednesday', 'Thursday', 'Friday'] })}
+                className="text-xs px-2 py-1 border border-border rounded-lg text-foreground hover:bg-secondary/50"
+              >
+                Tue–Fri
+              </button>
+            </div>
           </div>
           
           <div>
@@ -1131,7 +1209,10 @@ export function PlanList() {
                           [prompt.id]: {
                             ...anchorSelections[prompt.id],
                             enabled: e.target.checked,
-                            createNow: e.target.checked ? anchorSelections[prompt.id].createNow : false,
+                            rows: anchorSelections[prompt.id].rows.map(row => ({
+                              ...row,
+                              createNow: e.target.checked ? row.createNow : false,
+                            })),
                           },
                         });
                       }}
@@ -1140,100 +1221,138 @@ export function PlanList() {
                   </label>
                   {anchorChecklist[prompt.id] && (
                     <div className="mt-2 space-y-2">
-                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <input
-                          type="checkbox"
-                          checked={anchorSelections[prompt.id]?.createNow}
-                          onChange={e => setAnchorSelections({
-                            ...anchorSelections,
-                            [prompt.id]: {
-                              ...anchorSelections[prompt.id],
-                              createNow: e.target.checked,
-                            },
-                          })}
-                        />
-                        Create locked event now
-                      </label>
-                      {anchorSelections[prompt.id]?.createNow && (
-                        <div className="grid grid-cols-2 gap-2 text-xs">
-                          <div>
-                            <label className="block text-muted-foreground mb-1">Week</label>
-                            <input
-                              type="number"
-                              min={1}
-                              max={formData.weeks}
-                              value={anchorSelections[prompt.id].week}
-                              onChange={e => setAnchorSelections({
-                                ...anchorSelections,
-                                [prompt.id]: {
-                                  ...anchorSelections[prompt.id],
-                                  week: parseInt(e.target.value) || 1,
-                                },
-                              })}
-                              className="w-full px-2 py-1 border rounded bg-input"
-                            />
+                      {anchorSelections[prompt.id]?.rows.map((row, index) => {
+                        const placement = row.date ? getWeekDayFromDate(row.date, formData.startDate) : null;
+                        const showWarning = placement?.isWeekend ||
+                          (placement && formData.activeDays && formData.activeDays.length > 0 && !formData.activeDays.includes(placement.day));
+                        return (
+                          <div key={row.id} className="border border-border rounded-lg p-2 space-y-2 text-xs">
+                            <div className="flex items-center justify-between">
+                              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <input
+                                  type="checkbox"
+                                  checked={row.createNow}
+                                  onChange={e => setAnchorSelections({
+                                    ...anchorSelections,
+                                    [prompt.id]: {
+                                      ...anchorSelections[prompt.id],
+                                      rows: anchorSelections[prompt.id].rows.map(r => r.id === row.id ? { ...r, createNow: e.target.checked } : r),
+                                    },
+                                  })}
+                                />
+                                Create locked event now
+                              </label>
+                              {anchorSelections[prompt.id].rows.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setAnchorSelections({
+                                    ...anchorSelections,
+                                    [prompt.id]: {
+                                      ...anchorSelections[prompt.id],
+                                      rows: anchorSelections[prompt.id].rows.filter(r => r.id !== row.id),
+                                    },
+                                  })}
+                                  className="text-xs text-red-400"
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div>
+                                <label className="block text-muted-foreground mb-1">Date</label>
+                                <input
+                                  type="date"
+                                  value={row.date}
+                                  onChange={e => setAnchorSelections({
+                                    ...anchorSelections,
+                                    [prompt.id]: {
+                                      ...anchorSelections[prompt.id],
+                                      rows: anchorSelections[prompt.id].rows.map(r => r.id === row.id ? { ...r, date: e.target.value } : r),
+                                    },
+                                  })}
+                                  className="w-full px-2 py-1 border rounded bg-input"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-muted-foreground mb-1">Start Time</label>
+                                <select
+                                  value={row.startMinutes}
+                                  onChange={e => setAnchorSelections({
+                                    ...anchorSelections,
+                                    [prompt.id]: {
+                                      ...anchorSelections[prompt.id],
+                                      rows: anchorSelections[prompt.id].rows.map(r => r.id === row.id ? { ...r, startMinutes: parseInt(e.target.value) } : r),
+                                    },
+                                  })}
+                                  className="w-full px-2 py-1 border rounded bg-input"
+                                >
+                                  {timeOptions.map(m => (
+                                    <option key={m} value={m}>{minutesToTimeDisplay(m)}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-muted-foreground mb-1">Duration (min)</label>
+                                <input
+                                  type="number"
+                                  min={15}
+                                  step={15}
+                                  value={row.durationMinutes}
+                                  onChange={e => setAnchorSelections({
+                                    ...anchorSelections,
+                                    [prompt.id]: {
+                                      ...anchorSelections[prompt.id],
+                                      rows: anchorSelections[prompt.id].rows.map(r => r.id === row.id ? { ...r, durationMinutes: parseInt(e.target.value) || 60 } : r),
+                                    },
+                                  })}
+                                  className="w-full px-2 py-1 border rounded bg-input"
+                                />
+                              </div>
+                              <div className="text-muted-foreground">
+                                {placement ? `Week ${placement.week}, ${placement.day.slice(0, 3)}` : 'Select a date'}
+                                {showWarning && (
+                                  <p className="text-amber-500">Outside active class days</p>
+                                )}
+                              </div>
+                            </div>
                           </div>
-                          <div>
-                            <label className="block text-muted-foreground mb-1">Day</label>
-                            <select
-                              value={anchorSelections[prompt.id].day}
-                              onChange={e => setAnchorSelections({
-                                ...anchorSelections,
-                                [prompt.id]: {
-                                  ...anchorSelections[prompt.id],
-                                  day: e.target.value as Day,
-                                },
-                              })}
-                              className="w-full px-2 py-1 border rounded bg-input"
-                            >
-                              {DAYS.map(d => (
-                                <option key={d} value={d}>{d}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-muted-foreground mb-1">Start Time</label>
-                            <select
-                              value={anchorSelections[prompt.id].startMinutes}
-                              onChange={e => setAnchorSelections({
-                                ...anchorSelections,
-                                [prompt.id]: {
-                                  ...anchorSelections[prompt.id],
-                                  startMinutes: parseInt(e.target.value),
-                                },
-                              })}
-                              className="w-full px-2 py-1 border rounded bg-input"
-                            >
-                              {timeOptions.map(m => (
-                                <option key={m} value={m}>{minutesToTimeDisplay(m)}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-muted-foreground mb-1">Duration (min)</label>
-                            <input
-                              type="number"
-                              min={15}
-                              step={15}
-                              value={anchorSelections[prompt.id].durationMinutes}
-                              onChange={e => setAnchorSelections({
-                                ...anchorSelections,
-                                [prompt.id]: {
-                                  ...anchorSelections[prompt.id],
-                                  durationMinutes: parseInt(e.target.value) || 60,
-                                },
-                              })}
-                              className="w-full px-2 py-1 border rounded bg-input"
-                            />
-                          </div>
-                        </div>
-                      )}
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => setAnchorSelections({
+                          ...anchorSelections,
+                          [prompt.id]: {
+                            ...anchorSelections[prompt.id],
+                            rows: [
+                              ...anchorSelections[prompt.id].rows,
+                              {
+                                id: crypto.randomUUID(),
+                                date: formData.startDate || '',
+                                startMinutes: formData.dayStartMinutes,
+                                durationMinutes: prompt.defaultDurationMinutes ?? 60,
+                                createNow: true,
+                              },
+                            ],
+                          },
+                        })}
+                        className="text-xs text-accent underline"
+                      >
+                        Add another date
+                      </button>
                     </div>
                   )}
                 </div>
               ))}
             </div>
           </div>
+
+          {createPlanError && (
+            <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded p-2">
+              {createPlanError}
+            </div>
+          )}
 
           <div className="flex justify-end gap-3 pt-4">
             <button

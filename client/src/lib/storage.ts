@@ -1,6 +1,7 @@
-import { AppState, DEFAULT_RESOURCES } from '@/state/types';
+import { AppState, DEFAULT_RESOURCES, DAYS } from '@/state/types';
 import { createSeedTemplates } from './seedTemplates';
 import { DAY_START_DEFAULT, DAY_END_DEFAULT } from './time';
+import { getDateForWeekDay } from './dateMapping';
 
 const STORAGE_KEY = 'cohort_schedule_builder_v2';
 
@@ -18,9 +19,15 @@ export function createInitialState(): AppState {
 }
 
 export function createDefaultPlanSettings() {
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
   return {
     name: '',
     weeks: 9,
+    startDate: `${yyyy}-${mm}-${dd}`,
+    activeDays: [...DAYS],
     dayStartMinutes: DAY_START_DEFAULT,
     dayEndMinutes: DAY_END_DEFAULT,
     slotMinutes: 15 as const,
@@ -32,6 +39,7 @@ export function createDefaultPlanSettings() {
     anchorChecklist: {},
     anchorSchedule: {},
     anchorWizardDismissed: false,
+    partnerRequests: [],
   };
 }
 
@@ -112,6 +120,8 @@ function migrateV1ToV2(oldState: unknown): AppState | null {
         settings: {
           name: oldSettings.name as string,
           weeks: (oldSettings.weeks as number) || 9,
+          startDate: undefined,
+          activeDays: [...DAYS],
           dayStartMinutes,
           dayEndMinutes,
           slotMinutes: 15 as const,
@@ -123,6 +133,7 @@ function migrateV1ToV2(oldState: unknown): AppState | null {
           anchorChecklist: {},
           anchorSchedule: {},
           anchorWizardDismissed: false,
+          partnerRequests: [],
         },
         blocks: newBlocks,
         recurrenceSeries: [],
@@ -180,6 +191,42 @@ export function loadState(): { state: AppState; error?: string } {
       }
       if (plan.settings.anchorWizardDismissed === undefined) {
         plan.settings.anchorWizardDismissed = false;
+      }
+      if (plan.settings.anchorSchedule) {
+        for (const [key, value] of Object.entries(plan.settings.anchorSchedule)) {
+          if (!value) continue;
+          if (Array.isArray(value)) continue;
+          const legacy = value as any;
+          const date =
+            plan.settings.startDate && legacy.week && legacy.day
+              ? getDateForWeekDay(plan.settings.startDate, legacy.week, legacy.day) || plan.settings.startDate
+              : plan.settings.startDate || '';
+          plan.settings.anchorSchedule[key as any] = [
+            {
+              id: `legacy_${Date.now().toString(36)}`,
+              date: date || '',
+              startMinutes: legacy.startMinutes ?? plan.settings.dayStartMinutes,
+              durationMinutes: legacy.durationMinutes ?? 60,
+              title: legacy.title || '',
+              countsTowardGoldenRule: !!legacy.countsTowardGoldenRule,
+              isLocked: legacy.isLocked ?? true,
+              created: legacy.created,
+            },
+          ];
+        }
+      }
+      if (!plan.settings.partnerRequests) {
+        plan.settings.partnerRequests = [];
+      }
+      if (!plan.settings.startDate) {
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        plan.settings.startDate = `${yyyy}-${mm}-${dd}`;
+      }
+      if (!plan.settings.activeDays || plan.settings.activeDays.length === 0) {
+        plan.settings.activeDays = [...DAYS];
       }
       for (const block of plan.blocks) {
         if (block.isLocked === undefined) {

@@ -13,8 +13,8 @@ export type AnchorPromptId =
   | 'job_site_tours';
 
 export interface AnchorEventDraft {
-  week: number;
-  day: Day;
+  id: string;
+  date: string; // YYYY-MM-DD
   startMinutes: number;
   durationMinutes: number;
   title: string;
@@ -197,6 +197,8 @@ export interface HardDate {
 export interface PlanSettings {
   name: string;
   weeks: number;
+  startDate?: string;
+  activeDays?: Day[];
   dayStartMinutes: number;
   dayEndMinutes: number;
   slotMinutes: 15;
@@ -207,8 +209,16 @@ export interface PlanSettings {
   hardDates?: HardDate[];
   bucketAdjustments?: Partial<Record<GoldenRuleBucketId, number>>;
   anchorChecklist?: Partial<Record<AnchorPromptId, boolean>>;
-  anchorSchedule?: Partial<Record<AnchorPromptId, AnchorEventDraft>>;
+  anchorSchedule?: Partial<Record<AnchorPromptId, AnchorEventDraft[]>>;
   anchorWizardDismissed?: boolean;
+  partnerRequests?: PartnerRequestRef[];
+}
+
+export interface PartnerRequestRef {
+  id: string;
+  code: string;
+  label: string;
+  createdAt: string;
 }
 
 export interface Plan {

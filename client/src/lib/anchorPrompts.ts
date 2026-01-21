@@ -1,5 +1,6 @@
-import { AnchorEventDraft, AnchorPromptId, BlockTemplate, Day, PlacedBlock } from '@/state/types';
+import { AnchorEventDraft, AnchorPromptId, BlockTemplate, PlacedBlock, Day } from '@/state/types';
 import { resolveTemplateForImportedTitle } from '@/lib/templateMatcher';
+import { getWeekDayFromDate } from '@/lib/dateMapping';
 import { v4 as uuidv4 } from 'uuid';
 
 export type AnchorPromptConfig = {
@@ -10,13 +11,17 @@ export type AnchorPromptConfig = {
   defaultDurationMinutes?: number;
 };
 
-export type AnchorScheduleSelection = {
-  enabled: boolean;
-  createNow: boolean;
-  week: number;
-  day: Day;
+export type AnchorDateSelection = {
+  id: string;
+  date: string;
   startMinutes: number;
   durationMinutes: number;
+  createNow: boolean;
+};
+
+export type AnchorScheduleSelection = {
+  enabled: boolean;
+  rows: AnchorDateSelection[];
 };
 
 export const ANCHOR_PROMPTS: AnchorPromptConfig[] = [
@@ -71,15 +76,19 @@ export function createEmptyAnchorChecklist(): Record<AnchorPromptId, boolean> {
   }, {} as Record<AnchorPromptId, boolean>);
 }
 
-export function createAnchorSelections(dayStartMinutes: number): Record<AnchorPromptId, AnchorScheduleSelection> {
+export function createAnchorSelections(dayStartMinutes: number, startDate?: string): Record<AnchorPromptId, AnchorScheduleSelection> {
   return ANCHOR_PROMPTS.reduce((acc, prompt) => {
     acc[prompt.id] = {
       enabled: false,
-      createNow: true,
-      week: 1,
-      day: 'Monday',
-      startMinutes: dayStartMinutes,
-      durationMinutes: prompt.defaultDurationMinutes ?? 60,
+      rows: [
+        {
+          id: uuidv4(),
+          date: startDate || '',
+          startMinutes: dayStartMinutes,
+          durationMinutes: prompt.defaultDurationMinutes ?? 60,
+          createNow: true,
+        },
+      ],
     };
     return acc;
   }, {} as Record<AnchorPromptId, AnchorScheduleSelection>);
@@ -87,11 +96,11 @@ export function createAnchorSelections(dayStartMinutes: number): Record<AnchorPr
 
 export function buildAnchorDraft(
   prompt: AnchorPromptConfig,
-  selection: AnchorScheduleSelection
+  selection: AnchorDateSelection
 ): AnchorEventDraft {
   return {
-    week: selection.week,
-    day: selection.day,
+    id: selection.id,
+    date: selection.date,
     startMinutes: selection.startMinutes,
     durationMinutes: selection.durationMinutes,
     title: prompt.defaultTitle,
@@ -101,28 +110,50 @@ export function buildAnchorDraft(
   };
 }
 
-export function buildAnchorBlock(draft: AnchorEventDraft, templates: BlockTemplate[]): PlacedBlock {
+export function buildAnchorBlock(
+  draft: AnchorEventDraft,
+  templates: BlockTemplate[],
+  startDate?: string,
+  activeDays?: Day[],
+  maxWeeks?: number
+): { block: PlacedBlock | null; warning?: string } {
+  const placement = getWeekDayFromDate(draft.date, startDate);
+  if (!placement) {
+    return { block: null, warning: 'Invalid anchor date.' };
+  }
+  if (placement.isWeekend) {
+    return { block: null, warning: 'Anchor date falls on a weekend.' };
+  }
+  if (typeof maxWeeks === 'number' && (placement.week < 1 || placement.week > maxWeeks)) {
+    return { block: null, warning: 'Anchor date is outside the plan weeks.' };
+  }
+  if (activeDays && activeDays.length > 0 && !activeDays.includes(placement.day)) {
+    return { block: null, warning: 'Anchor date is outside active class days.' };
+  }
+
   const matchResult = resolveTemplateForImportedTitle(draft.title, templates);
   const matchedTemplate = matchResult.templateId ? templates.find(t => t.id === matchResult.templateId) : null;
   const resolvedBucketId = draft.countsTowardGoldenRule
     ? (matchResult.bucketId ?? matchedTemplate?.goldenRuleBucketId ?? null)
     : null;
 
-  return {
-    id: uuidv4(),
+  return { 
+    block: {
+      id: uuidv4(),
     templateId: matchedTemplate?.id ?? null,
-    week: draft.week,
-    day: draft.day,
+      week: placement.week,
+      day: placement.day,
     startMinutes: draft.startMinutes,
     durationMinutes: draft.durationMinutes,
     titleOverride: draft.title,
     location: matchedTemplate?.defaultLocation ?? '',
-    notes: '',
+      notes: `Anchor date: ${draft.date}`,
     countsTowardGoldenRule: draft.countsTowardGoldenRule,
     goldenRuleBucketId: resolvedBucketId,
     recurrenceSeriesId: null,
     isRecurrenceException: false,
     resource: matchedTemplate?.defaultResource || undefined,
     isLocked: draft.isLocked,
+    },
   };
 }

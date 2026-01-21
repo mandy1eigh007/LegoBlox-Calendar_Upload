@@ -22,6 +22,7 @@ import { ComparePlans } from './ComparePlans';
 import { CreateEventDialog, CreateEventDefaults } from './CreateEventDialog';
 import { ANCHOR_PROMPTS } from '@/lib/anchorPrompts';
 import { AnchorScheduleWizard } from './AnchorScheduleWizard';
+import { PartnerAvailabilityPanel } from './PartnerAvailabilityPanel';
 import { generatePublicId, getStudentUrl } from '@/lib/publish';
 import { findTimeConflicts, findNextAvailableSlot, wouldFitInDay } from '@/lib/collision';
 import { findAlternativeResource } from '@/lib/calendarCompare';
@@ -58,6 +59,7 @@ export function Builder() {
   const [showCreateEvent, setShowCreateEvent] = useState(false);
   const [createEventDefaults, setCreateEventDefaults] = useState<CreateEventDefaults | null>(null);
   const [showAnchorWizard, setShowAnchorWizard] = useState(false);
+  const [showPartnerAvailability, setShowPartnerAvailability] = useState(false);
   const [hoverMinutes, setHoverMinutes] = useState<number | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showUnassigned, setShowUnassigned] = useState(false);
@@ -95,9 +97,11 @@ export function Builder() {
     const schedule = plan.settings.anchorSchedule || {};
     const hasAnchors = ANCHOR_PROMPTS.some(prompt => checklist[prompt.id]);
     if (!hasAnchors) return;
-    const hasUnscheduled = ANCHOR_PROMPTS.some(
-      prompt => checklist[prompt.id] && !schedule[prompt.id]?.created
-    );
+    const hasUnscheduled = ANCHOR_PROMPTS.some(prompt => {
+      if (!checklist[prompt.id]) return false;
+      const entries = schedule[prompt.id] || [];
+      return entries.some(entry => !entry.created);
+    });
     if (hasUnscheduled && !plan.settings.anchorWizardDismissed) {
       setShowAnchorWizard(true);
     }
@@ -652,6 +656,13 @@ export function Builder() {
               Partners
             </button>
             <button
+              onClick={() => setShowPartnerAvailability(true)}
+              className="px-3 py-1 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
+              data-testid="partner-availability-button"
+            >
+              Partner Availability
+            </button>
+            <button
               onClick={() => { setCreateEventDefaults(null); setShowCreateEvent(true); }}
               className="px-3 py-1 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
               data-testid="create-event-button"
@@ -927,6 +938,18 @@ export function Builder() {
             });
             setShowAnchorWizard(false);
           }}
+        />
+      )}
+
+      {showPartnerAvailability && (
+        <PartnerAvailabilityPanel
+          open={showPartnerAvailability}
+          plan={plan}
+          templates={state.templates}
+          currentWeek={currentWeek}
+          onClose={() => setShowPartnerAvailability(false)}
+          onUpdatePlan={(nextPlan) => dispatch({ type: 'UPDATE_PLAN', payload: nextPlan })}
+          onAddBlock={(block) => dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } })}
         />
       )}
       

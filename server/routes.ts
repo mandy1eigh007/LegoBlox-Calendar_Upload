@@ -4,6 +4,46 @@ import { storage } from "./storage";
 import { suggestSchedule } from "../predictive/solver";
 
 type ToPlaceItem = { templateId: string | null; durationMinutes: number; count?: number };
+type PartnerSlot = { id: string; date: string; startMinutes: number; durationMinutes: number; title?: string };
+type PartnerResponse = {
+  id: string;
+  slotId: string;
+  name: string;
+  org: string;
+  email: string;
+  phone: string;
+  notes: string;
+  status: 'pending' | 'approved' | 'declined';
+  createdAt: string;
+};
+type PartnerRequest = {
+  id: string;
+  planId: string;
+  planName: string;
+  code: string;
+  createdAt: string;
+  slots: PartnerSlot[];
+  responses: PartnerResponse[];
+};
+
+const PARTNER_AVAILABILITY_PATH = './server/data/partner-availability.json';
+
+function loadPartnerAvailability(): Record<string, PartnerRequest> {
+  const fs = require('fs');
+  if (!fs.existsSync(PARTNER_AVAILABILITY_PATH)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(PARTNER_AVAILABILITY_PATH, 'utf8') || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function savePartnerAvailability(data: Record<string, PartnerRequest>) {
+  const fs = require('fs');
+  const dir = './server/data';
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(PARTNER_AVAILABILITY_PATH, JSON.stringify(data, null, 2), 'utf8');
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -50,6 +90,129 @@ export async function registerRoutes(
       res.json(parsed);
     } catch (e: any) {
       res.status(500).json({ message: e?.message || 'error' });
+    }
+  });
+
+  app.post('/api/partner-availability', async (req, res) => {
+    try {
+      const { planId, planName, code, slots } = req.body as {
+        planId: string;
+        planName: string;
+        code: string;
+        slots: PartnerSlot[];
+      };
+      if (!planId || !code || !Array.isArray(slots) || slots.length === 0) {
+        return res.status(400).json({ message: 'invalid payload' });
+      }
+
+      const store = loadPartnerAvailability();
+      const id = `pa_${Date.now().toString(36)}`;
+      const createdAt = new Date().toISOString();
+      store[id] = {
+        id,
+        planId,
+        planName: planName || '',
+        code,
+        createdAt,
+        slots,
+        responses: [],
+      };
+      savePartnerAvailability(store);
+      res.json({ id, createdAt });
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || 'partner availability error' });
+    }
+  });
+
+  app.get('/api/partner-availability/:id', async (req, res) => {
+    try {
+      const id = req.params.id;
+      const code = (req.query.code as string) || '';
+      const store = loadPartnerAvailability();
+      const request = store[id];
+      if (!request) return res.status(404).json({ message: 'not found' });
+      if (request.code !== code) return res.status(403).json({ message: 'invalid code' });
+      res.json({
+        id: request.id,
+        planName: request.planName,
+        createdAt: request.createdAt,
+        slots: request.slots,
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || 'partner availability error' });
+    }
+  });
+
+  app.post('/api/partner-availability/:id/respond', async (req, res) => {
+    try {
+      const id = req.params.id;
+      const { code, slotId, name, org, email, phone, notes } = req.body as {
+        code: string;
+        slotId: string;
+        name: string;
+        org: string;
+        email: string;
+        phone: string;
+        notes: string;
+      };
+      if (!code || !slotId || !name || !org || !email || !phone) {
+        return res.status(400).json({ message: 'missing fields' });
+      }
+      const store = loadPartnerAvailability();
+      const request = store[id];
+      if (!request) return res.status(404).json({ message: 'not found' });
+      if (request.code !== code) return res.status(403).json({ message: 'invalid code' });
+
+      const response: PartnerResponse = {
+        id: `resp_${Date.now().toString(36)}`,
+        slotId,
+        name,
+        org,
+        email,
+        phone,
+        notes: notes || '',
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      };
+      request.responses.push(response);
+      savePartnerAvailability(store);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || 'partner availability error' });
+    }
+  });
+
+  app.get('/api/partner-availability/:id/responses', async (req, res) => {
+    try {
+      const id = req.params.id;
+      const code = (req.query.code as string) || '';
+      const store = loadPartnerAvailability();
+      const request = store[id];
+      if (!request) return res.status(404).json({ message: 'not found' });
+      if (request.code !== code) return res.status(403).json({ message: 'invalid code' });
+      res.json({ responses: request.responses, slots: request.slots, planId: request.planId, planName: request.planName });
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || 'partner availability error' });
+    }
+  });
+
+  app.post('/api/partner-availability/:id/approve', async (req, res) => {
+    try {
+      const id = req.params.id;
+      const { code, responseId } = req.body as { code: string; responseId: string };
+      if (!code || !responseId) return res.status(400).json({ message: 'missing fields' });
+      const store = loadPartnerAvailability();
+      const request = store[id];
+      if (!request) return res.status(404).json({ message: 'not found' });
+      if (request.code !== code) return res.status(403).json({ message: 'invalid code' });
+
+      const response = request.responses.find(r => r.id === responseId);
+      if (!response) return res.status(404).json({ message: 'response not found' });
+      response.status = 'approved';
+      savePartnerAvailability(store);
+      res.json({ ok: true, response, slot: request.slots.find(s => s.id === response.slotId) });
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || 'partner availability error' });
     }
   });
 

@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from './Modal';
-import { BlockTemplate, Day, DAYS, Plan, AnchorPromptId, AnchorEventDraft, PlacedBlock } from '@/state/types';
+import { BlockTemplate, Plan, AnchorPromptId, AnchorEventDraft, PlacedBlock } from '@/state/types';
 import { ANCHOR_PROMPTS, AnchorScheduleSelection, buildAnchorBlock, buildAnchorDraft, createAnchorSelections } from '@/lib/anchorPrompts';
 import { minutesToTimeDisplay } from '@/lib/time';
+import { getWeekDayFromDate } from '@/lib/dateMapping';
+import { v4 as uuidv4 } from 'uuid';
 
 interface AnchorScheduleWizardProps {
   open: boolean;
   plan: Plan;
   templates: BlockTemplate[];
   onClose: () => void;
-  onApply: (updates: { anchorSchedule: Partial<Record<AnchorPromptId, AnchorEventDraft>>; blocks: PlacedBlock[]; dismiss?: boolean }) => void;
+  onApply: (updates: { anchorSchedule: Partial<Record<AnchorPromptId, AnchorEventDraft[]>>; blocks: PlacedBlock[]; dismiss?: boolean }) => void;
 }
 
 export function AnchorScheduleWizard({ open, plan, templates, onClose, onApply }: AnchorScheduleWizardProps) {
@@ -19,26 +21,32 @@ export function AnchorScheduleWizard({ open, plan, templates, onClose, onApply }
   );
 
   const [drafts, setDrafts] = useState<Record<AnchorPromptId, AnchorScheduleSelection>>(
-    createAnchorSelections(plan.settings.dayStartMinutes)
+    createAnchorSelections(plan.settings.dayStartMinutes, plan.settings.startDate)
   );
+  const [wizardError, setWizardError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    const base = createAnchorSelections(plan.settings.dayStartMinutes);
+    const base = createAnchorSelections(plan.settings.dayStartMinutes, plan.settings.startDate);
     for (const prompt of ANCHOR_PROMPTS) {
       if (!plan.settings.anchorChecklist?.[prompt.id]) continue;
-      const existing = plan.settings.anchorSchedule?.[prompt.id];
+      const existing = plan.settings.anchorSchedule?.[prompt.id] || [];
       base[prompt.id] = {
         ...base[prompt.id],
         enabled: true,
-        createNow: existing?.created ? false : true,
-        week: existing?.week ?? base[prompt.id].week,
-        day: existing?.day ?? base[prompt.id].day,
-        startMinutes: existing?.startMinutes ?? base[prompt.id].startMinutes,
-        durationMinutes: existing?.durationMinutes ?? base[prompt.id].durationMinutes,
+        rows: existing.length > 0
+          ? existing.map(row => ({
+              id: row.id,
+              date: row.date,
+              startMinutes: row.startMinutes,
+              durationMinutes: row.durationMinutes,
+              createNow: !row.created,
+            }))
+          : base[prompt.id].rows,
       };
     }
     setDrafts(base);
+    setWizardError(null);
   }, [open, plan.settings.anchorChecklist, plan.settings.anchorSchedule, plan.settings.dayStartMinutes]);
 
   if (!open) return null;
@@ -57,22 +65,48 @@ export function AnchorScheduleWizard({ open, plan, templates, onClose, onApply }
   }
 
   const handleApply = (dismiss: boolean) => {
-    const anchorSchedule: Partial<Record<AnchorPromptId, AnchorEventDraft>> = {
+    setWizardError(null);
+    const anchorSchedule: Partial<Record<AnchorPromptId, AnchorEventDraft[]>> = {
       ...(plan.settings.anchorSchedule || {}),
     };
     const blocks: PlacedBlock[] = [];
+    const warnings: string[] = [];
 
     for (const prompt of selectedAnchors) {
       const selection = drafts[prompt.id];
       if (!selection?.enabled) continue;
-      const existing = plan.settings.anchorSchedule?.[prompt.id];
-      const alreadyCreated = !!existing?.created;
-      const draft = buildAnchorDraft(prompt, selection);
-      draft.created = alreadyCreated || selection.createNow;
-      anchorSchedule[prompt.id] = draft;
-      if (selection.createNow && !alreadyCreated) {
-        blocks.push(buildAnchorBlock(draft, templates));
+      const existing = plan.settings.anchorSchedule?.[prompt.id] || [];
+      const draftsForAnchor: AnchorEventDraft[] = selection.rows.map(row => {
+        const existingRow = existing.find(r => r.id === row.id);
+        const draft = buildAnchorDraft(prompt, row);
+        draft.created = existingRow?.created || row.createNow;
+        return draft;
+      });
+      anchorSchedule[prompt.id] = draftsForAnchor;
+
+      for (const draft of draftsForAnchor) {
+        const row = selection.rows.find(r => r.id === draft.id);
+        if (!row?.createNow) continue;
+        const { block, warning } = buildAnchorBlock(
+          draft,
+          templates,
+          plan.settings.startDate,
+          plan.settings.activeDays,
+          plan.settings.weeks
+        );
+        if (warning) {
+          warnings.push(`${prompt.defaultTitle}: ${warning}`);
+          continue;
+        }
+        if (block) {
+          blocks.push(block);
+        }
       }
+    }
+
+    if (warnings.length > 0) {
+      setWizardError(warnings.join(' '));
+      return;
     }
 
     onApply({ anchorSchedule, blocks, dismiss });
@@ -88,93 +122,150 @@ export function AnchorScheduleWizard({ open, plan, templates, onClose, onApply }
         <div className="space-y-3">
           {selectedAnchors.map(prompt => {
             const selection = drafts[prompt.id];
-            const existing = plan.settings.anchorSchedule?.[prompt.id];
-            const alreadyCreated = !!existing?.created;
+            const existing = plan.settings.anchorSchedule?.[prompt.id] || [];
             return (
               <div key={prompt.id} className="rounded border border-border p-3 bg-secondary/20 space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium text-foreground">{prompt.defaultTitle}</p>
-                  {alreadyCreated ? (
-                    <span className="text-xs text-green-600">Already added</span>
-                  ) : (
-                    <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        checked={selection.createNow}
-                        onChange={e => setDrafts({
-                          ...drafts,
-                          [prompt.id]: { ...selection, createNow: e.target.checked },
-                        })}
-                      />
-                      Create now
-                    </label>
-                  )}
+                  <button
+                    onClick={() => setDrafts({
+                      ...drafts,
+                      [prompt.id]: {
+                        ...selection,
+                        rows: [
+                          ...selection.rows,
+                          {
+                            id: uuidv4(),
+                            date: plan.settings.startDate || '',
+                            startMinutes: plan.settings.dayStartMinutes,
+                            durationMinutes: prompt.defaultDurationMinutes ?? 60,
+                            createNow: true,
+                          },
+                        ],
+                      },
+                    })}
+                    className="text-xs text-accent underline"
+                  >
+                    Add date
+                  </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <label className="block text-muted-foreground mb-1">Week</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={plan.settings.weeks}
-                      value={selection.week}
-                      onChange={e => setDrafts({
-                        ...drafts,
-                        [prompt.id]: { ...selection, week: parseInt(e.target.value) || 1 },
-                      })}
-                      className="w-full px-2 py-1 border rounded bg-input"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-muted-foreground mb-1">Day</label>
-                    <select
-                      value={selection.day}
-                      onChange={e => setDrafts({
-                        ...drafts,
-                        [prompt.id]: { ...selection, day: e.target.value as Day },
-                      })}
-                      className="w-full px-2 py-1 border rounded bg-input"
-                    >
-                      {DAYS.map(d => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-muted-foreground mb-1">Start Time</label>
-                    <select
-                      value={selection.startMinutes}
-                      onChange={e => setDrafts({
-                        ...drafts,
-                        [prompt.id]: { ...selection, startMinutes: parseInt(e.target.value) },
-                      })}
-                      className="w-full px-2 py-1 border rounded bg-input"
-                    >
-                      {timeOptions.map(m => (
-                        <option key={m} value={m}>{minutesToTimeDisplay(m)}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-muted-foreground mb-1">Duration (min)</label>
-                    <input
-                      type="number"
-                      min={15}
-                      step={15}
-                      value={selection.durationMinutes}
-                      onChange={e => setDrafts({
-                        ...drafts,
-                        [prompt.id]: { ...selection, durationMinutes: parseInt(e.target.value) || 60 },
-                      })}
-                      className="w-full px-2 py-1 border rounded bg-input"
-                    />
-                  </div>
+                <div className="space-y-2">
+                  {selection.rows.map(row => {
+                    const placement = row.date ? getWeekDayFromDate(row.date, plan.settings.startDate) : null;
+                    const outOfRange = placement ? placement.week > plan.settings.weeks || placement.week < 1 : false;
+                    const isOutsideActive = placement && plan.settings.activeDays?.length
+                      ? !plan.settings.activeDays.includes(placement.day)
+                      : false;
+                    const created = existing.find(r => r.id === row.id)?.created;
+                    return (
+                      <div key={row.id} className="border border-border rounded-lg p-2 text-xs space-y-2">
+                        <div className="flex items-center justify-between">
+                          {created ? (
+                            <span className="text-xs text-green-600">Already added</span>
+                          ) : (
+                            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <input
+                                type="checkbox"
+                                checked={row.createNow}
+                                onChange={e => setDrafts({
+                                  ...drafts,
+                                  [prompt.id]: {
+                                    ...selection,
+                                    rows: selection.rows.map(r => r.id === row.id ? { ...r, createNow: e.target.checked } : r),
+                                  },
+                                })}
+                              />
+                              Create now
+                            </label>
+                          )}
+                          {selection.rows.length > 1 && !created && (
+                            <button
+                              onClick={() => setDrafts({
+                                ...drafts,
+                                [prompt.id]: {
+                                  ...selection,
+                                  rows: selection.rows.filter(r => r.id !== row.id),
+                                },
+                              })}
+                              className="text-xs text-red-400"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <label className="block text-muted-foreground mb-1">Date</label>
+                            <input
+                              type="date"
+                              value={row.date}
+                              onChange={e => setDrafts({
+                                ...drafts,
+                                [prompt.id]: {
+                                  ...selection,
+                                  rows: selection.rows.map(r => r.id === row.id ? { ...r, date: e.target.value } : r),
+                                },
+                              })}
+                              className="w-full px-2 py-1 border rounded bg-input"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-muted-foreground mb-1">Start Time</label>
+                            <select
+                              value={row.startMinutes}
+                              onChange={e => setDrafts({
+                                ...drafts,
+                                [prompt.id]: {
+                                  ...selection,
+                                  rows: selection.rows.map(r => r.id === row.id ? { ...r, startMinutes: parseInt(e.target.value) } : r),
+                                },
+                              })}
+                              className="w-full px-2 py-1 border rounded bg-input"
+                            >
+                              {timeOptions.map(m => (
+                                <option key={m} value={m}>{minutesToTimeDisplay(m)}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-muted-foreground mb-1">Duration (min)</label>
+                            <input
+                              type="number"
+                              min={15}
+                              step={15}
+                              value={row.durationMinutes}
+                              onChange={e => setDrafts({
+                                ...drafts,
+                                [prompt.id]: {
+                                  ...selection,
+                                  rows: selection.rows.map(r => r.id === row.id ? { ...r, durationMinutes: parseInt(e.target.value) || 60 } : r),
+                                },
+                              })}
+                              className="w-full px-2 py-1 border rounded bg-input"
+                            />
+                          </div>
+                          <div className="text-muted-foreground">
+                            {placement ? `Week ${placement.week}, ${placement.day.slice(0, 3)}` : 'Select a date'}
+                            {(outOfRange || placement?.isWeekend || isOutsideActive) && (
+                              <p className="text-amber-500">Outside plan dates</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );
           })}
         </div>
+
+        {wizardError && (
+          <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded p-2">
+            {wizardError}
+          </div>
+        )}
 
         <div className="flex justify-end gap-3 pt-2">
           <button
