@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from './Modal';
-import { BlockTemplate, Plan, AnchorPromptId, AnchorEventDraft, PlacedBlock } from '@/state/types';
-import { ANCHOR_PROMPTS, AnchorScheduleSelection, buildAnchorBlock, buildAnchorDraft, createAnchorSelections } from '@/lib/anchorPrompts';
+import { BlockTemplate, Plan, AnchorPromptId, AnchorEventDraft, PlacedBlock, DAYS } from '@/state/types';
+import { ANCHOR_PROMPTS, AnchorScheduleSelection, buildAnchorDateDraft, buildAnchorWeeklyDraft, buildBlocksFromDraft, createAnchorSelections } from '@/lib/anchorPrompts';
 import { minutesToTimeDisplay } from '@/lib/time';
 import { getWeekDayFromDate } from '@/lib/dateMapping';
 import { v4 as uuidv4 } from 'uuid';
@@ -21,21 +21,23 @@ export function AnchorScheduleWizard({ open, plan, templates, onClose, onApply }
   );
 
   const [drafts, setDrafts] = useState<Record<AnchorPromptId, AnchorScheduleSelection>>(
-    createAnchorSelections(plan.settings.dayStartMinutes, plan.settings.startDate)
+    createAnchorSelections(plan.settings.dayStartMinutes, plan.settings.startDate, plan.settings.activeDays, plan.settings.weeks)
   );
   const [wizardError, setWizardError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    const base = createAnchorSelections(plan.settings.dayStartMinutes, plan.settings.startDate);
+    const base = createAnchorSelections(plan.settings.dayStartMinutes, plan.settings.startDate, plan.settings.activeDays, plan.settings.weeks);
     for (const prompt of ANCHOR_PROMPTS) {
       if (!plan.settings.anchorChecklist?.[prompt.id]) continue;
       const existing = plan.settings.anchorSchedule?.[prompt.id] || [];
+      const weeklyExisting = existing.find(entry => entry.type === 'weekly');
       base[prompt.id] = {
         ...base[prompt.id],
         enabled: true,
+        mode: weeklyExisting ? 'weekly' : base[prompt.id].mode,
         rows: existing.length > 0
-          ? existing.map(row => ({
+          ? existing.filter(entry => entry.type === 'date').map(row => ({
               id: row.id,
               date: row.date,
               startMinutes: row.startMinutes,
@@ -43,11 +45,29 @@ export function AnchorScheduleWizard({ open, plan, templates, onClose, onApply }
               createNow: !row.created,
             }))
           : base[prompt.id].rows,
+        weekly: weeklyExisting
+          ? {
+              startWeek: weeklyExisting.startWeek,
+              endWeek: weeklyExisting.endWeek,
+              days: weeklyExisting.days,
+              startMinutes: weeklyExisting.startMinutes,
+              durationMinutes: weeklyExisting.durationMinutes,
+              createNow: !weeklyExisting.created,
+            }
+          : base[prompt.id].weekly,
       };
     }
     setDrafts(base);
     setWizardError(null);
-  }, [open, plan.settings.anchorChecklist, plan.settings.anchorSchedule, plan.settings.dayStartMinutes]);
+  }, [
+    open,
+    plan.settings.anchorChecklist,
+    plan.settings.anchorSchedule,
+    plan.settings.dayStartMinutes,
+    plan.settings.startDate,
+    plan.settings.activeDays,
+    plan.settings.weeks,
+  ]);
 
   if (!open) return null;
 
@@ -76,30 +96,50 @@ export function AnchorScheduleWizard({ open, plan, templates, onClose, onApply }
       const selection = drafts[prompt.id];
       if (!selection?.enabled) continue;
       const existing = plan.settings.anchorSchedule?.[prompt.id] || [];
-      const draftsForAnchor: AnchorEventDraft[] = selection.rows.map(row => {
-        const existingRow = existing.find(r => r.id === row.id);
-        const draft = buildAnchorDraft(prompt, row);
-        draft.created = existingRow?.created || row.createNow;
-        return draft;
-      });
-      anchorSchedule[prompt.id] = draftsForAnchor;
 
-      for (const draft of draftsForAnchor) {
-        const row = selection.rows.find(r => r.id === draft.id);
-        if (!row?.createNow) continue;
-        const { block, warning } = buildAnchorBlock(
-          draft,
-          templates,
-          plan.settings.startDate,
-          plan.settings.activeDays,
-          plan.settings.weeks
-        );
-        if (warning) {
-          warnings.push(`${prompt.defaultTitle}: ${warning}`);
-          continue;
+      if (selection.mode === 'weekly' && selection.weekly && prompt.supportsWeekly) {
+        const weeklyDraft = buildAnchorWeeklyDraft(prompt, selection.weekly);
+        const existingWeekly = existing.find(entry => entry.type === 'weekly');
+        weeklyDraft.created = existingWeekly?.created || selection.weekly.createNow;
+        anchorSchedule[prompt.id] = [weeklyDraft];
+
+        if (selection.weekly.createNow) {
+          const result = buildBlocksFromDraft(
+            weeklyDraft,
+            templates,
+            plan.settings.startDate,
+            plan.settings.activeDays,
+            plan.settings.weeks
+          );
+          if (result.warnings.length > 0) {
+            warnings.push(`${prompt.defaultTitle}: ${result.warnings.join(' ')}`);
+          }
+          blocks.push(...result.blocks);
         }
-        if (block) {
-          blocks.push(block);
+      } else {
+        const draftsForAnchor: AnchorEventDraft[] = selection.rows.map(row => {
+          const existingRow = existing.find(r => r.id === row.id);
+          const draft = buildAnchorDateDraft(prompt, row);
+          draft.created = existingRow?.created || row.createNow;
+          return draft;
+        });
+        anchorSchedule[prompt.id] = draftsForAnchor;
+
+        for (const draft of draftsForAnchor) {
+          const row = selection.rows.find(r => r.id === draft.id);
+          if (!row?.createNow) continue;
+          const result = buildBlocksFromDraft(
+            draft,
+            templates,
+            plan.settings.startDate,
+            plan.settings.activeDays,
+            plan.settings.weeks
+          );
+          if (result.warnings.length > 0) {
+            warnings.push(`${prompt.defaultTitle}: ${result.warnings.join(' ')}`);
+            continue;
+          }
+          blocks.push(...result.blocks);
         }
       }
     }
@@ -127,30 +167,184 @@ export function AnchorScheduleWizard({ open, plan, templates, onClose, onApply }
               <div key={prompt.id} className="rounded border border-border p-3 bg-secondary/20 space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium text-foreground">{prompt.defaultTitle}</p>
-                  <button
-                    onClick={() => setDrafts({
-                      ...drafts,
-                      [prompt.id]: {
-                        ...selection,
-                        rows: [
-                          ...selection.rows,
-                          {
-                            id: uuidv4(),
-                            date: plan.settings.startDate || '',
-                            startMinutes: plan.settings.dayStartMinutes,
-                            durationMinutes: prompt.defaultDurationMinutes ?? 60,
-                            createNow: true,
+                  <div className="flex items-center gap-2">
+                    {prompt.supportsWeekly && (
+                      <>
+                        <button
+                          onClick={() => setDrafts({
+                            ...drafts,
+                            [prompt.id]: { ...selection, mode: 'weekly' },
+                          })}
+                          className={`text-xs px-2 py-1 rounded border ${
+                            selection.mode === 'weekly'
+                              ? 'border-accent text-accent'
+                              : 'border-border text-muted-foreground'
+                          }`}
+                        >
+                          Weekly
+                        </button>
+                        <button
+                          onClick={() => setDrafts({
+                            ...drafts,
+                            [prompt.id]: { ...selection, mode: 'dates' },
+                          })}
+                          className={`text-xs px-2 py-1 rounded border ${
+                            selection.mode === 'dates'
+                              ? 'border-accent text-accent'
+                              : 'border-border text-muted-foreground'
+                          }`}
+                        >
+                          Dates
+                        </button>
+                      </>
+                    )}
+                    {selection.mode === 'dates' && (
+                      <button
+                        onClick={() => setDrafts({
+                          ...drafts,
+                          [prompt.id]: {
+                            ...selection,
+                            rows: [
+                              ...selection.rows,
+                              {
+                                id: uuidv4(),
+                                date: plan.settings.startDate || '',
+                                startMinutes: plan.settings.dayStartMinutes,
+                                durationMinutes: prompt.defaultDurationMinutes ?? 60,
+                                createNow: true,
+                              },
+                            ],
                           },
-                        ],
-                      },
-                    })}
-                    className="text-xs text-accent underline"
-                  >
-                    Add date
-                  </button>
+                        })}
+                        className="text-xs text-accent underline"
+                      >
+                        Add date
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <div className="space-y-2">
+                {selection.mode === 'weekly' && selection.weekly && (
+                  <div className="border border-border rounded-lg p-2 text-xs space-y-2">
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={selection.weekly.createNow}
+                        onChange={e => setDrafts({
+                          ...drafts,
+                          [prompt.id]: {
+                            ...selection,
+                            weekly: { ...selection.weekly!, createNow: e.target.checked },
+                          },
+                        })}
+                      />
+                      Create locked events now
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-muted-foreground mb-1">Start week</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={plan.settings.weeks}
+                        value={selection.weekly?.startWeek ?? 1}
+                          onChange={e => setDrafts({
+                            ...drafts,
+                            [prompt.id]: {
+                              ...selection,
+                              weekly: { ...selection.weekly!, startWeek: parseInt(e.target.value) || 1 },
+                            },
+                          })}
+                          className="w-full px-2 py-1 border rounded bg-input"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-muted-foreground mb-1">End week</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={plan.settings.weeks}
+                        value={selection.weekly?.endWeek ?? plan.settings.weeks}
+                          onChange={e => setDrafts({
+                            ...drafts,
+                            [prompt.id]: {
+                              ...selection,
+                              weekly: { ...selection.weekly!, endWeek: parseInt(e.target.value) || plan.settings.weeks },
+                            },
+                          })}
+                          className="w-full px-2 py-1 border rounded bg-input"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-muted-foreground mb-1">Start Time</label>
+                        <select
+                        value={selection.weekly?.startMinutes ?? plan.settings.dayStartMinutes}
+                          onChange={e => setDrafts({
+                            ...drafts,
+                            [prompt.id]: {
+                              ...selection,
+                              weekly: { ...selection.weekly!, startMinutes: parseInt(e.target.value) },
+                            },
+                          })}
+                          className="w-full px-2 py-1 border rounded bg-input"
+                        >
+                          {timeOptions.map(m => (
+                            <option key={m} value={m}>{minutesToTimeDisplay(m)}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-muted-foreground mb-1">Duration (min)</label>
+                        <input
+                          type="number"
+                          min={15}
+                          step={15}
+                        value={selection.weekly?.durationMinutes ?? 60}
+                          onChange={e => setDrafts({
+                            ...drafts,
+                            [prompt.id]: {
+                              ...selection,
+                              weekly: { ...selection.weekly!, durationMinutes: parseInt(e.target.value) || 60 },
+                            },
+                          })}
+                          className="w-full px-2 py-1 border rounded bg-input"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-muted-foreground mb-1">Days</label>
+                      <div className="flex flex-wrap gap-2">
+                        {(plan.settings.activeDays || DAYS).map(day => (
+                          <label key={day} className="flex items-center gap-1 text-xs">
+                            <input
+                              type="checkbox"
+                              checked={selection.weekly?.days.includes(day) ?? false}
+                              onChange={e => {
+                                const nextDays = new Set(selection.weekly?.days || []);
+                                if (e.target.checked) {
+                                  nextDays.add(day);
+                                } else {
+                                  nextDays.delete(day);
+                                }
+                                setDrafts({
+                                  ...drafts,
+                                  [prompt.id]: {
+                                    ...selection,
+                                    weekly: { ...selection.weekly!, days: Array.from(nextDays) },
+                                  },
+                                });
+                              }}
+                            />
+                            {day.slice(0, 3)}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {selection.mode === 'dates' && (
+                  <div className="space-y-2">
                   {selection.rows.map(row => {
                     const placement = row.date ? getWeekDayFromDate(row.date, plan.settings.startDate) : null;
                     const outOfRange = placement ? placement.week > plan.settings.weeks || placement.week < 1 : false;
@@ -255,7 +449,8 @@ export function AnchorScheduleWizard({ open, plan, templates, onClose, onApply }
                       </div>
                     );
                   })}
-                </div>
+                  </div>
+                )}
               </div>
             );
           })}

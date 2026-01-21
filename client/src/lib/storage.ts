@@ -196,13 +196,27 @@ export function loadState(): { state: AppState; error?: string } {
         const anchorSchedule = plan.settings.anchorSchedule as Partial<Record<AnchorPromptId, AnchorEventDraft[] | AnchorEventDraft>>;
         for (const [key, value] of Object.entries(anchorSchedule)) {
           if (!value) continue;
-          if (Array.isArray(value)) continue;
+          if (Array.isArray(value)) {
+            for (const entry of value) {
+              if (!('type' in entry)) {
+                (entry as AnchorEventDraft).type = 'date';
+              }
+              if ((entry as any).type === 'date' && !(entry as any).date && (entry as any).week && (entry as any).day) {
+                const date = plan.settings.startDate
+                  ? getDateForWeekDay(plan.settings.startDate, (entry as any).week, (entry as any).day) || plan.settings.startDate
+                  : plan.settings.startDate || '';
+                (entry as any).date = date;
+              }
+            }
+            continue;
+          }
           const legacy = value as { week?: number; day?: Day; startMinutes?: number; durationMinutes?: number; title?: string; countsTowardGoldenRule?: boolean; isLocked?: boolean; created?: boolean };
           const date = plan.settings.startDate && legacy.week && legacy.day
             ? getDateForWeekDay(plan.settings.startDate, legacy.week, legacy.day) || plan.settings.startDate
             : plan.settings.startDate || '';
           anchorSchedule[key as AnchorPromptId] = [
             {
+              type: 'date',
               id: `legacy_${Date.now().toString(36)}`,
               date: date || '',
               startMinutes: legacy.startMinutes ?? plan.settings.dayStartMinutes,

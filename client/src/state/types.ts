@@ -12,7 +12,8 @@ export type AnchorPromptId =
   | 'apprenticeship_tours'
   | 'job_site_tours';
 
-export interface AnchorEventDraft {
+export interface AnchorDateDraft {
+  type: 'date';
   id: string;
   date: string; // YYYY-MM-DD
   startMinutes: number;
@@ -22,6 +23,22 @@ export interface AnchorEventDraft {
   isLocked: boolean;
   created?: boolean;
 }
+
+export interface AnchorWeeklyDraft {
+  type: 'weekly';
+  id: string;
+  startWeek: number;
+  endWeek: number;
+  days: Day[];
+  startMinutes: number;
+  durationMinutes: number;
+  title: string;
+  countsTowardGoldenRule: boolean;
+  isLocked: boolean;
+  created?: boolean;
+}
+
+export type AnchorEventDraft = AnchorDateDraft | AnchorWeeklyDraft;
 
 export const COLOR_PALETTE = [
   { name: 'Blue', hex: '#3B82F6' },
