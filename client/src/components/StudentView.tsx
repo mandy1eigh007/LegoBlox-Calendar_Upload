@@ -2,7 +2,7 @@ import { useParams } from 'wouter';
 import { useStore } from '@/state/store';
 import { Plan, DAYS, BlockTemplate } from '@/state/types';
 import { minutesToTimeDisplay, getEndMinutes, durationToPixelHeight, minutesToPixelOffset, SLOT_HEIGHT_PX } from '@/lib/time';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 interface ReadOnlyBlockProps {
   block: Plan['blocks'][0];
@@ -95,6 +95,26 @@ export function StudentView() {
   const usingRemote = !!remotePlan;
   const templates = usingRemote ? (remoteTemplates.length > 0 ? remoteTemplates : state.templates) : state.templates;
 
+  const getBlockTitle = (block: Plan['blocks'][0]) => {
+    if (block.titleOverride) return block.titleOverride;
+    const template = templates.find(t => t.id === block.templateId);
+    return template?.title || 'Event';
+  };
+
+  const partnerBlocks = useMemo(() => {
+    if (!plan) return [];
+    const hasPartnerInfo = (block: Plan['blocks'][0]) =>
+      !!(block.partnerOrg || block.partnerContact || block.partnerEmail || block.partnerPhone || block.partnerAddress || block.partnerPPE || block.partnerParking);
+    const dayOrder = new Map(DAYS.map((d, idx) => [d, idx]));
+    return plan.blocks
+      .filter(block => block.week === currentWeek && hasPartnerInfo(block))
+      .sort((a, b) => {
+        const dayDiff = (dayOrder.get(a.day) ?? 0) - (dayOrder.get(b.day) ?? 0);
+        if (dayDiff !== 0) return dayDiff;
+        return a.startMinutes - b.startMinutes;
+      });
+  }, [plan, currentWeek, templates]);
+
   useEffect(() => {
     if (plan) {
       setCurrentWeek(1);
@@ -180,6 +200,38 @@ export function StudentView() {
       </header>
 
       <main className="max-w-7xl mx-auto p-4">
+        {partnerBlocks.length > 0 && (
+          <section className="mb-6 bg-white rounded-lg border shadow-sm p-4" data-testid="student-partner-section">
+            <h2 className="text-lg font-semibold mb-3">Partner Visits & Contacts</h2>
+            <div className="space-y-3">
+              {partnerBlocks.map(block => (
+                <div key={block.id} className="border rounded-md p-3 text-sm">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="font-medium">{getBlockTitle(block)}</p>
+                      <p className="text-gray-600">
+                        {block.day} · {minutesToTimeDisplay(block.startMinutes)} - {minutesToTimeDisplay(getEndMinutes(block.startMinutes, block.durationMinutes))}
+                        {block.location ? ` · ${block.location}` : ''}
+                      </p>
+                    </div>
+                    {block.partnerOrg && (
+                      <span className="text-xs px-2 py-1 bg-gray-100 rounded">{block.partnerOrg}</span>
+                    )}
+                  </div>
+                  <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-gray-700">
+                    {block.partnerContact && <div><span className="font-medium">Contact:</span> {block.partnerContact}</div>}
+                    {block.partnerEmail && <div><span className="font-medium">Email:</span> {block.partnerEmail}</div>}
+                    {block.partnerPhone && <div><span className="font-medium">Phone:</span> {block.partnerPhone}</div>}
+                    {block.partnerAddress && <div><span className="font-medium">Address:</span> {block.partnerAddress}</div>}
+                    {block.partnerPPE && <div><span className="font-medium">PPE:</span> {block.partnerPPE}</div>}
+                    {block.partnerParking && <div><span className="font-medium">Parking:</span> {block.partnerParking}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
           <div className="sticky top-0 z-10 bg-white border-b">
             <div className="flex">
