@@ -31,20 +31,20 @@ export function Modal({ open, onClose, title, children }: ModalProps) {
         onClick={onClose}
       />
       <div 
-        className="relative glass-panel rounded-xl shadow-2xl max-w-lg w-full mx-4 max-h-[90vh] overflow-auto neon-border"
+        className="relative glass-panel neon-border shadow-2xl w-[min(900px,96vw)] max-h-[92vh] mx-2 sm:mx-4 rounded-2xl sm:rounded-xl overflow-hidden flex flex-col"
         data-testid="modal-content"
       >
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h2 className="text-lg font-semibold text-foreground">{title}</h2>
           <button
             onClick={onClose}
-            className="px-3 py-1 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded transition-all"
+            className="px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded transition-all"
             data-testid="modal-close"
           >
             Close
           </button>
         </div>
-        <div className="p-4">
+        <div className="p-4 overflow-y-auto">
           {children}
         </div>
       </div>

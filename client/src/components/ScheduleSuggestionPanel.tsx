@@ -264,7 +264,7 @@ export function ScheduleSuggestionPanel({
 
   return (
     <Modal open={open} onClose={onClose} title="Predictive Schedule Generator">
-      <div className="space-y-4 max-h-[70vh] overflow-y-auto">
+      <div className="space-y-4 sm:max-h-[70vh] sm:overflow-y-auto">
         {!result && !isGenerating && (
           <div className="space-y-4">
             <div className="bg-accent/10 border border-accent/30 rounded-lg p-4">
@@ -423,7 +423,7 @@ export function ScheduleSuggestionPanel({
                 Insufficient training data. Showing a heuristic draft so you can still confirm or adjust placements.
               </div>
             )}
-            <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
               <div className="bg-secondary/50 rounded-lg p-3">
                 <div className="text-2xl font-bold text-foreground">{result.stats.totalBlocks}</div>
                 <div className="text-xs text-muted-foreground">Blocks Generated</div>
@@ -463,7 +463,7 @@ export function ScheduleSuggestionPanel({
             )}
 
             <div>
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2 gap-2">
                 <span className="text-sm font-medium text-foreground">Suggested Blocks ({result.suggestions.length})</span>
                 <div className="flex gap-2 text-xs">
                   <button onClick={selectAll} className="text-accent hover:underline">Select All</button>
@@ -472,7 +472,7 @@ export function ScheduleSuggestionPanel({
                 </div>
               </div>
 
-              <div className="border border-border rounded-lg max-h-64 overflow-y-auto">
+              <div className="border border-border rounded-lg max-h-[45vh] sm:max-h-64 overflow-y-auto">
                 {Object.entries(groupedByWeek).map(([weekNum, blocks]) => (
                   <div key={weekNum}>
                     <div className="bg-secondary/50 px-3 py-1 text-xs font-medium text-muted-foreground sticky top-0">
@@ -514,7 +514,7 @@ export function ScheduleSuggestionPanel({
               </div>
             </div>
 
-            <div className="flex gap-3 pt-2">
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <button
                 onClick={() => { setResult(null); setSelectedBlocks(new Set()); }}
                 className="flex-1 px-4 py-2 border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
