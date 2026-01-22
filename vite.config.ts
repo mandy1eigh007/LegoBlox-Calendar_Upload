@@ -43,6 +43,11 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     allowedHosts: true,
+    headers: {
+      "Cache-Control": "no-store",
+      "Pragma": "no-cache",
+      "Expires": "0",
+    },
     fs: {
       strict: true,
       deny: ["**/.*"],

@@ -426,17 +426,17 @@ export function ScheduleSuggestionPanel({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
               <div className="bg-secondary/50 rounded-lg p-3">
                 <div className="text-2xl font-bold text-foreground">{result.stats.totalBlocks}</div>
-                <div className="text-xs text-muted-foreground">Blocks Generated</div>
+                <div className="text-sm sm:text-xs text-muted-foreground">Blocks Generated</div>
               </div>
               <div className="bg-secondary/50 rounded-lg p-3">
                 <div className="text-2xl font-bold text-foreground">{formatDuration(result.stats.totalMinutes)}</div>
-                <div className="text-xs text-muted-foreground">Total Time</div>
+                <div className="text-sm sm:text-xs text-muted-foreground">Total Time</div>
               </div>
               <div className="bg-secondary/50 rounded-lg p-3">
                 <div className="text-2xl font-bold text-foreground">
                   {result.coverage.filter(c => Math.abs(c.gap) <= 15).length}/{result.coverage.length}
                 </div>
-                <div className="text-xs text-muted-foreground">Budgets Met</div>
+                <div className="text-sm sm:text-xs text-muted-foreground">Budgets Met</div>
               </div>
             </div>
 
@@ -464,18 +464,18 @@ export function ScheduleSuggestionPanel({
 
             <div>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-2 gap-2">
-                <span className="text-sm font-medium text-foreground">Suggested Blocks ({result.suggestions.length})</span>
-                <div className="flex gap-2 text-xs">
+                <span className="text-base sm:text-sm font-medium text-foreground">Suggested Blocks ({result.suggestions.length})</span>
+                <div className="flex gap-2 text-sm sm:text-xs">
                   <button onClick={selectAll} className="text-accent hover:underline">Select All</button>
                   <span className="text-muted-foreground">|</span>
                   <button onClick={deselectAll} className="text-accent hover:underline">Deselect All</button>
                 </div>
               </div>
 
-              <div className="border border-border rounded-lg max-h-[45vh] sm:max-h-64 overflow-y-auto">
+              <div className="border border-border rounded-lg max-h-[55vh] sm:max-h-64 overflow-y-auto">
                 {Object.entries(groupedByWeek).map(([weekNum, blocks]) => (
                   <div key={weekNum}>
-                    <div className="bg-secondary/50 px-3 py-1 text-xs font-medium text-muted-foreground sticky top-0">
+                    <div className="bg-secondary/50 px-3 py-1 text-sm sm:text-xs font-medium text-muted-foreground sticky top-0">
                       Week {weekNum}
                     </div>
                     {blocks.map(block => {
@@ -483,13 +483,13 @@ export function ScheduleSuggestionPanel({
                       return (
                         <label
                           key={block.id}
-                          className="flex items-center gap-3 px-3 py-2 hover:bg-secondary/30 cursor-pointer border-b border-border last:border-b-0"
+                          className="flex items-center gap-3 px-3 py-3 sm:py-2 hover:bg-secondary/30 cursor-pointer border-b border-border last:border-b-0"
                         >
                           <input
                             type="checkbox"
                             checked={selectedBlocks.has(block.id)}
                             onChange={() => toggleBlock(block.id)}
-                            className="rounded accent-primary"
+                            className="h-5 w-5 sm:h-4 sm:w-4 rounded accent-primary"
                           />
                           <div
                             className="w-3 h-3 rounded"
@@ -497,12 +497,12 @@ export function ScheduleSuggestionPanel({
                           />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
-                              <div className="text-sm font-medium text-foreground truncate">{block.bucketLabel}</div>
+                              <div className="text-base sm:text-sm font-medium text-foreground truncate">{block.bucketLabel}</div>
                               {typeof block.confidence === 'number' && (
-                                <div className="text-xs px-2 py-0.5 bg-accent/10 text-accent rounded-full">{Math.round(block.confidence * 100)}%</div>
+                                <div className="text-sm sm:text-xs px-2 py-0.5 bg-accent/10 text-accent rounded-full">{Math.round(block.confidence * 100)}%</div>
                               )}
                             </div>
-                            <div className="text-xs text-muted-foreground">
+                            <div className="text-sm sm:text-xs text-muted-foreground">
                               {block.day} {minutesToTimeDisplay(block.startMinutes)} - {minutesToTimeDisplay(block.startMinutes + block.durationMinutes)} ({formatDuration(block.durationMinutes)})
                             </div>
                           </div>
