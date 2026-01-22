@@ -38,11 +38,14 @@ export function suggestSchedule(
   dayStartMinutes = 390,
   dayEndMinutes = 930,
   slotMinutes = 15,
-  templateTitlesById?: Record<string, string>
+  templateTitlesById?: Record<string, string>,
+  allowedDaysInput?: number[]
 ): { placed: SuggestedPlacedBlock[]; unplaced: { templateId: string | null; count: number }[] } {
   const models = loadModels(modelsPath);
   const placed: SuggestedPlacedBlock[] = [];
-  const allowedDays = [0, 1, 2, 3, 4];
+  const allowedDays = (allowedDaysInput && allowedDaysInput.length > 0)
+    ? allowedDaysInput.filter(d => d >= 0 && d <= 4)
+    : [0, 1, 2, 3, 4];
 
   // simple availability list starts with existing blocks
   const occupied: ExistingBlock[] = [...existingBlocks];

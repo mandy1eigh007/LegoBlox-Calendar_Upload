@@ -22,6 +22,7 @@ export interface SchedulerConfig {
   maxBlockDuration: number;
   distributeAcrossWeeks: boolean;
   hardDates?: { week: number; day: Day }[];
+  activeDays?: Day[];
 }
 
 export interface SuggestedBlock extends PlacedBlock {
@@ -59,8 +60,9 @@ function getAvailableSlots(
   const slots: TimeSlot[] = [];
   const existingBlocks = plan.blocks.filter(b => b.week === week);
   const hardDates = config.hardDates || [];
+  const activeDays = config.activeDays && config.activeDays.length > 0 ? config.activeDays : DAYS;
   
-  for (const day of DAYS) {
+  for (const day of activeDays) {
     // Skip hard dates - don't schedule on these days
     const isHardDate = hardDates.some(hd => hd.week === week && hd.day === day);
     if (isHardDate) continue;
@@ -353,5 +355,6 @@ export function generateWeekSuggestions(
     dayEndMinutes: settings.dayEndMinutes,
     slotMinutes: settings.slotMinutes,
     distributeAcrossWeeks: false,
+    activeDays: settings.activeDays,
   });
 }

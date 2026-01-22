@@ -57,7 +57,7 @@ export async function registerRoutes(
 
   app.post('/api/predictive/solve', async (req, res) => {
     try {
-      const { toPlace, week, existingBlocks, dayStartMinutes, dayEndMinutes, slotMinutes, templateTitlesById } = req.body as {
+      const { toPlace, week, existingBlocks, dayStartMinutes, dayEndMinutes, slotMinutes, templateTitlesById, activeDays } = req.body as {
         toPlace: ToPlaceItem[];
         week?: number;
         existingBlocks?: any[];
@@ -65,6 +65,7 @@ export async function registerRoutes(
         dayEndMinutes?: number;
         slotMinutes?: number;
         templateTitlesById?: Record<string, string>;
+        activeDays?: string[];
       };
 
       const wk = week || 1;
@@ -72,7 +73,22 @@ export async function registerRoutes(
       const de = dayEndMinutes || 930;
       const sm = slotMinutes || 15;
 
-      const result = suggestSchedule(toPlace || [], undefined, existingBlocks || [], wk, ds, de, sm, templateTitlesById);
+      const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+      const allowedDays = Array.isArray(activeDays)
+        ? activeDays.map(day => dayOrder.indexOf(day)).filter(idx => idx >= 0)
+        : undefined;
+
+      const result = suggestSchedule(
+        toPlace || [],
+        undefined,
+        existingBlocks || [],
+        wk,
+        ds,
+        de,
+        sm,
+        templateTitlesById,
+        allowedDays
+      );
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ message: e?.message || 'predictive error' });

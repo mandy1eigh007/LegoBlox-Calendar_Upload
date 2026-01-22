@@ -98,6 +98,7 @@ export function ScheduleSuggestionPanel({
         slotMinutes: plan.settings.slotMinutes,
         distributeAcrossWeeks: scope === 'all',
         hardDates: hardDates.map(hd => ({ week: hd.week, day: hd.day })),
+        activeDays: plan.settings.activeDays,
       });
 
       if (insufficientTraining) {
@@ -146,6 +147,7 @@ export function ScheduleSuggestionPanel({
               dayEndMinutes: plan.settings.dayEndMinutes,
               slotMinutes: plan.settings.slotMinutes,
               templateTitlesById,
+              activeDays: plan.settings.activeDays,
             }),
           }).then(r => r.json()).then((solverResult) => ({ solverResult, models }));
         })
