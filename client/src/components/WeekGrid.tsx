@@ -262,7 +262,18 @@ export function WeekGrid({ plan, currentWeek, templates, onBlockClick, onBlockDo
     return grouped;
   }, [plan.blocks, currentWeek]);
 
-  const enabledDays = DAYS.filter(() => true);
+  const activeDays = settings.activeDays && settings.activeDays.length > 0 ? settings.activeDays : DAYS;
+  const daysWithBlocks = useMemo(() => {
+    const set = new Set<Day>();
+    for (const block of plan.blocks) {
+      if (block.week === currentWeek) {
+        set.add(block.day);
+      }
+    }
+    return set;
+  }, [plan.blocks, currentWeek]);
+
+  const enabledDays = DAYS.filter(day => activeDays.includes(day) || daysWithBlocks.has(day));
 
   return (
     <div className="flex-1 overflow-auto bg-white" data-testid="week-grid">
