@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { useDraggable } from '@dnd-kit/core';
 import { Plan, PlacedBlock, BlockTemplate, Day, DAYS } from '@/state/types';
@@ -23,9 +23,9 @@ interface WeekGridProps {
 
 interface DayColumnProps {
   day: Day;
-  plan: Plan;
+  dayBlocks: PlacedBlock[];
   currentWeek: number;
-  templates: BlockTemplate[];
+  templatesById: Record<string, BlockTemplate>;
   timeSlots: number[];
   dayStartMinutes: number;
   dayEndMinutes: number;
@@ -167,9 +167,9 @@ function DraggablePlacedBlock({
 
 function DayColumn({ 
   day, 
-  plan, 
+  dayBlocks,
   currentWeek, 
-  templates, 
+  templatesById,
   timeSlots,
   dayStartMinutes,
   dayEndMinutes,
@@ -182,8 +182,6 @@ function DayColumn({
     id: `day-${day}`,
     data: { day },
   });
-
-  const dayBlocks = plan.blocks.filter(b => b.week === currentWeek && b.day === day);
 
   return (
     <div 
@@ -200,7 +198,7 @@ function DayColumn({
       ))}
       
       {dayBlocks.map(block => {
-        const template = templates.find(t => t.id === block.templateId);
+        const template = block.templateId ? templatesById[block.templateId] : undefined;
         const conflicts = findTimeConflicts(
           dayBlocks,
           currentWeek,
@@ -234,10 +232,35 @@ function DayColumn({
 
 export function WeekGrid({ plan, currentWeek, templates, onBlockClick, onBlockDoubleClick, onBlockResize, selectedBlockId }: WeekGridProps) {
   const { settings } = plan;
-  const timeSlots: number[] = [];
-  for (let m = settings.dayStartMinutes; m < settings.dayEndMinutes; m += 15) {
-    timeSlots.push(m);
-  }
+  const timeSlots = useMemo(() => {
+    const slots: number[] = [];
+    const slotMinutes = settings.slotMinutes || 15;
+    for (let m = settings.dayStartMinutes; m < settings.dayEndMinutes; m += slotMinutes) {
+      slots.push(m);
+    }
+    return slots;
+  }, [settings.dayStartMinutes, settings.dayEndMinutes, settings.slotMinutes]);
+
+  const templatesById = useMemo(() => {
+    return templates.reduce((acc, template) => {
+      acc[template.id] = template;
+      return acc;
+    }, {} as Record<string, BlockTemplate>);
+  }, [templates]);
+
+  const blocksByDay = useMemo(() => {
+    const grouped = DAYS.reduce((acc, day) => {
+      acc[day] = [];
+      return acc;
+    }, {} as Record<Day, PlacedBlock[]>);
+
+    for (const block of plan.blocks) {
+      if (block.week !== currentWeek) continue;
+      grouped[block.day].push(block);
+    }
+
+    return grouped;
+  }, [plan.blocks, currentWeek]);
 
   const enabledDays = DAYS.filter(() => true);
 
@@ -274,9 +297,9 @@ export function WeekGrid({ plan, currentWeek, templates, onBlockClick, onBlockDo
           <DayColumn
             key={day}
             day={day}
-            plan={plan}
+            dayBlocks={blocksByDay[day]}
             currentWeek={currentWeek}
-            templates={templates}
+            templatesById={templatesById}
             timeSlots={timeSlots}
             dayStartMinutes={settings.dayStartMinutes}
             dayEndMinutes={settings.dayEndMinutes}
