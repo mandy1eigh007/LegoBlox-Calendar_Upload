@@ -4,7 +4,7 @@ import { generateScheduleSuggestions, SchedulerResult, SuggestedBlock } from '@/
 import { getProbabilityTableStats, loadProbabilityTable } from '@/lib/probabilityLearning';
 import { calculateGoldenRuleTotals } from '@/lib/goldenRule';
 import { minutesToTimeDisplay } from '@/lib/time';
-import { Modal } from './Modal';
+import { ConfirmModal, Modal } from './Modal';
 import { Loader2, Check, X, AlertTriangle, Sparkles, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface ScheduleSuggestionPanelProps {
@@ -13,7 +13,7 @@ interface ScheduleSuggestionPanelProps {
   currentWeek: number;
   open: boolean;
   onClose: () => void;
-  onAccept: (blocks: SuggestedBlock[]) => void;
+  onAccept: (blocks: SuggestedBlock[], options?: { replaceExisting?: boolean; scope?: 'week' | 'all'; targetWeek?: number }) => void;
   onUpdateHardDates: (hardDates: HardDate[]) => void;
 }
 
@@ -55,6 +55,9 @@ export function ScheduleSuggestionPanel({
   const [scope, setScope] = useState<'week' | 'all'>('all');
   const [showHardDates, setShowHardDates] = useState(false);
   const [hardDates, setHardDates] = useState<HardDate[]>(plan.settings.hardDates || []);
+  const [generationMode, setGenerationMode] = useState<'fill' | 'scratch'>('fill');
+  const [showReplaceConfirm, setShowReplaceConfirm] = useState(false);
+  const [pendingReplaceBlocks, setPendingReplaceBlocks] = useState<SuggestedBlock[]>([]);
   const [newHardDate, setNewHardDate] = useState<{ week: number; day: Day; description: string }>({
     week: currentWeek,
     day: 'Monday',
@@ -62,7 +65,12 @@ export function ScheduleSuggestionPanel({
   });
   const trainingStats = getProbabilityTableStats(loadProbabilityTable());
   const insufficientTraining = trainingStats.totalEvents < MIN_TRAINING_EVENTS;
-  const baseTotals = useMemo(() => calculateGoldenRuleTotals(plan, templates), [plan, templates]);
+  const isFromScratch = generationMode === 'scratch';
+  const planForCalc = useMemo(
+    () => (isFromScratch ? { ...plan, blocks: [] } : plan),
+    [plan, isFromScratch]
+  );
+  const baseTotals = useMemo(() => calculateGoldenRuleTotals(planForCalc, templates), [planForCalc, templates]);
   const hasDeficits = baseTotals.some(t => !t.isFlexible && t.difference < -15);
 
   useEffect(() => {
@@ -92,7 +100,7 @@ export function ScheduleSuggestionPanel({
     
     setTimeout(() => {
       // First run local analysis to compute deficits and coverage
-      const local = generateScheduleSuggestions(plan, templates, {
+      const local = generateScheduleSuggestions(planForCalc, templates, {
         targetWeek: currentWeek,
         totalWeeks: plan.settings.weeks,
         dayStartMinutes: plan.settings.dayStartMinutes,
@@ -117,7 +125,6 @@ export function ScheduleSuggestionPanel({
         return;
       }
 
-      const baseTotals = calculateGoldenRuleTotals(plan, templates);
       const toPlace = buildToPlaceFromTotals(baseTotals, templates);
 
       if (scope === 'all' || toPlace.length === 0) {
@@ -137,6 +144,16 @@ export function ScheduleSuggestionPanel({
         .then(r => r.ok ? r.json() : Promise.resolve(null))
         .then((m) => {
           const models = m?.models || null;
+          const existingBlocks = isFromScratch
+            ? []
+            : plan.blocks.filter(b => b.week === currentWeek).map(b => ({
+                id: b.id,
+                templateId: b.templateId,
+                week: b.week,
+                day: b.day,
+                startMinutes: b.startMinutes,
+                durationMinutes: b.durationMinutes,
+              }));
 
           return fetch('/api/predictive/solve', {
             method: 'POST',
@@ -144,7 +161,7 @@ export function ScheduleSuggestionPanel({
             body: JSON.stringify({
               toPlace,
               week: currentWeek,
-              existingBlocks: plan.blocks.filter(b => b.week === currentWeek).map(b => ({ id: b.id, templateId: b.templateId, week: b.week, day: b.day, startMinutes: b.startMinutes, durationMinutes: b.durationMinutes })),
+              existingBlocks,
               dayStartMinutes: plan.settings.dayStartMinutes,
               dayEndMinutes: plan.settings.dayEndMinutes,
               slotMinutes: plan.settings.slotMinutes,
@@ -197,7 +214,7 @@ export function ScheduleSuggestionPanel({
           });
 
           const coverage = buildCoverageFromTotals(
-            calculateGoldenRuleTotals({ ...plan, blocks: [...plan.blocks, ...mapped] }, templates)
+            calculateGoldenRuleTotals({ ...planForCalc, blocks: [...planForCalc.blocks, ...mapped] }, templates)
           );
 
           const out: SchedulerResult = {
@@ -245,11 +262,16 @@ export function ScheduleSuggestionPanel({
   };
 
   const handleAccept = () => {
-    if (result) {
-      const acceptedBlocks = result.suggestions.filter(s => selectedBlocks.has(s.id));
-      onAccept(acceptedBlocks);
-      onClose();
+    if (!result) return;
+    const acceptedBlocks = result.suggestions.filter(s => selectedBlocks.has(s.id));
+    if (acceptedBlocks.length === 0) return;
+    if (isFromScratch) {
+      setPendingReplaceBlocks(acceptedBlocks);
+      setShowReplaceConfirm(true);
+      return;
     }
+    onAccept(acceptedBlocks, { scope, targetWeek: currentWeek });
+    onClose();
   };
 
   const groupedByWeek = result?.suggestions.reduce((acc, block) => {
@@ -402,6 +424,22 @@ export function ScheduleSuggestionPanel({
               )}
             </div>
 
+            <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-1">
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={isFromScratch}
+                  onChange={e => setGenerationMode(e.target.checked ? 'scratch' : 'fill')}
+                  className="accent-primary"
+                  data-testid="generate-from-scratch"
+                />
+                Generate from scratch (ignore existing blocks)
+              </label>
+              <p className="text-xs text-muted-foreground">
+                When you accept suggestions, this will replace blocks in the selected scope.
+              </p>
+            </div>
+
             <button
               onClick={handleGenerate}
               className="w-full px-4 py-3 bg-accent text-accent-foreground rounded-lg hover:opacity-90 glow-accent flex items-center justify-center gap-2 transition-all"
@@ -540,6 +578,23 @@ export function ScheduleSuggestionPanel({
           </div>
         )}
       </div>
+      <ConfirmModal
+        open={showReplaceConfirm}
+        onClose={() => {
+          setShowReplaceConfirm(false);
+          setPendingReplaceBlocks([]);
+        }}
+        onConfirm={() => {
+          onAccept(pendingReplaceBlocks, { replaceExisting: true, scope, targetWeek: currentWeek });
+          setShowReplaceConfirm(false);
+          setPendingReplaceBlocks([]);
+          onClose();
+        }}
+        title="Replace existing blocks?"
+        message={`This will remove existing blocks in the ${scope === 'week' ? 'current week' : 'entire plan'} and add the selected suggestions. This cannot be undone.`}
+        confirmText="Replace & Apply"
+        cancelText="Cancel"
+      />
     </Modal>
   );
 }

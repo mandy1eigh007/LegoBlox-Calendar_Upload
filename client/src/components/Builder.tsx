@@ -448,8 +448,25 @@ export function Builder() {
     setSelectedBlockId(null);
   };
 
-  const handleAcceptSuggestions = (suggestions: SuggestedBlock[]) => {
+  const handleAcceptSuggestions = (
+    suggestions: SuggestedBlock[],
+    options?: { replaceExisting?: boolean; scope?: 'week' | 'all'; targetWeek?: number }
+  ) => {
     const acceptedBlocks: PlacedBlock[] = suggestions.map(({ isNew, bucketLabel, ...block }) => block);
+    const replaceScope = options?.scope ?? 'all';
+
+    if (options?.replaceExisting) {
+      if (replaceScope === 'week') {
+        const weekToReset = options?.targetWeek ?? currentWeek;
+        dispatch({ type: 'RESET_WEEK', payload: { planId: plan.id, week: weekToReset } });
+      } else {
+        dispatch({
+          type: 'UPDATE_PLAN',
+          payload: { ...plan, blocks: [], recurrenceSeries: [] },
+        });
+      }
+    }
+
     for (const block of acceptedBlocks) {
       dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
     }
