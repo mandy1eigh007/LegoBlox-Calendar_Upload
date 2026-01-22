@@ -55,7 +55,11 @@ export function ScheduleSuggestionPanel({
   const [scope, setScope] = useState<'week' | 'all'>('all');
   const [showHardDates, setShowHardDates] = useState(false);
   const [hardDates, setHardDates] = useState<HardDate[]>(plan.settings.hardDates || []);
-  const [generationMode, setGenerationMode] = useState<'fill' | 'scratch'>('fill');
+  const [generationMode, setGenerationMode] = useState<'fill' | 'scratch'>(() => {
+    const totals = calculateGoldenRuleTotals(plan, templates);
+    const hasDeficitsInitial = totals.some(t => !t.isFlexible && t.difference < -15);
+    return plan.blocks.length > 0 && !hasDeficitsInitial ? 'scratch' : 'fill';
+  });
   const [showReplaceConfirm, setShowReplaceConfirm] = useState(false);
   const [pendingReplaceBlocks, setPendingReplaceBlocks] = useState<SuggestedBlock[]>([]);
   const [newHardDate, setNewHardDate] = useState<{ week: number; day: Day; description: string }>({
@@ -76,6 +80,14 @@ export function ScheduleSuggestionPanel({
   useEffect(() => {
     setHardDates(plan.settings.hardDates || []);
   }, [plan.settings.hardDates]);
+
+  useEffect(() => {
+    if (!open) return;
+    const totals = calculateGoldenRuleTotals(plan, templates);
+    const hasDeficitsInitial = totals.some(t => !t.isFlexible && t.difference < -15);
+    const nextMode = plan.blocks.length > 0 && !hasDeficitsInitial ? 'scratch' : 'fill';
+    setGenerationMode(nextMode);
+  }, [open, plan.id, plan.blocks.length, templates]);
 
   const normalizeKey = (value: string) =>
     value.toLowerCase().replace(/[\u0300-\u036f]/g, '').replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
