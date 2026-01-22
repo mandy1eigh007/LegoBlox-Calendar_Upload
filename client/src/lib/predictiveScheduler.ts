@@ -326,7 +326,8 @@ export function generateScheduleSuggestions(
   });
   
   const totalMinutes = suggestions.reduce((sum, s) => sum + s.durationMinutes, 0);
-  const totalSlots = cfg.totalWeeks * DAYS.length * ((cfg.dayEndMinutes - cfg.dayStartMinutes) / cfg.slotMinutes);
+  const activeDays = cfg.activeDays && cfg.activeDays.length > 0 ? cfg.activeDays : DAYS;
+  const totalSlots = cfg.totalWeeks * activeDays.length * ((cfg.dayEndMinutes - cfg.dayStartMinutes) / cfg.slotMinutes);
   const filledSlots = suggestions.reduce((sum, s) => sum + (s.durationMinutes / cfg.slotMinutes), 0);
   
   return {

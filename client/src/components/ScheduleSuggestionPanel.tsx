@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Plan, BlockTemplate, Day, DAYS, HardDate } from '@/state/types';
 import { generateScheduleSuggestions, SchedulerResult, SuggestedBlock } from '@/lib/predictiveScheduler';
 import { getProbabilityTableStats, loadProbabilityTable } from '@/lib/probabilityLearning';
@@ -62,6 +62,8 @@ export function ScheduleSuggestionPanel({
   });
   const trainingStats = getProbabilityTableStats(loadProbabilityTable());
   const insufficientTraining = trainingStats.totalEvents < MIN_TRAINING_EVENTS;
+  const baseTotals = useMemo(() => calculateGoldenRuleTotals(plan, templates), [plan, templates]);
+  const hasDeficits = baseTotals.some(t => !t.isFlexible && t.difference < -15);
 
   useEffect(() => {
     setHardDates(plan.settings.hardDates || []);
@@ -444,7 +446,9 @@ export function ScheduleSuggestionPanel({
 
             {result.suggestions.length === 0 && (
               <div className="bg-secondary/30 border border-border rounded-lg p-3 text-sm text-muted-foreground">
-                No gaps detected for the selected scope. If you expected suggestions, check that blocks are assigned to Golden Rule templates.
+                {hasDeficits
+                  ? 'No open time slots were available to place the remaining hours. Try clearing time or removing hard dates.'
+                  : 'All Golden Rule budgets are already met. Suggestions only fill gaps, so a full calendar may return zero.'}
               </div>
             )}
 
