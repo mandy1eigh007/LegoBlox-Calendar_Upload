@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { PlacedBlock, BlockTemplate, Plan, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId, ApplyScope, DAYS, Day, RecurrenceType, RecurrencePattern, RecurrenceSeries, CATEGORIES, Category, DEFAULT_RESOURCES } from '@/state/types';
 import { formatDuration, minutesToTimeDisplay, getEndMinutes } from '@/lib/time';
 import { ConfirmModal, Modal } from './Modal';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { createRecurringBlocks } from '@/lib/recurrence';
 import { findTimeConflicts } from '@/lib/collision';
 
@@ -19,6 +20,7 @@ interface BlockEditPanelProps {
 }
 
 const DURATION_OPTIONS = Array.from({ length: 36 }, (_, i) => (i + 1) * 15);
+const UNASSIGNED_TEMPLATE_ID = '__UNASSIGNED__';
 
 function generateTimeOptions(startMinutes: number, endMinutes: number): number[] {
   const options: number[] = [];
@@ -104,7 +106,8 @@ export function BlockEditPanel({ block, templates, plan, onUpdate, onDelete, onD
   );
 
   const handleTemplateAssignment = (value: string) => {
-    if (!value) {
+    const resolvedValue = value === UNASSIGNED_TEMPLATE_ID ? '' : value;
+    if (!resolvedValue) {
       setTemplateId('');
       setCountsTowardGoldenRule(false);
       setGoldenRuleBucketId('');
@@ -112,8 +115,8 @@ export function BlockEditPanel({ block, templates, plan, onUpdate, onDelete, onD
       return;
     }
 
-    const nextTemplate = templates.find(t => t.id === value);
-    setTemplateId(value);
+    const nextTemplate = templates.find(t => t.id === resolvedValue);
+    setTemplateId(resolvedValue);
     if (nextTemplate) {
       setCountsTowardGoldenRule(nextTemplate.countsTowardGoldenRule);
       setGoldenRuleBucketId(nextTemplate.goldenRuleBucketId || '');
@@ -280,22 +283,32 @@ export function BlockEditPanel({ block, templates, plan, onUpdate, onDelete, onD
             </div>
             <div className="mt-2">
               <label className="block text-xs text-muted-foreground mb-1">Template Assignment</label>
-              <select
-                value={templateId}
-                onChange={(e) => handleTemplateAssignment(e.target.value)}
-                className="w-full px-2 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                data-testid="block-template-select"
+              <Select
+                value={templateId || UNASSIGNED_TEMPLATE_ID}
+                onValueChange={handleTemplateAssignment}
               >
-                <option value="">Unassigned</option>
-                {isOrphanedTemplate && (
-                  <option value={templateId}>Missing template</option>
-                )}
-                {availableTemplates.map(t => (
-                  <option key={t.id} value={t.id} disabled={t.isArchived}>
-                    {t.title}{t.isArchived ? ' (archived)' : ''}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger
+                  className="w-full bg-input text-foreground border-border text-base h-10"
+                  data-testid="block-template-select"
+                >
+                  <SelectValue placeholder="Unassigned" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[60vh] w-[min(520px,92vw)]">
+                  <SelectItem value={UNASSIGNED_TEMPLATE_ID} className="text-base py-2">
+                    Unassigned
+                  </SelectItem>
+                  {isOrphanedTemplate && (
+                    <SelectItem value={templateId} disabled className="text-base py-2">
+                      Missing template
+                    </SelectItem>
+                  )}
+                  {availableTemplates.map(t => (
+                    <SelectItem key={t.id} value={t.id} disabled={t.isArchived} className="text-base py-2">
+                      {t.title}{t.isArchived ? ' (archived)' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               {currentTemplate?.isArchived && (
                 <p className="text-[11px] text-amber-600 mt-1">
                   This template is archived. Assign a different template for new blocks.

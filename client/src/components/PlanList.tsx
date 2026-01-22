@@ -493,7 +493,8 @@ export function PlanList() {
 
     const maxWeek = Math.max(...csvDrafts.map(d => d.week), 1);
     const blocks: PlacedBlock[] = csvDrafts.map(draft => {
-      const match = resolveTemplateForImportedTitle(draft.title, state.templates);
+      const matchContext = [draft.notes, draft.location].filter(Boolean).join(' ');
+      const match = resolveTemplateForImportedTitle(draft.title, state.templates, matchContext);
       const matchedTemplate = match.templateId ? state.templates.find(t => t.id === match.templateId) : null;
       const warningNote = draft.needsReview && draft.warning ? `CSV Import Warning: ${draft.warning}` : '';
       const notes = [draft.notes, warningNote].filter(Boolean).join('\n');
@@ -744,7 +745,8 @@ export function PlanList() {
     }> = {};
     
     for (const event of filteredICSEvents) {
-      const result = resolveTemplateForImportedTitle(event.summary, state.templates);
+      const matchContext = [event.description, event.location].filter(Boolean).join(' ');
+      const result = resolveTemplateForImportedTitle(event.summary, state.templates, matchContext);
       suggestions[event.uid] = {
         match: result,
         candidates: result.candidates,

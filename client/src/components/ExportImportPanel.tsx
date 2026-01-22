@@ -394,7 +394,8 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
     let unassigned = 0;
     
     for (const draft of csvDrafts) {
-      const match = resolveTemplateForImportedTitle(draft.title, state.templates);
+      const matchContext = [draft.notes, draft.location].filter(Boolean).join(' ');
+      const match = resolveTemplateForImportedTitle(draft.title, state.templates, matchContext);
       const matchedTemplate = match.templateId ? state.templates.find(t => t.id === match.templateId) : null;
 
       const block: PlacedBlock = {
@@ -771,7 +772,8 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
               </thead>
               <tbody>
                 {icsPreview.events.map((ev: any, idx: number) => {
-                  const match = resolveTemplateForImportedTitle(ev.summary, state.templates);
+                  const matchContext = [ev.description, ev.location].filter(Boolean).join(' ');
+                  const match = resolveTemplateForImportedTitle(ev.summary, state.templates, matchContext);
                   const matchedTemplate = match.templateId ? state.templates.find(t => t.id === match.templateId) : null;
                   return (
                     <tr key={idx} className={match.templateId ? '' : 'bg-yellow-50'}>

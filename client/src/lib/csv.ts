@@ -609,7 +609,8 @@ export function convertICSEventsToBlocks(
       if (durationMinutes < 15) durationMinutes = 15;
     }
     
-    const matchResult = resolveTemplateForImportedTitle(event.summary, templates);
+    const matchContext = [event.description, event.location].filter(Boolean).join(' ');
+    const matchResult = resolveTemplateForImportedTitle(event.summary, templates, matchContext);
     const matchedTemplate = matchResult.templateId ? templates.find(t => t.id === matchResult.templateId) : null;
     
     blocks.push({
@@ -683,7 +684,8 @@ export function importICSToBlocks(
       continue;
     }
     
-    const matchResult = resolveTemplateForImportedTitle(event.summary, templates);
+    const matchContext = [event.description, event.location].filter(Boolean).join(' ');
+    const matchResult = resolveTemplateForImportedTitle(event.summary, templates, matchContext);
     const matchedTemplate = matchResult.templateId ? templates.find(t => t.id === matchResult.templateId) : null;
     
     blocks.push({

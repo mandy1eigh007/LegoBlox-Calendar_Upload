@@ -58,6 +58,20 @@
   * {
     @apply border-border;
   }
+  select {
+    background-color: hsl(var(--input));
+    color: hsl(var(--foreground));
+    border-color: hsl(var(--border));
+  }
+  select option,
+  select optgroup {
+    background-color: var(--popover-solid);
+    color: hsl(var(--foreground));
+  }
+  select option:disabled,
+  select optgroup:disabled {
+    color: hsl(var(--muted-foreground));
+  }
   html {
     background: radial-gradient(circle at top left, rgba(76, 29, 149, 0.35), transparent 45%),
       radial-gradient(circle at bottom right, rgba(30, 64, 175, 0.25), transparent 45%),
