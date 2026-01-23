@@ -475,6 +475,40 @@ export function Builder() {
     }
   };
 
+  const buildPublishErrorMessage = async (res: Response) => {
+    const statusText = res.statusText ? `: ${res.statusText}` : '';
+    const statusLine = `Publish failed (HTTP ${res.status}${statusText})`;
+    let detail = '';
+    const resClone = res.clone();
+
+    try {
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await res.json();
+        if (typeof data === 'string') {
+          detail = data;
+        } else if (data && typeof data === 'object') {
+          const dataRecord = data as Record<string, unknown>;
+          const candidate = dataRecord.error ?? dataRecord.message ?? dataRecord.detail;
+          detail = typeof candidate === 'string' ? candidate : JSON.stringify(data);
+        }
+      } else {
+        detail = await res.text();
+      }
+    } catch {
+      try {
+        detail = await resClone.text();
+      } catch {
+        detail = '';
+      }
+    }
+
+    const cleanedDetail = detail.replace(/\s+/g, ' ').trim();
+    if (!cleanedDetail) return statusLine;
+    const shortDetail = cleanedDetail.length > 160 ? `${cleanedDetail.slice(0, 160)}...` : cleanedDetail;
+    return `${statusLine}: ${shortDetail}`;
+  };
+
   const handlePublish = () => {
     (async () => {
       const publicId = plan.publicId || generatePublicId();
@@ -488,12 +522,18 @@ export function Builder() {
             templates: state.templates,
           }),
         });
-        if (!res.ok) throw new Error('publish failed');
+        if (!res.ok) {
+          const message = await buildPublishErrorMessage(res);
+          setErrorMessage(message);
+          return;
+        }
         const json = await res.json();
         const slug = json.slug || publicId;
         dispatch({ type: 'PUBLISH_PLAN', payload: { planId: plan.id, publicId: slug, timestamp } });
       } catch (e) {
-        setErrorMessage('Failed to publish plan to server.');
+        const fallback = e instanceof Error ? e.message : '';
+        const detail = fallback && fallback !== 'Failed to fetch' ? `: ${fallback}` : '';
+        setErrorMessage(`Publish failed (No response)${detail}`);
       }
     })();
   };
