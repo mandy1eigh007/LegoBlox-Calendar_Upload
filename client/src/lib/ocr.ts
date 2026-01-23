@@ -98,7 +98,7 @@ function isDateOnly(text: string): boolean {
   const cleaned = text.trim();
   return /^\d{1,2}$/.test(cleaned) || 
          /^(january|february|march|april|may|june|july|august|september|october|november|december)/i.test(cleaned) ||
-         /^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/.test(cleaned);
+         /^\d{1,2}[-/]\d{1,2}[-/]\d{2,4}$/.test(cleaned);
 }
 
 function isNavigationOrUI(text: string): boolean {
