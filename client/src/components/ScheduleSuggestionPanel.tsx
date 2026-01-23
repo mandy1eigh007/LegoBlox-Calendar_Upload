@@ -52,7 +52,7 @@ export function ScheduleSuggestionPanel({
   const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState<SchedulerResult | null>(null);
   const [selectedBlocks, setSelectedBlocks] = useState<Set<string>>(new Set());
-  const [scope, setScope] = useState<'week' | 'all'>('all');
+  const [scope, setScope] = useState<'week' | 'all'>('week');
   const [showHardDates, setShowHardDates] = useState(false);
   const [hardDates, setHardDates] = useState<HardDate[]>(plan.settings.hardDates || []);
   const [generationMode, setGenerationMode] = useState<'fill' | 'scratch'>(() => {

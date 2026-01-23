@@ -53,6 +53,7 @@ export function Builder() {
   const [showPartners, setShowPartners] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [acceptMessage, setAcceptMessage] = useState<string | null>(null);
   const [conflictSuggestion, setConflictSuggestion] = useState<{ blockId: string; alternateResource: string } | null>(null);
   const [draggedItem, setDraggedItem] = useState<{ type: 'template' | 'placed-block'; data: BlockTemplate | PlacedBlock } | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
@@ -85,6 +86,14 @@ export function Builder() {
       return () => clearTimeout(timer);
     }
   }, [errorMessage]);
+
+  useEffect(() => {
+    if (!acceptMessage) return;
+    const timer = setTimeout(() => {
+      setAcceptMessage(null);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [acceptMessage]);
 
   useEffect(() => {
     if (!showDiagnostics) {
@@ -470,6 +479,22 @@ export function Builder() {
     for (const block of acceptedBlocks) {
       dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
     }
+
+    const affectedWeeks = Array.from(
+      new Set(acceptedBlocks.map(block => block.week).filter((week): week is number => typeof week === 'number'))
+    ).sort((a, b) => a - b);
+
+    if (affectedWeeks.length > 0 && !affectedWeeks.includes(currentWeek)) {
+      setCurrentWeek(affectedWeeks[0]);
+    }
+
+    const earliestWeek = affectedWeeks[0];
+    setAcceptMessage(
+      typeof earliestWeek === 'number'
+        ? `Added ${acceptedBlocks.length} blocks. Viewing week ${earliestWeek}.`
+        : `Added ${acceptedBlocks.length} blocks.`
+    );
+
     if (plan.settings.schedulerMode === 'predictive') {
       trainFromBlocks(acceptedBlocks, `${plan.settings.name}:accepted`);
     }
@@ -725,6 +750,12 @@ export function Builder() {
           </div>
         </header>
         
+        {acceptMessage && (
+          <div className="bg-accent/10 border-b border-accent/30 px-4 py-2 text-sm text-accent" data-testid="accept-message">
+            {acceptMessage}
+          </div>
+        )}
+
         {plan.isPublished && plan.publicId && (
           <div className="bg-green-900/30 border-b border-green-500/30 px-4 py-2 text-sm" data-testid="published-banner">
             <div className="flex items-center gap-3">
