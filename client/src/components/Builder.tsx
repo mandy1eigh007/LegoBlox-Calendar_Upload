@@ -26,6 +26,7 @@ import { PartnerAvailabilityPanel } from './PartnerAvailabilityPanel';
 import { generatePublicId, getStudentUrl } from '@/lib/publish';
 import { findTimeConflicts, findNextAvailableSlot, wouldFitInDay } from '@/lib/collision';
 import { findAlternativeResource } from '@/lib/calendarCompare';
+import { buildTrainingDataFromBlocks } from '@/lib/trainingData';
 import { 
   SLOT_HEIGHT_PX, 
   SLOT_MINUTES,
@@ -470,6 +471,11 @@ export function Builder() {
     for (const block of acceptedBlocks) {
       dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
     }
+    const trainingData = buildTrainingDataFromBlocks(acceptedBlocks, 'accepted');
+    dispatch({
+      type: 'ADD_TRAINING_DATA',
+      payload: { planId: plan.id, examples: trainingData.examples, unmatched: trainingData.unmatched },
+    });
     if (plan.settings.schedulerMode === 'predictive') {
       trainFromBlocks(acceptedBlocks, `${plan.settings.name}:accepted`);
     }

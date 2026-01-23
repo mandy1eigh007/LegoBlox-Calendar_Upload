@@ -12,6 +12,7 @@ import { loadTitleAliases, importAliasCSV, exportAliasCSV, TitleAlias } from '@/
 import { loadResources, importResourceCSV, exportResourceCSV } from '@/lib/resources';
 import { loadHardEvents, importHardEventsCSV, exportHardEventsCSV } from '@/lib/hardEvents';
 import { resolveTemplateForImportedTitle } from '@/lib/templateMatcher';
+import { buildTrainingDataFromBlocks } from '@/lib/trainingData';
 
 interface ExportImportPanelProps {
   plan: Plan;
@@ -336,9 +337,21 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
       return;
     }
 
-    for (const block of blocks) {
-      dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block: { ...block, isLocked: lockIcsEvents, isAfterHours: false } } });
+    const importedBlocks = blocks.map(block => ({
+      ...block,
+      isLocked: lockIcsEvents,
+      isAfterHours: false,
+    }));
+
+    for (const block of importedBlocks) {
+      dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
     }
+
+    const trainingData = buildTrainingDataFromBlocks(importedBlocks, 'import:ics');
+    dispatch({
+      type: 'ADD_TRAINING_DATA',
+      payload: { planId: plan.id, examples: trainingData.examples, unmatched: trainingData.unmatched },
+    });
 
     setImportSuccess(`Imported ${included} events${skipped > 0 ? ` (${skipped} skipped)` : ''}.`);
     setIcsPreview(null);
@@ -392,6 +405,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   const handleApplyCSVDrafts = () => {
     let imported = 0;
     let unassigned = 0;
+    const importedBlocks: PlacedBlock[] = [];
     
     for (const draft of csvDrafts) {
       const matchContext = [draft.notes, draft.location].filter(Boolean).join(' ');
@@ -417,9 +431,16 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
       };
 
       dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
+      importedBlocks.push(block);
       imported++;
       if (!match.templateId) unassigned++;
     }
+
+    const trainingData = buildTrainingDataFromBlocks(importedBlocks, 'import:csv');
+    dispatch({
+      type: 'ADD_TRAINING_DATA',
+      payload: { planId: plan.id, examples: trainingData.examples, unmatched: trainingData.unmatched },
+    });
     
     setCSVDrafts([]);
     setCSVContent(null);

@@ -8,9 +8,10 @@ import {
   GOLDEN_RULE_BUCKETS,
   GoldenRuleBucketId,
   PlanSettings,
+  TrainingExample,
 } from '@/state/types';
 import { calculateGoldenRuleTotals } from './goldenRule';
-import { loadProbabilityTable, getProbability, minutesToTimeBucket, ContextKey, trainFromBlocks, getProbabilityTableStats } from './probabilityLearning';
+import { loadProbabilityTable, minutesToTimeBucket, TimeBucket, trainFromBlocks, getProbabilityTableStats } from './probabilityLearning';
 
 export interface SchedulerConfig {
   targetWeek: number;
@@ -51,6 +52,55 @@ const DEFAULT_CONFIG: SchedulerConfig = {
 };
 
 type TimeSlot = { week: number; day: Day; startMinutes: number; endMinutes: number };
+const TIME_BUCKETS: TimeBucket[] = ['early_morning', 'morning', 'midday', 'afternoon', 'late_afternoon'];
+
+type TemplateTrainingPrior = {
+  total: number;
+  weekCounts: Map<number, number>;
+  dayCounts: Record<Day, number>;
+  timeCounts: Record<TimeBucket, number>;
+};
+
+function buildEmptyDayCounts(): Record<Day, number> {
+  const counts = {} as Record<Day, number>;
+  for (const day of DAYS) {
+    counts[day] = 0;
+  }
+  return counts;
+}
+
+function buildEmptyTimeCounts(): Record<TimeBucket, number> {
+  const counts = {} as Record<TimeBucket, number>;
+  for (const bucket of TIME_BUCKETS) {
+    counts[bucket] = 0;
+  }
+  return counts;
+}
+
+function buildTrainingPriors(examples: TrainingExample[]): Map<string, TemplateTrainingPrior> {
+  const priors = new Map<string, TemplateTrainingPrior>();
+  for (const example of examples) {
+    if (!priors.has(example.templateId)) {
+      priors.set(example.templateId, {
+        total: 0,
+        weekCounts: new Map(),
+        dayCounts: buildEmptyDayCounts(),
+        timeCounts: buildEmptyTimeCounts(),
+      });
+    }
+    const prior = priors.get(example.templateId)!;
+    prior.total += 1;
+    prior.weekCounts.set(example.weekIndex, (prior.weekCounts.get(example.weekIndex) || 0) + 1);
+    prior.dayCounts[example.dayOfWeek] += 1;
+    const bucket = minutesToTimeBucket(example.startMinutes);
+    prior.timeCounts[bucket] += 1;
+  }
+  return priors;
+}
+
+function getWeekWeight(prior: TemplateTrainingPrior, week: number): number {
+  return (prior.weekCounts.get(week) || 0) + 1;
+}
 
 function getAvailableSlots(
   plan: Plan,
@@ -108,24 +158,32 @@ function findTemplateForBucket(
 function scoreSlotForTemplate(
   slot: TimeSlot,
   template: BlockTemplate,
-  templates: BlockTemplate[]
+  trainingPriors: Map<string, TemplateTrainingPrior>,
+  totalWeeks: number,
+  hasTraining: boolean
 ): { score: number; reason: string } {
-  const probTable = loadProbabilityTable();
-  
-  if (probTable.totalEvents === 0) {
-    return { score: 0.5, reason: 'No training data' };
+  const prior = trainingPriors.get(template.id);
+  const timeBucket = minutesToTimeBucket(slot.startMinutes);
+
+  if (prior) {
+    const weekScore = (prior.weekCounts.get(slot.week) || 0) + 1;
+    const dayScore = prior.dayCounts[slot.day] + 1;
+    const timeScore = prior.timeCounts[timeBucket] + 1;
+    const score =
+      (weekScore / (prior.total + totalWeeks)) *
+      (dayScore / (prior.total + DAYS.length)) *
+      (timeScore / (prior.total + TIME_BUCKETS.length));
+    return {
+      score,
+      reason: `Trained prior: W${slot.week} ${slot.day} ${timeBucket}`,
+    };
   }
-  
-  const context: ContextKey = {
-    weekIndex: slot.week,
-    dayOfWeek: slot.day,
-    timeBucket: minutesToTimeBucket(slot.startMinutes),
-  };
-  
-  const prob = getProbability(probTable, template.id, context, templates.length);
-  const reason = `P=${(prob * 100).toFixed(0)}% for W${slot.week} ${slot.day} ${context.timeBucket}`;
-  
-  return { score: prob, reason };
+
+  if (hasTraining) {
+    return { score: 0.25, reason: 'No training history for template; heuristic placement' };
+  }
+
+  return { score: 0.25, reason: 'No training match. Using budget-only heuristic.' };
 }
 
 export function trainFromExistingPlans(plans: Plan[]): { trained: number; events: number } {
@@ -223,15 +281,15 @@ function placeBlockInSlotWithProbability(
   template: BlockTemplate,
   bucketId: GoldenRuleBucketId,
   bucketLabel: string,
-  templates: BlockTemplate[]
+  score: number,
+  reason: string
 ): SuggestedBlock | null {
   const block = placeBlockInSlot(slot, duration, template, bucketId, bucketLabel);
   if (!block) return null;
-  
-  const { score, reason } = scoreSlotForTemplate(slot, template, templates);
+
   block.confidence = score;
   block.reason = reason;
-  
+
   return block;
 }
 
@@ -243,6 +301,9 @@ export function generateScheduleSuggestions(
   const cfg: SchedulerConfig = { ...DEFAULT_CONFIG, ...config };
   const suggestions: SuggestedBlock[] = [];
   const conflicts: string[] = [];
+  const trainingExamples = plan.trainingExamples || [];
+  const trainingPriors = buildTrainingPriors(trainingExamples);
+  const hasTraining = trainingPriors.size > 0;
   
   const targetWeeks = cfg.distributeAcrossWeeks 
     ? Array.from({ length: cfg.totalWeeks }, (_, i) => i + 1)
@@ -258,16 +319,41 @@ export function generateScheduleSuggestions(
       || createPlaceholderTemplate(GOLDEN_RULE_BUCKETS.find(b => b.id === deficit.bucketId)!);
     
     const preferredDuration = template.defaultDurationMinutes || cfg.preferredBlockDuration;
-    
-    for (const week of targetWeeks) {
+    const templatePrior = trainingPriors.get(template.id);
+    const orderedWeeks = templatePrior
+      ? [...targetWeeks].sort((a, b) => getWeekWeight(templatePrior, b) - getWeekWeight(templatePrior, a))
+      : targetWeeks;
+    const totalWeekWeight = templatePrior
+      ? orderedWeeks.reduce((sum, week) => sum + getWeekWeight(templatePrior, week), 0)
+      : 0;
+
+    for (const week of orderedWeeks) {
       if (remainingMinutes <= 0) break;
       
-      const targetForWeek = Math.min(remainingMinutes, deficit.perWeek);
+      let targetForWeek = Math.min(remainingMinutes, deficit.perWeek);
+      if (templatePrior && totalWeekWeight > 0) {
+        const weekWeight = getWeekWeight(templatePrior, week);
+        const weightedTarget = Math.round(deficit.deficit * (weekWeight / totalWeekWeight));
+        targetForWeek = weightedTarget > 0
+          ? Math.min(remainingMinutes, Math.max(cfg.slotMinutes, weightedTarget))
+          : 0;
+      }
+      if (targetForWeek <= 0) continue;
       let weekMinutes = 0;
       
       const slots = getAvailableSlots(workingPlan, week, cfg);
-      
-      for (const slot of slots) {
+      const scoredSlots = slots.map((slot, idx) => {
+        const { score, reason } = scoreSlotForTemplate(
+          slot,
+          template,
+          trainingPriors,
+          cfg.totalWeeks,
+          hasTraining
+        );
+        return { slot, score, reason, idx };
+      }).sort((a, b) => (b.score - a.score) || (a.idx - b.idx));
+
+      for (const { slot, score, reason } of scoredSlots) {
         if (weekMinutes >= targetForWeek) break;
         if (remainingMinutes <= 0) break;
         
@@ -286,7 +372,8 @@ export function generateScheduleSuggestions(
           template,
           deficit.bucketId,
           deficit.label,
-          templates
+          score,
+          reason
         );
         
         if (suggestion) {

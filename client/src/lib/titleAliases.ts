@@ -50,6 +50,7 @@ const DEFAULT_ALIASES: TitleAlias[] = [
   { rawTitle: 'Intro to Tape', templateId: 'measuring_tape', matchType: 'alias' },
   
   { rawTitle: 'ACES', templateId: 'aces', matchType: 'contains' },
+  { rawTitle: "ACE's", templateId: 'aces', matchType: 'contains' },
   { rawTitle: 'ACE Instruction', templateId: 'ace_instruction', matchType: 'alias' },
   
   { rawTitle: 'Financial', templateId: 'financial_ed', matchType: 'contains' },
@@ -60,6 +61,9 @@ const DEFAULT_ALIASES: TitleAlias[] = [
   
   { rawTitle: 'Grit', templateId: 'grit_growth', matchType: 'contains' },
   { rawTitle: 'Growth Mindset', templateId: 'grit_growth', matchType: 'alias' },
+  { rawTitle: 'Grit/Growth Mindset', templateId: 'grit_growth', matchType: 'alias' },
+  { rawTitle: 'Grit, Growth Mindset', templateId: 'grit_growth', matchType: 'alias' },
+  { rawTitle: 'Grit Growth Mindset', templateId: 'grit_growth', matchType: 'alias' },
   
   { rawTitle: 'Emotional Intelligence', templateId: 'emotional_intel', matchType: 'alias' },
   
@@ -115,6 +119,7 @@ const DEFAULT_ALIASES: TitleAlias[] = [
   { rawTitle: 'Bystander', templateId: 'rise_up', matchType: 'contains' },
   
   { rawTitle: 'Skills Project', templateId: 'skills_project', matchType: 'contains' },
+  { rawTitle: 'Skills Projects', templateId: 'skills_project', matchType: 'contains' },
   
   { rawTitle: 'Application Prep', templateId: 'app_prep', matchType: 'alias' },
   { rawTitle: 'App Prep', templateId: 'app_prep', matchType: 'alias' },
@@ -178,6 +183,8 @@ const TEMPLATE_KEY_TO_BUCKET_ID = Object.entries(BUCKET_ID_TO_TEMPLATE_ID).reduc
 function normalizeAliasKey(value: string): string {
   return value
     .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^\w\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -254,10 +261,10 @@ export function matchTitleToTemplateViaAlias(
   templates: BlockTemplate[]
 ): { templateId: string | null; matchType: 'exact' | 'alias' | 'contains' | 'none'; aliasUsed?: string } {
   const config = loadTitleAliases();
-  const normalizedTitle = title.toLowerCase().trim();
+  const normalizedTitle = normalizeAliasKey(title);
   
   for (const alias of config.aliases) {
-    const normalizedAlias = alias.rawTitle.toLowerCase().trim();
+    const normalizedAlias = normalizeAliasKey(alias.rawTitle);
     const resolvedTemplateId = resolveAliasTemplateId(alias.templateId, alias.rawTitle, templates);
     if (!resolvedTemplateId) continue;
     
@@ -276,7 +283,7 @@ export function matchTitleToTemplateViaAlias(
   
   for (const alias of config.aliases) {
     if (alias.matchType === 'alias') {
-      const normalizedAlias = alias.rawTitle.toLowerCase().trim();
+      const normalizedAlias = normalizeAliasKey(alias.rawTitle);
       const resolvedTemplateId = resolveAliasTemplateId(alias.templateId, alias.rawTitle, templates);
       if (!resolvedTemplateId) continue;
       if (normalizedTitle.includes(normalizedAlias) || normalizedAlias.includes(normalizedTitle)) {

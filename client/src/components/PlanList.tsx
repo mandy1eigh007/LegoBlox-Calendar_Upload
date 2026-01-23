@@ -11,6 +11,7 @@ import { validateAppState } from '@/state/validators';
 import { processImageWithOCR, OCREvent } from '@/lib/ocr';
 import { parseICSWithDateRange, convertICSEventsToBlocks, ICSEventWithDate, importCSVToBlocks, getCSVHeaders, CSVDraftEvent } from '@/lib/csv';
 import { resolveTemplateForImportedTitle, TemplateCandidate, getBucketLabel } from '@/lib/templateMatcher';
+import { buildTrainingDataFromBlocks } from '@/lib/trainingData';
 import { minutesToTimeDisplay } from '@/lib/time';
 import { Loader2, AlertTriangle } from 'lucide-react';
 
@@ -235,6 +236,8 @@ export function PlanList() {
       },
       blocks: anchorBlocks,
       recurrenceSeries: [],
+      trainingExamples: [],
+      unmatchedTrainingEvents: [],
     };
     
     dispatch({ type: 'ADD_PLAN', payload: plan });
@@ -365,6 +368,8 @@ export function PlanList() {
       settings: { ...createDefaultPlanSettings(), name: ocrPlanName },
       blocks,
       recurrenceSeries: [],
+      trainingExamples: [],
+      unmatchedTrainingEvents: [],
     };
     
     dispatch({ type: 'ADD_PLAN', payload: plan });
@@ -518,11 +523,14 @@ export function PlanList() {
     });
 
     const defaults = createDefaultPlanSettings();
+    const trainingData = buildTrainingDataFromBlocks(blocks, 'import:csv');
     const plan: Plan = {
       id: uuidv4(),
       settings: { ...defaults, name: csvPlanName.trim(), weeks: Math.max(defaults.weeks, maxWeek) },
       blocks,
       recurrenceSeries: [],
+      trainingExamples: trainingData.examples,
+      unmatchedTrainingEvents: trainingData.unmatched,
     };
 
     const unassignedCount = blocks.filter(b => b.templateId === null).length;
@@ -649,11 +657,14 @@ export function PlanList() {
       isAfterHours: false,
     }));
 
+    const trainingData = buildTrainingDataFromBlocks(finalBlocks, 'import:ics');
     const plan: Plan = {
       id: uuidv4(),
       settings: { ...createDefaultPlanSettings(), name: icsImportPlanName },
       blocks: finalBlocks,
       recurrenceSeries: [],
+      trainingExamples: trainingData.examples,
+      unmatchedTrainingEvents: trainingData.unmatched,
     };
     
     dispatch({ type: 'ADD_PLAN', payload: plan });
