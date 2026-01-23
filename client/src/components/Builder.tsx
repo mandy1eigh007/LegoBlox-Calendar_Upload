@@ -15,12 +15,16 @@ import { PartnersPanel } from './PartnersPanel';
 import { ConfirmModal } from './Modal';
 import { ScheduleSuggestionPanel } from './ScheduleSuggestionPanel';
 import { SuggestedBlock } from '@/lib/predictiveScheduler';
+import { getProbabilityTableStats, loadProbabilityTable, trainFromBlocks } from '@/lib/probabilityLearning';
 import { UnassignedReviewPanel } from './UnassignedReviewPanel';
 import { TemplateReassignDialog } from './TemplateReassignDialog';
 import { ComparePlans } from './ComparePlans';
-import { CreateEventDialog } from './CreateEventDialog';
+import { CreateEventDialog, CreateEventDefaults } from './CreateEventDialog';
+import { ANCHOR_PROMPTS } from '@/lib/anchorPrompts';
+import { AnchorScheduleWizard } from './AnchorScheduleWizard';
+import { PartnerAvailabilityPanel } from './PartnerAvailabilityPanel';
 import { generatePublicId, getStudentUrl } from '@/lib/publish';
-import { findTimeConflicts, wouldFitInDay } from '@/lib/collision';
+import { findTimeConflicts, findNextAvailableSlot, wouldFitInDay } from '@/lib/collision';
 import { findAlternativeResource } from '@/lib/calendarCompare';
 import { 
   SLOT_HEIGHT_PX, 
@@ -53,11 +57,15 @@ export function Builder() {
   const [draggedItem, setDraggedItem] = useState<{ type: 'template' | 'placed-block'; data: BlockTemplate | PlacedBlock } | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [showCreateEvent, setShowCreateEvent] = useState(false);
+  const [createEventDefaults, setCreateEventDefaults] = useState<CreateEventDefaults | null>(null);
+  const [showAnchorWizard, setShowAnchorWizard] = useState(false);
+  const [showPartnerAvailability, setShowPartnerAvailability] = useState(false);
   const [hoverMinutes, setHoverMinutes] = useState<number | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showUnassigned, setShowUnassigned] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [reassignBlock, setReassignBlock] = useState<PlacedBlock | null>(null);
+  const [editTemplateId, setEditTemplateId] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(
@@ -77,6 +85,39 @@ export function Builder() {
       return () => clearTimeout(timer);
     }
   }, [errorMessage]);
+
+  useEffect(() => {
+    if (!showDiagnostics) {
+      setHoverMinutes(null);
+    }
+  }, [showDiagnostics]);
+
+  useEffect(() => {
+    if (!plan) return;
+    const checklist = plan.settings.anchorChecklist || {};
+    const schedule = plan.settings.anchorSchedule || {};
+    const hasAnchors = ANCHOR_PROMPTS.some(prompt => checklist[prompt.id]);
+    if (!hasAnchors) return;
+    const hasUnscheduled = ANCHOR_PROMPTS.some(prompt => {
+      if (!checklist[prompt.id]) return false;
+      const entries = schedule[prompt.id] || [];
+      return entries.some(entry => !entry.created);
+    });
+    if (hasUnscheduled && !plan.settings.anchorWizardDismissed) {
+      setShowAnchorWizard(true);
+    }
+  }, [plan]);
+
+  useEffect(() => {
+    if (!plan || !showSuggestions || plan.settings.schedulerMode !== 'predictive') return;
+    const stats = getProbabilityTableStats(loadProbabilityTable());
+    if (stats.totalEvents > 0) return;
+    const plansWithData = state.plans.filter(p => p.blocks.some(b => b.templateId));
+    if (plansWithData.length === 0) return;
+    for (const sourcePlan of plansWithData) {
+      trainFromBlocks(sourcePlan.blocks, sourcePlan.settings.name);
+    }
+  }, [plan, showSuggestions, state.plans]);
 
   if (!plan) {
     return (
@@ -110,9 +151,9 @@ export function Builder() {
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!gridRef.current) return;
+    if (!showDiagnostics || !gridRef.current) return;
     const minutes = calculateDropMinutes(e.clientY, gridRef.current);
-    setHoverMinutes(minutes);
+    setHoverMinutes(prev => (prev === minutes ? prev : minutes));
   };
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -150,19 +191,53 @@ export function Builder() {
       placeNewBlock(template, day, dropMinutes);
     } else if (activeData?.type === 'placed-block') {
       const block = activeData.block as PlacedBlock;
+      if (block.isLocked) {
+        setErrorMessage('This block is locked. Unlock it in the edit panel to move it.');
+        return;
+      }
       moveBlock(block, day, dropMinutes);
     }
   };
 
   const placeNewBlock = (template: BlockTemplate, day: Day, startMinutes: number) => {
     const duration = template.defaultDurationMinutes;
+    const defaultResource = template.defaultResource || template.defaultLocation || undefined;
+    const shouldAutoPlace = autoPlace && !settings.allowOverlaps;
+    const autoPlacedStart = shouldAutoPlace
+      ? findNextAvailableSlot(
+          plan.blocks,
+          currentWeek,
+          day,
+          startMinutes,
+          duration,
+          settings.dayStartMinutes,
+          settings.dayEndMinutes,
+          settings.slotMinutes,
+          undefined,
+          defaultResource
+        )
+      : null;
+    const finalStartMinutes = autoPlacedStart ?? startMinutes;
+
+    if (shouldAutoPlace && autoPlacedStart === null) {
+      setErrorMessage('No open slots available on this day.');
+      return;
+    }
     
-    if (!wouldFitInDay(startMinutes, duration, settings.dayEndMinutes)) {
+    if (!wouldFitInDay(finalStartMinutes, duration, settings.dayEndMinutes)) {
       setErrorMessage(`Block would extend beyond ${minutesToTimeDisplay(settings.dayEndMinutes)}.`);
       return;
     }
     
-    const conflicts = findTimeConflicts(plan.blocks, currentWeek, day, startMinutes, duration, undefined, template.defaultResource || template.defaultLocation || undefined);
+    const conflicts = findTimeConflicts(
+      plan.blocks,
+      currentWeek,
+      day,
+      finalStartMinutes,
+      duration,
+      undefined,
+      defaultResource
+    );
     
     if (conflicts.length > 0 && !settings.allowOverlaps) {
       const conflictTitle = state.templates.find(t => t.id === conflicts[0].templateId)?.title || 'Unknown';
@@ -175,7 +250,7 @@ export function Builder() {
       templateId: template.id,
       week: currentWeek,
       day,
-      startMinutes,
+      startMinutes: finalStartMinutes,
       durationMinutes: duration,
       titleOverride: '',
       location: template.defaultLocation,
@@ -184,12 +259,19 @@ export function Builder() {
       goldenRuleBucketId: template.goldenRuleBucketId,
       recurrenceSeriesId: null,
       isRecurrenceException: false,
+      resource: template.defaultResource || undefined,
+      isLocked: false,
+      isAfterHours: false,
     };
     
     dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
   };
 
   const moveBlock = (block: PlacedBlock, newDay: Day, newStartMinutes: number) => {
+    if (block.isLocked) {
+      setErrorMessage('This block is locked. Unlock it in the edit panel to move it.');
+      return;
+    }
     const duration = block.durationMinutes;
     
     if (!wouldFitInDay(newStartMinutes, duration, settings.dayEndMinutes)) {
@@ -225,11 +307,18 @@ export function Builder() {
     };
     
     dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updatedBlock } });
+    if (plan.settings.schedulerMode === 'predictive') {
+      trainFromBlocks([updatedBlock], `${plan.settings.name}:adjust`);
+    }
   };
 
   const handleBlockResize = (blockId: string, newDuration: number) => {
     const block = plan.blocks.find(b => b.id === blockId);
     if (!block) return;
+    if (block.isLocked) {
+      setErrorMessage('This block is locked. Unlock it in the edit panel to resize it.');
+      return;
+    }
     
     if (newDuration % 15 !== 0) return;
     
@@ -248,9 +337,23 @@ export function Builder() {
     
     const updatedBlock: PlacedBlock = { ...block, durationMinutes: newDuration };
     dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updatedBlock } });
+    if (plan.settings.schedulerMode === 'predictive') {
+      trainFromBlocks([updatedBlock], `${plan.settings.name}:resize`);
+    }
   };
 
   const handleBlockUpdate = (updatedBlock: PlacedBlock, scope?: ApplyScope) => {
+    const existingBlock = plan.blocks.find(b => b.id === updatedBlock.id);
+    if (existingBlock?.isLocked) {
+      const placementChanged = existingBlock.week !== updatedBlock.week ||
+        existingBlock.day !== updatedBlock.day ||
+        existingBlock.startMinutes !== updatedBlock.startMinutes ||
+        existingBlock.durationMinutes !== updatedBlock.durationMinutes;
+      if (placementChanged) {
+        setErrorMessage('This block is locked. Unlock it to change time or duration.');
+        return;
+      }
+    }
     if (updatedBlock.durationMinutes % 15 !== 0) {
       setErrorMessage('Duration must be a multiple of 15 minutes.');
       return;
@@ -272,6 +375,9 @@ export function Builder() {
     }
     
     dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updatedBlock, scope } });
+    if (plan.settings.schedulerMode === 'predictive') {
+      trainFromBlocks([updatedBlock], `${plan.settings.name}:edit`);
+    }
     setSelectedBlockId(null);
   };
 
@@ -342,10 +448,30 @@ export function Builder() {
     setSelectedBlockId(null);
   };
 
-  const handleAcceptSuggestions = (suggestions: SuggestedBlock[]) => {
-    for (const suggestion of suggestions) {
-      const { isNew, bucketLabel, ...block } = suggestion;
+  const handleAcceptSuggestions = (
+    suggestions: SuggestedBlock[],
+    options?: { replaceExisting?: boolean; scope?: 'week' | 'all'; targetWeek?: number }
+  ) => {
+    const acceptedBlocks: PlacedBlock[] = suggestions.map(({ isNew, bucketLabel, ...block }) => block);
+    const replaceScope = options?.scope ?? 'all';
+
+    if (options?.replaceExisting) {
+      if (replaceScope === 'week') {
+        const weekToReset = options?.targetWeek ?? currentWeek;
+        dispatch({ type: 'RESET_WEEK', payload: { planId: plan.id, week: weekToReset } });
+      } else {
+        dispatch({
+          type: 'UPDATE_PLAN',
+          payload: { ...plan, blocks: [], recurrenceSeries: [] },
+        });
+      }
+    }
+
+    for (const block of acceptedBlocks) {
       dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
+    }
+    if (plan.settings.schedulerMode === 'predictive') {
+      trainFromBlocks(acceptedBlocks, `${plan.settings.name}:accepted`);
     }
   };
 
@@ -357,7 +483,10 @@ export function Builder() {
         const res = await fetch(`/api/plans/${plan.id}/publish`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ plan: { ...plan, publicId, isPublished: true, publishedAt: timestamp } }),
+          body: JSON.stringify({
+            plan: { ...plan, publicId, isPublished: true, publishedAt: timestamp },
+            templates: state.templates,
+          }),
         });
         if (!res.ok) throw new Error('publish failed');
         const json = await res.json();
@@ -371,7 +500,19 @@ export function Builder() {
 
   const handleUnpublish = () => {
     const timestamp = new Date().toISOString();
-    dispatch({ type: 'UNPUBLISH_PLAN', payload: { planId: plan.id, timestamp } });
+    (async () => {
+      try {
+        const res = await fetch(`/api/plans/${plan.id}/unpublish`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ publicId: plan.publicId }),
+        });
+        if (!res.ok) throw new Error('unpublish failed');
+        dispatch({ type: 'UNPUBLISH_PLAN', payload: { planId: plan.id, timestamp } });
+      } catch (e) {
+        setErrorMessage('Failed to unpublish plan from server.');
+      }
+    })();
   };
 
   const handleCopyLink = async () => {
@@ -386,14 +527,26 @@ export function Builder() {
     }
   };
 
-  const handleAssignBlock = (blockId: string, templateId: string) => {
+  const handleAssignBlock = (blockId: string, templateId: string | null) => {
     const timestamp = new Date().toISOString();
     dispatch({ type: 'ASSIGN_BLOCK_TEMPLATE', payload: { planId: plan.id, blockId, templateId, timestamp } });
   };
   
   // Assign with optional countsTowardGoldenRule override (single block)
-  const handleAssignBlockWithFlags = (blockId: string, templateId: string, countsOverride?: boolean) => {
+  const handleAssignBlockWithFlags = (blockId: string, templateId: string | null, countsOverride?: boolean) => {
     const timestamp = new Date().toISOString();
+    if (templateId === null) {
+      const block = plan.blocks.find(b => b.id === blockId);
+      if (!block) return;
+      const updated = {
+        ...block,
+        templateId: null,
+        countsTowardGoldenRule: false,
+        goldenRuleBucketId: null,
+      };
+      dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updated } });
+      return;
+    }
     const template = state.templates.find(t => t.id === templateId);
     if (typeof countsOverride === 'boolean') {
       const block = plan.blocks.find(b => b.id === blockId);
@@ -410,13 +563,12 @@ export function Builder() {
 
     dispatch({ type: 'ASSIGN_BLOCK_TEMPLATE', payload: { planId: plan.id, blockId, templateId, timestamp } });
   };
-  const handleAssignMultiple = (blockIds: string[], templateId: string) => {
+  const handleAssignMultiple = (blockIds: string[], templateId: string | null) => {
     const timestamp = new Date().toISOString();
     dispatch({ type: 'ASSIGN_MULTIPLE_BLOCKS_TEMPLATE', payload: { planId: plan.id, blockIds, templateId, timestamp } });
   };
 
   const selectedBlock = selectedBlockId ? plan.blocks.find(b => b.id === selectedBlockId) : null;
-  const selectedTemplate = selectedBlock ? state.templates.find(t => t.id === selectedBlock.templateId) : undefined;
 
   if (showPrint) {
     return (
@@ -523,7 +675,14 @@ export function Builder() {
               Partners
             </button>
             <button
-              onClick={() => setShowCreateEvent(true)}
+              onClick={() => setShowPartnerAvailability(true)}
+              className="px-3 py-1 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
+              data-testid="partner-availability-button"
+            >
+              Partner Availability
+            </button>
+            <button
+              onClick={() => { setCreateEventDefaults(null); setShowCreateEvent(true); }}
               className="px-3 py-1 text-sm border border-border rounded-lg text-foreground hover:bg-secondary/50 transition-all"
               data-testid="create-event-button"
             >
@@ -580,7 +739,7 @@ export function Builder() {
               </button>
             </div>
             <p className="text-xs text-green-400 mt-1">
-              Link works on this device. For other devices, export a JSON backup from Export/Import panel.
+              Share this link with students. For offline backups, export JSON from Export/Import.
             </p>
           </div>
         )}
@@ -629,7 +788,10 @@ export function Builder() {
 
         <div className="flex-1 flex overflow-hidden" onMouseMove={handleMouseMove} ref={gridRef}>
           <div className="w-64 flex-shrink-0">
-            <BlockLibrary />
+            <BlockLibrary
+              externalEditTemplateId={editTemplateId}
+              onExternalEditHandled={() => setEditTemplateId(null)}
+            />
           </div>
           
           <WeekGrid
@@ -655,7 +817,7 @@ export function Builder() {
           {selectedBlock ? (
             <BlockEditPanel
               block={selectedBlock}
-              template={selectedTemplate}
+              templates={state.templates}
               plan={plan}
               onUpdate={handleBlockUpdate}
               onDelete={handleBlockDelete}
@@ -663,13 +825,90 @@ export function Builder() {
               onClose={() => setSelectedBlockId(null)}
               onCreateRecurrence={handleCreateRecurrence}
               onUpdateRecurrence={handleUpdateRecurrence}
+              onEditTemplate={(templateId) => setEditTemplateId(templateId)}
             />
           ) : (
-            <div className="w-72 flex-shrink-0">
+            <div className="w-72 flex-shrink-0 space-y-3">
+              {plan.settings.anchorChecklist && (
+                (() => {
+                  const selectedAnchors = ANCHOR_PROMPTS.filter(prompt => plan.settings.anchorChecklist?.[prompt.id]);
+                  if (selectedAnchors.length === 0) return null;
+                  return (
+                    <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-2">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Anchor events</p>
+                        <p className="text-xs text-muted-foreground">
+                          These depend on partner schedules. Add them as locked events first.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setShowAnchorWizard(true)}
+                        className="w-full px-2 py-1 text-xs border border-border rounded-lg text-foreground hover:bg-secondary/50"
+                      >
+                        Schedule anchors
+                      </button>
+                      <div className="space-y-2">
+                        {selectedAnchors.map(anchor => (
+                          <div key={anchor.id} className="flex items-center justify-between gap-2 text-xs text-foreground">
+                            <span className="truncate">{anchor.label.replace('Do you have ', '').replace(' scheduled?', '?')}</span>
+                            <button
+                              onClick={() => {
+                                setCreateEventDefaults({
+                                  title: anchor.defaultTitle,
+                                  countsTowardGoldenRule: anchor.countsTowardGoldenRule,
+                                  durationMinutes: anchor.defaultDurationMinutes,
+                                  isLocked: true,
+                                });
+                                setShowCreateEvent(true);
+                              }}
+                              className="px-2 py-1 text-xs bg-primary text-primary-foreground rounded hover:opacity-90"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
+              {(() => {
+                const afterHoursBlocks = plan.blocks.filter(b => b.week === currentWeek && b.isAfterHours);
+                if (afterHoursBlocks.length === 0) return null;
+                return (
+                  <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-2">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">After-hours notes</p>
+                      <p className="text-xs text-muted-foreground">
+                        These events happen after hours and are noted without extending the grid.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      {afterHoursBlocks.map(block => (
+                        <button
+                          key={block.id}
+                          onClick={() => setSelectedBlockId(block.id)}
+                          className="w-full text-left text-xs px-2 py-1 border border-border rounded hover:bg-secondary/50"
+                        >
+                          <div className="font-medium truncate">
+                            {block.titleOverride || state.templates.find(t => t.id === block.templateId)?.title || 'Untitled'}
+                          </div>
+                          <div className="text-muted-foreground">
+                            {block.day.slice(0, 3)} {minutesToTimeDisplay(block.startMinutes)} ({block.durationMinutes}m)
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
               <GoldenRuleTotals 
                 plan={plan} 
                 templates={state.templates} 
                 onShowUnassigned={() => setShowUnassigned(true)}
+                onUpdatePlan={(nextPlan) => {
+                  dispatch({ type: 'UPDATE_PLAN', payload: nextPlan });
+                }}
               />
             </div>
           )}
@@ -711,8 +950,19 @@ export function Builder() {
 
       <CreateEventDialog
         open={showCreateEvent}
-        onClose={() => setShowCreateEvent(false)}
+        initialValues={createEventDefaults ?? undefined}
+        onClose={() => { setShowCreateEvent(false); setCreateEventDefaults(null); }}
         templates={state.templates}
+        plan={plan}
+        onCreateRecurrence={(blocks, series, newTemplate) => {
+          if (newTemplate) {
+            dispatch({ type: 'ADD_TEMPLATE', payload: newTemplate });
+          }
+          dispatch({ type: 'ADD_RECURRENCE_SERIES', payload: { planId: plan.id, series } });
+          for (const block of blocks) {
+            dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
+          }
+        }}
         onCreate={(block: any, newTemplate?: any) => {
           // add optional template first
           if (newTemplate) {
@@ -723,6 +973,44 @@ export function Builder() {
           dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block: b } });
         }}
       />
+
+      {showAnchorWizard && (
+        <AnchorScheduleWizard
+          open={showAnchorWizard}
+          plan={plan}
+          templates={state.templates}
+          onClose={() => setShowAnchorWizard(false)}
+          onApply={({ anchorSchedule, blocks }) => {
+            for (const block of blocks) {
+              dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
+            }
+            dispatch({
+              type: 'UPDATE_PLAN',
+              payload: {
+                ...plan,
+                settings: {
+                  ...plan.settings,
+                  anchorSchedule,
+                  anchorWizardDismissed: true,
+                },
+              },
+            });
+            setShowAnchorWizard(false);
+          }}
+        />
+      )}
+
+      {showPartnerAvailability && (
+        <PartnerAvailabilityPanel
+          open={showPartnerAvailability}
+          plan={plan}
+          templates={state.templates}
+          currentWeek={currentWeek}
+          onClose={() => setShowPartnerAvailability(false)}
+          onUpdatePlan={(nextPlan) => dispatch({ type: 'UPDATE_PLAN', payload: nextPlan })}
+          onAddBlock={(block) => dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } })}
+        />
+      )}
       
       {showPartners && (
         <PartnersPanel
@@ -745,10 +1033,10 @@ export function Builder() {
             dispatch({
               type: 'UPDATE_PLAN',
               payload: {
-                planId: plan.id,
-                updates: { settings: { ...plan.settings, hardDates } }
+                ...plan,
+                settings: { ...plan.settings, hardDates }
               }
-            } as any);
+            });
           }}
         />
       )}

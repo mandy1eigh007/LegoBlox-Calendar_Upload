@@ -1,4 +1,4 @@
-import { BlockTemplate, Category, COLOR_PALETTE, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId } from '@/state/types';
+import { BlockTemplate, Category, COLOR_PALETTE, GOLDEN_RULE_BUCKETS, GoldenRuleBucket, GoldenRuleBucketId } from '@/state/types';
 import { v4 as uuidv4 } from 'uuid';
 
 interface SeedTemplate {
@@ -27,6 +27,7 @@ const BUCKET_CATEGORY_MAP: Record<GoldenRuleBucketId, Category> = {
   'PORTFOLIO': 'PD',
   'CAREER_PLAN': 'PD',
   'APP_PREP': 'PD',
+  'MATH': 'Math',
   'ACE_INSTRUCTION': 'Shop',
   'ACES': 'Shop',
   'SHOP_INTRO': 'Shop',
@@ -67,6 +68,7 @@ const BUCKET_LOCATION_MAP: Partial<Record<GoldenRuleBucketId, string>> = {
   'PORTFOLIO': 'Classroom 1',
   'CAREER_PLAN': 'Classroom 1',
   'APP_PREP': 'Classroom 1',
+  'MATH': 'Classroom 2',
   'ACE_INSTRUCTION': 'Shop',
   'ACES': 'Shop',
   'SHOP_INTRO': 'Shop',
@@ -92,10 +94,11 @@ const BUCKET_LOCATION_MAP: Partial<Record<GoldenRuleBucketId, string>> = {
 };
 
 function createGoldenRuleTemplates(): SeedTemplate[] {
-  return GOLDEN_RULE_BUCKETS.map(bucket => ({
+  const buckets = GOLDEN_RULE_BUCKETS as ReadonlyArray<GoldenRuleBucket>;
+  return buckets.map(bucket => ({
     title: bucket.label,
     category: BUCKET_CATEGORY_MAP[bucket.id as GoldenRuleBucketId],
-    defaultDurationMinutes: Math.min(bucket.budgetMinutes, 240),
+    defaultDurationMinutes: bucket.isFlexible ? 120 : Math.min(bucket.budgetMinutes, 240),
     countsTowardGoldenRule: true,
     goldenRuleBucketId: bucket.id as GoldenRuleBucketId,
     defaultLocation: BUCKET_LOCATION_MAP[bucket.id as GoldenRuleBucketId] || '',
@@ -141,5 +144,6 @@ export function createSeedTemplates(): BlockTemplate[] {
     goldenRuleBucketId: seed.goldenRuleBucketId,
     defaultLocation: seed.defaultLocation || '',
     defaultNotes: seed.defaultNotes || '',
+    isArchived: false,
   }));
 }

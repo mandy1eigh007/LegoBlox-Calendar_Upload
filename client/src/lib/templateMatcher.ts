@@ -35,6 +35,7 @@ const BUCKET_KEYWORDS: Record<GoldenRuleBucketId, string[]> = {
   'PORTFOLIO': ['portfolio', 'apprenticeship portfolio', 'work samples'],
   'CAREER_PLAN': ['career plan', 'career planning', 'individual career', 'icp', 'career path'],
   'APP_PREP': ['application prep', 'app prep', 'preparation'],
+  'MATH': ['math', 'mathematics', 'math lab', 'math class', 'pace math', 'trp math'],
   'ACE_INSTRUCTION': ['ace instruction', 'ace class'],
   'ACES': ['aces', 'ace', 'adverse childhood', 'trauma'],
   'SHOP_INTRO': ['shop intro', 'shop introduction', 'intro to shop', 'workshop intro', 'shop orientation', 'shop safety'],
@@ -205,9 +206,11 @@ export function findBestBucketMatch(title: string): { bucketId: GoldenRuleBucket
 
 export function resolveTemplateForImportedTitle(
   title: string,
-  templates: BlockTemplate[]
+  templates: BlockTemplate[],
+  contextText?: string
 ): TemplateMatchResult {
-  if (!title || templates.length === 0) {
+  const matchText = [title, contextText].filter(Boolean).join(' ').trim();
+  if (!matchText || templates.length === 0) {
     return { templateId: null, bucketId: null, matchedBy: 'none', confidence: 0, candidates: [] };
   }
   
@@ -231,7 +234,7 @@ export function resolveTemplateForImportedTitle(
     }
   }
   
-  const normalizedInput = normalizeText(title);
+  const normalizedInput = normalizeText(matchText);
   
   for (const template of templates) {
     if (normalizeText(template.title) === normalizedInput) {
@@ -251,8 +254,7 @@ export function resolveTemplateForImportedTitle(
     }
   }
   
-  const templateIds = templates.map(t => t.id);
-  const aliasMatch = matchTitleToTemplateViaAlias(title, templateIds);
+  const aliasMatch = matchTitleToTemplateViaAlias(matchText, templates);
   
   if (aliasMatch.templateId) {
     const template = templates.find(t => t.id === aliasMatch.templateId);
@@ -277,7 +279,7 @@ export function resolveTemplateForImportedTitle(
   const candidates: TemplateCandidate[] = [];
   
   for (const template of templates) {
-    const score = scoreTemplateMatch(title, template);
+    const score = scoreTemplateMatch(matchText, template);
     if (score >= 0.4) {
       let matchReason = 'Similar title';
       if (score >= 0.9) matchReason = 'Very close match';
@@ -323,7 +325,7 @@ export function resolveTemplateForImportedTitle(
     };
   }
   
-  const bucketMatch = findBestBucketMatch(title);
+  const bucketMatch = findBestBucketMatch(matchText);
   if (bucketMatch && bucketMatch.score >= 0.5) {
     const templatesForBucket = templates.filter(t => t.goldenRuleBucketId === bucketMatch.bucketId);
     if (templatesForBucket.length === 1) {

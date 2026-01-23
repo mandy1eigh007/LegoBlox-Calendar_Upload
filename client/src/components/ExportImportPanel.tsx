@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useStore } from '@/state/store';
 import { Plan, AppState, PlacedBlock, DAYS, Day } from '@/state/types';
 import { exportToCSV, exportToICS, downloadCSV, downloadJSON, downloadICS, importICSToBlocks, importCSVToBlocks, getCSVHeaders, CSVDraftEvent, parseICSWithDateRange, convertICSEventsToBlocks } from '@/lib/csv';
@@ -19,11 +19,20 @@ interface ExportImportPanelProps {
   onClose: () => void;
 }
 
+type OCRDraft = OCREvent & {
+  confirmed: boolean;
+  titleInput: string;
+  dayInput: Day | null;
+  startMinutesInput: number | null;
+  endMinutesInput: number | null;
+};
+
 export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProps) {
   const { state, dispatch } = useStore();
   const [importError, setImportError] = useState<string | null>(null);
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('merge');
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const icsInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -58,12 +67,46 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
       } catch {}
     }
   }, [csvMapping]);
+
+  const timeOptions = useMemo(() => {
+    const options: number[] = [];
+    for (let m = 390; m <= 930; m += 15) {
+      options.push(m);
+    }
+    return options;
+  }, []);
+
+  const normalizeOcrMinutes = (value: number | null): number | null => {
+    if (value === null || Number.isNaN(value)) return null;
+    const rounded = Math.round(value / 15) * 15;
+    if (rounded < 390 || rounded > 930) return null;
+    return rounded;
+  };
+
+  const isDraftValid = (draft: OCRDraft): boolean => {
+    if (!draft.titleInput.trim()) return false;
+    if (!draft.dayInput) return false;
+    if (draft.startMinutesInput === null || draft.endMinutesInput === null) return false;
+    return draft.endMinutesInput > draft.startMinutesInput;
+  };
+
+  const updateOcrDraft = (id: string, updates: Partial<OCRDraft>) => {
+    setOCRDrafts(prev => prev.map(draft => {
+      if (draft.id !== id) return draft;
+      const next = { ...draft, ...updates };
+      if (!isDraftValid(next)) {
+        next.confirmed = false;
+      }
+      return next;
+    }));
+  };
   
   const ocrInputRef = useRef<HTMLInputElement>(null);
   const [ocrProcessing, setOCRProcessing] = useState(false);
   const [ocrProgress, setOCRProgress] = useState(0);
-  const [ocrEvents, setOCREvents] = useState<OCREvent[]>([]);
+  const [ocrDrafts, setOCRDrafts] = useState<OCRDraft[]>([]);
   const [ocrRawText, setOCRRawText] = useState('');
+  const [ocrConfirmError, setOcrConfirmError] = useState<string | null>(null);
 
   const [icsPreview, setIcsPreview] = useState<null | {
     events: any[];
@@ -76,6 +119,8 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   }>(null);
   const [icsRangeStart, setIcsRangeStart] = useState<string | null>(null);
   const [icsRangeEnd, setIcsRangeEnd] = useState<string | null>(null);
+  const [lockIcsEvents, setLockIcsEvents] = useState(true);
+  const [lockCsvEvents, setLockCsvEvents] = useState(true);
   
   const aliasInputRef = useRef<HTMLInputElement>(null);
   const resourceInputRef = useRef<HTMLInputElement>(null);
@@ -199,10 +244,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
     downloadJSON(state, filename);
   };
 
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const handleImportFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
@@ -227,16 +269,19 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    handleImportFile(file);
     
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
-  const handleImportICS = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const handleImportICSFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
@@ -267,6 +312,12 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleImportICS = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    handleImportICSFile(file);
     
     if (icsInputRef.current) {
       icsInputRef.current.value = '';
@@ -286,17 +337,14 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
     }
 
     for (const block of blocks) {
-      dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
+      dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block: { ...block, isLocked: lockIcsEvents, isAfterHours: false } } });
     }
 
     setImportSuccess(`Imported ${included} events${skipped > 0 ? ` (${skipped} skipped)` : ''}.`);
     setIcsPreview(null);
   };
 
-  const handleCSVFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const handleCSVFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       const content = event.target?.result as string;
@@ -318,6 +366,12 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
       setCSVMapping(autoMapping);
     };
     reader.readAsText(file);
+  };
+
+  const handleCSVFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    handleCSVFile(file);
     
     if (csvInputRef.current) {
       csvInputRef.current.value = '';
@@ -340,7 +394,8 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
     let unassigned = 0;
     
     for (const draft of csvDrafts) {
-      const match = resolveTemplateForImportedTitle(draft.title, state.templates);
+      const matchContext = [draft.notes, draft.location].filter(Boolean).join(' ');
+      const match = resolveTemplateForImportedTitle(draft.title, state.templates, matchContext);
       const matchedTemplate = match.templateId ? state.templates.find(t => t.id === match.templateId) : null;
 
       const block: PlacedBlock = {
@@ -357,6 +412,8 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
         goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
         recurrenceSeriesId: null,
         isRecurrenceException: false,
+        isLocked: lockCsvEvents,
+        isAfterHours: false,
       };
 
       dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
@@ -378,65 +435,130 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
     setCSVDrafts([]);
   };
 
-  const handleOCRFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const handleOCRFile = async (file: File) => {
     setOCRProcessing(true);
     setOCRProgress(0);
     setImportError(null);
+    setOcrConfirmError(null);
 
     try {
       const { events, rawText } = await processImageWithOCR(file, setOCRProgress);
-      setOCREvents(events);
+      const drafts: OCRDraft[] = events.map(event => ({
+        ...event,
+        confirmed: false,
+        titleInput: event.title || 'Untitled',
+        dayInput: event.day,
+        startMinutesInput: normalizeOcrMinutes(event.startMinutes),
+        endMinutesInput: normalizeOcrMinutes(event.endMinutes),
+      }));
+      setOCRDrafts(drafts);
       setOCRRawText(rawText);
       
       if (events.length === 0) {
         setImportError('No schedule events detected in the image. Try a clearer image with visible times.');
+        setOCRDrafts([]);
       }
     } catch (err) {
       setImportError('Failed to process image. Please try again.');
     } finally {
       setOCRProcessing(false);
     }
+  };
+
+  const handleOCRFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await handleOCRFile(file);
 
     if (ocrInputRef.current) {
       ocrInputRef.current.value = '';
     }
   };
 
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length === 0) return;
+    const file = files[0];
+    const fileName = file.name.toLowerCase();
+    const fileType = file.type;
+
+    if (fileName.endsWith('.ics') || fileName.endsWith('.ical') || fileType === 'text/calendar') {
+      handleImportICSFile(file);
+    } else if (fileName.endsWith('.csv') || fileType === 'text/csv') {
+      handleCSVFile(file);
+    } else if (fileName.endsWith('.json') || fileType === 'application/json') {
+      handleImportFile(file);
+    } else if (fileType.startsWith('image/')) {
+      await handleOCRFile(file);
+    } else {
+      setImportError('Unsupported file type. Drag an ICS, CSV, JSON, or image file.');
+    }
+  };
+
+  const wrapWithDropZone = (content: React.ReactNode) => (
+    <div onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} className="relative">
+      {isDragging && (
+        <div className="fixed inset-0 bg-purple-500/20 border-4 border-dashed border-purple-500 z-50 flex items-center justify-center pointer-events-none">
+          <div className="glass-card rounded-lg p-6 shadow-lg text-center">
+            <p className="text-lg font-medium text-foreground">Drop your file here</p>
+            <p className="text-sm text-muted-foreground">ICS, CSV, JSON, or image files</p>
+          </div>
+        </div>
+      )}
+      {content}
+    </div>
+  );
+
   const handleApplyOCREvents = () => {
     let imported = 0;
     let unassigned = 0;
     
-    for (const event of ocrEvents) {
-      if (event.startMinutes === null || event.endMinutes === null || !event.day) continue;
-      
-      const startMinutes = Math.max(390, Math.min(event.startMinutes, 915));
-      let durationMinutes = event.endMinutes - event.startMinutes;
+    const confirmedDrafts = ocrDrafts.filter(draft => draft.confirmed && isDraftValid(draft));
+    if (confirmedDrafts.length === 0) {
+      setOcrConfirmError('Confirm at least one event with a valid title, day, start time, and end time.');
+      return;
+    }
+
+    for (const draft of confirmedDrafts) {
+      const startMinutes = draft.startMinutesInput!;
+      const endMinutes = draft.endMinutesInput!;
+      let durationMinutes = endMinutes - startMinutes;
       durationMinutes = Math.max(15, Math.ceil(durationMinutes / 15) * 15);
       
-      if (startMinutes + durationMinutes > 930) {
-        durationMinutes = 930 - startMinutes;
-      }
-      
-      const match = resolveTemplateForImportedTitle(event.title, state.templates);
+      const match = resolveTemplateForImportedTitle(draft.titleInput, state.templates);
       const matchedTemplate = match.templateId ? state.templates.find(t => t.id === match.templateId) : null;
 
       const block: PlacedBlock = {
         id: uuidv4(),
         templateId: match.templateId,
         week: 1,
-        day: event.day,
+        day: draft.dayInput || 'Monday',
         startMinutes,
         durationMinutes,
-        titleOverride: event.title,
+        titleOverride: draft.titleInput,
         location: '',
-        notes: `Imported via OCR: ${event.rawText}`,
+        notes: `OCR confirmed: ${draft.rawText}`,
         countsTowardGoldenRule: matchedTemplate ? matchedTemplate.countsTowardGoldenRule : false,
         goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
         recurrenceSeriesId: null,
         isRecurrenceException: false,
+        isLocked: false,
       };
       
       dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
@@ -444,8 +566,9 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
       if (!match.templateId) unassigned++;
     }
     
-    setOCREvents([]);
+    setOCRDrafts([]);
     setOCRRawText('');
+    setOcrConfirmError(null);
     const msg = unassigned > 0 
       ? `Imported ${imported} events (${unassigned} unassigned - double-click to assign).`
       : `Imported ${imported} events from image.`;
@@ -453,37 +576,126 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   };
 
   const cancelOCRImport = () => {
-    setOCREvents([]);
+    setOCRDrafts([]);
     setOCRRawText('');
+    setOcrConfirmError(null);
   };
 
-  if (ocrEvents.length > 0) {
-    return (
+  if (ocrDrafts.length > 0) {
+    return wrapWithDropZone(
       <Modal open={open} onClose={onClose} title="Review OCR Import">
         <div className="space-y-4">
-          <p className="text-sm text-gray-600">
-            {ocrEvents.length} events detected. Events with missing data will be skipped.
-          </p>
+          <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm">
+            <p className="font-medium text-amber-800 mb-1">OCR Has Limitations</p>
+            <p className="text-amber-700">
+              Screenshot scanning is unreliable. Confirm the title and time for each event before scheduling.
+            </p>
+          </div>
+          <div className="flex items-center justify-between text-xs text-gray-600">
+            <span>{ocrDrafts.length} items detected</span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setOCRDrafts(prev => prev.map(d => isDraftValid(d) ? { ...d, confirmed: true } : d))}
+                className="text-blue-600 hover:underline"
+              >
+                Confirm all valid
+              </button>
+              <button
+                onClick={() => setOCRDrafts(prev => prev.map(d => ({ ...d, confirmed: false })))}
+                className="text-blue-600 hover:underline"
+              >
+                Clear all
+              </button>
+            </div>
+          </div>
           
           <div className="max-h-64 overflow-auto border rounded">
             <table className="w-full text-xs">
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
+                  <th className="p-2 text-left">Confirm</th>
                   <th className="p-2 text-left">Day</th>
-                  <th className="p-2 text-left">Time</th>
+                  <th className="p-2 text-left">Start</th>
+                  <th className="p-2 text-left">End</th>
                   <th className="p-2 text-left">Title</th>
-                  <th className="p-2 text-left">Confidence</th>
+                  <th className="p-2 text-left">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {ocrEvents.map(event => {
-                  const isValid = event.startMinutes !== null && event.endMinutes !== null && event.day !== null;
+                {ocrDrafts.map(draft => {
+                  const valid = isDraftValid(draft);
+                  const status = !draft.titleInput.trim()
+                    ? 'Needs title'
+                    : !draft.dayInput
+                      ? 'Needs day'
+                      : draft.startMinutesInput === null || draft.endMinutesInput === null || draft.endMinutesInput <= draft.startMinutesInput
+                        ? 'Needs time'
+                        : draft.confirmed ? 'Confirmed' : 'Ready';
                   return (
-                    <tr key={event.id} className={isValid ? '' : 'bg-red-50 text-gray-400'}>
-                      <td className="p-2">{event.day || '?'}</td>
-                      <td className="p-2">{event.startTime} - {event.endTime}</td>
-                      <td className="p-2 truncate max-w-[150px]">{event.title}</td>
-                      <td className="p-2">{Math.round(event.confidence * 100)}%</td>
+                    <tr key={draft.id} className={valid ? '' : 'bg-red-50 text-gray-500'}>
+                      <td className="p-2">
+                        <input
+                          type="checkbox"
+                          checked={draft.confirmed}
+                          disabled={!valid}
+                          onChange={(e) => updateOcrDraft(draft.id, { confirmed: e.target.checked })}
+                        />
+                      </td>
+                      <td className="p-2">
+                        <select
+                          value={draft.dayInput || ''}
+                          onChange={(e) => updateOcrDraft(draft.id, { dayInput: e.target.value as Day })}
+                          className="border rounded px-1 py-0.5"
+                        >
+                          <option value="">Day...</option>
+                          {DAYS.map(day => (
+                            <option key={day} value={day}>{day}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-2">
+                        <select
+                          value={draft.startMinutesInput ?? ''}
+                          onChange={(e) => {
+                            const nextStart = e.target.value ? parseInt(e.target.value, 10) : null;
+                            let nextEnd = draft.endMinutesInput;
+                            if (nextStart !== null && (nextEnd === null || nextEnd <= nextStart)) {
+                              const candidate = nextStart + 60;
+                              nextEnd = candidate <= 930 ? candidate : nextStart + 15;
+                            }
+                            updateOcrDraft(draft.id, { startMinutesInput: nextStart, endMinutesInput: nextEnd });
+                          }}
+                          className="border rounded px-1 py-0.5"
+                        >
+                          <option value="">Start...</option>
+                          {timeOptions.slice(0, -1).map(m => (
+                            <option key={m} value={m}>{minutesToTimeDisplay(m)}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-2">
+                        <select
+                          value={draft.endMinutesInput ?? ''}
+                          onChange={(e) => {
+                            const nextEnd = e.target.value ? parseInt(e.target.value, 10) : null;
+                            updateOcrDraft(draft.id, { endMinutesInput: nextEnd });
+                          }}
+                          className="border rounded px-1 py-0.5"
+                        >
+                          <option value="">End...</option>
+                          {timeOptions.slice(1).map(m => (
+                            <option key={m} value={m}>{minutesToTimeDisplay(m)}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-2">
+                        <input
+                          value={draft.titleInput}
+                          onChange={(e) => updateOcrDraft(draft.id, { titleInput: e.target.value })}
+                          className="border rounded px-1 py-0.5 w-full"
+                        />
+                      </td>
+                      <td className="p-2">{status}</td>
                     </tr>
                   );
                 })}
@@ -497,6 +709,10 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
               {ocrRawText}
             </pre>
           </details>
+
+          {ocrConfirmError && (
+            <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{ocrConfirmError}</p>
+          )}
           
           <div className="flex gap-3">
             <button
@@ -510,7 +726,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
               className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
               data-testid="apply-ocr-import"
             >
-              Apply Valid Events
+              Apply Confirmed Events
             </button>
           </div>
         </div>
@@ -519,7 +735,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   }
 
   if (icsPreview) {
-    return (
+    return wrapWithDropZone(
       <Modal open={open} onClose={() => { setIcsPreview(null); onClose(); }} title="Preview ICS Import">
         <div className="space-y-4">
           <p className="text-sm text-gray-600">Detected events from {icsPreview.minDateStr} to {icsPreview.maxDateStr}. Select a date range to include before importing.</p>
@@ -535,6 +751,15 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
             </div>
           </div>
 
+          <div className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={lockIcsEvents}
+              onChange={(e) => setLockIcsEvents(e.target.checked)}
+            />
+            <span>Lock imported events (prevents drag/resize until unlocked)</span>
+          </div>
+
           <div className="max-h-64 overflow-auto border rounded">
             <table className="w-full text-xs">
               <thead className="bg-gray-50 sticky top-0">
@@ -547,7 +772,8 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
               </thead>
               <tbody>
                 {icsPreview.events.map((ev: any, idx: number) => {
-                  const match = resolveTemplateForImportedTitle(ev.summary, state.templates);
+                  const matchContext = [ev.description, ev.location].filter(Boolean).join(' ');
+                  const match = resolveTemplateForImportedTitle(ev.summary, state.templates, matchContext);
                   const matchedTemplate = match.templateId ? state.templates.find(t => t.id === match.templateId) : null;
                   return (
                     <tr key={idx} className={match.templateId ? '' : 'bg-yellow-50'}>
@@ -581,7 +807,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   }
 
   if (ocrProcessing) {
-    return (
+    return wrapWithDropZone(
       <Modal open={open} onClose={() => {}} title="Processing Image...">
         <div className="py-8 text-center space-y-4">
           <Loader2 className="w-8 h-8 animate-spin mx-auto text-blue-600" />
@@ -600,12 +826,21 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   }
 
   if (csvDrafts.length > 0) {
-    return (
+    return wrapWithDropZone(
       <Modal open={open} onClose={onClose} title="Review CSV Import">
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
             {csvDrafts.length} events detected. Review and click Apply to import.
           </p>
+
+          <div className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={lockCsvEvents}
+              onChange={(e) => setLockCsvEvents(e.target.checked)}
+            />
+            <span>Lock imported events (prevents drag/resize until unlocked)</span>
+          </div>
           
           <div className="max-h-64 overflow-auto border rounded">
             <table className="w-full text-xs">
@@ -662,7 +897,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
   }
 
   if (csvContent) {
-    return (
+    return wrapWithDropZone(
       <Modal open={open} onClose={onClose} title="Map CSV Columns">
         <div className="space-y-4">
           <p className="text-sm text-gray-600">
@@ -716,7 +951,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
     );
   }
 
-  return (
+  return wrapWithDropZone(
     <Modal open={open} onClose={onClose} title="Export / Import">
       <div className="space-y-6">
         <div>

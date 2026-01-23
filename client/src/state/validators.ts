@@ -35,7 +35,7 @@ export function validatePlacedBlock(block: unknown): block is PlacedBlock {
   const b = block as Record<string, unknown>;
   
   if (typeof b.id !== 'string' || !b.id) return false;
-  if (typeof b.templateId !== 'string' || !b.templateId) return false;
+  if (b.templateId !== null && typeof b.templateId !== 'string') return false;
   if (typeof b.week !== 'number' || b.week < 1) return false;
   if (!DAYS.includes(b.day as typeof DAYS[number])) return false;
   if (typeof b.startMinutes !== 'number') return false;

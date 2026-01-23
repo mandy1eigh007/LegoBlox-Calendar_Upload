@@ -4,6 +4,44 @@ export type Category = typeof CATEGORIES[number];
 export const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as const;
 export type Day = typeof DAYS[number];
 
+export type AnchorPromptId =
+  | 'math'
+  | 'mock_interviews'
+  | 'speed_mentoring'
+  | 'guest_speakers'
+  | 'apprenticeship_tours'
+  | 'job_site_tours';
+
+export interface AnchorDateDraft {
+  type: 'date';
+  id: string;
+  date: string; // YYYY-MM-DD
+  startMinutes: number;
+  durationMinutes: number;
+  title: string;
+  countsTowardGoldenRule: boolean;
+  isLocked: boolean;
+  isAfterHours?: boolean;
+  created?: boolean;
+}
+
+export interface AnchorWeeklyDraft {
+  type: 'weekly';
+  id: string;
+  startWeek: number;
+  endWeek: number;
+  days: Day[];
+  startMinutes: number;
+  durationMinutes: number;
+  title: string;
+  countsTowardGoldenRule: boolean;
+  isLocked: boolean;
+  isAfterHours?: boolean;
+  created?: boolean;
+}
+
+export type AnchorEventDraft = AnchorDateDraft | AnchorWeeklyDraft;
+
 export const COLOR_PALETTE = [
   { name: 'Blue', hex: '#3B82F6' },
   { name: 'Green', hex: '#22C55E' },
@@ -33,6 +71,7 @@ export const GOLDEN_RULE_BUCKETS = [
   { id: 'PORTFOLIO', label: 'Apprenticeship Portfolio', budgetMinutes: 240 },
   { id: 'CAREER_PLAN', label: 'Individual Career Plan', budgetMinutes: 180 },
   { id: 'APP_PREP', label: 'Application Prep', budgetMinutes: 120 },
+  { id: 'MATH', label: 'Math', budgetMinutes: 0, isFlexible: true },
   { id: 'ACE_INSTRUCTION', label: 'ACE Instruction', budgetMinutes: 240 },
   { id: 'ACES', label: 'ACEs', budgetMinutes: 2160 },
   { id: 'SHOP_INTRO', label: 'Shop Introduction', budgetMinutes: 60 },
@@ -55,9 +94,15 @@ export const GOLDEN_RULE_BUCKETS = [
   { id: 'FLAGGER', label: 'Flagger Certification', budgetMinutes: 480 },
   { id: 'PHYSICAL_FITNESS', label: 'Physical Fitness', budgetMinutes: 1920 },
   { id: 'NUTRITION', label: 'Nutrition', budgetMinutes: 60 },
-] as const;
+] as const satisfies ReadonlyArray<{ id: string; label: string; budgetMinutes: number; isFlexible?: boolean }>;
 
 export type GoldenRuleBucketId = typeof GOLDEN_RULE_BUCKETS[number]['id'];
+export type GoldenRuleBucket = {
+  id: GoldenRuleBucketId;
+  label: string;
+  budgetMinutes: number;
+  isFlexible?: boolean;
+};
 
 export const DEFAULT_RESOURCES = ['Classroom 1', 'Classroom 2', 'Shop', 'Offsite', 'Administration'] as const;
 
@@ -122,6 +167,7 @@ export interface BlockTemplate {
   engagementId?: string | null;
   defaultResource?: string;
   matchKeywords?: string[];
+  isArchived?: boolean;
 }
 
 export interface PlacedBlock {
@@ -148,6 +194,8 @@ export interface PlacedBlock {
   partnerAddress?: string;
   partnerPPE?: string;
   partnerParking?: string;
+  isLocked?: boolean;
+  isAfterHours?: boolean;
 }
 
 export interface RecurrenceSeries {
@@ -160,6 +208,8 @@ export interface RecurrenceSeries {
   baseNotes: string;
   countsTowardGoldenRule: boolean;
   goldenRuleBucketId: GoldenRuleBucketId | null;
+  isLocked?: boolean;
+  isAfterHours?: boolean;
 }
 
 export type SchedulerMode = 'manual' | 'predictive';
@@ -174,6 +224,8 @@ export interface HardDate {
 export interface PlanSettings {
   name: string;
   weeks: number;
+  startDate?: string;
+  activeDays?: Day[];
   dayStartMinutes: number;
   dayEndMinutes: number;
   slotMinutes: 15;
@@ -182,6 +234,18 @@ export interface PlanSettings {
   showNotesOnPrint: boolean;
   schedulerMode: SchedulerMode;
   hardDates?: HardDate[];
+  bucketAdjustments?: Partial<Record<GoldenRuleBucketId, number>>;
+  anchorChecklist?: Partial<Record<AnchorPromptId, boolean>>;
+  anchorSchedule?: Partial<Record<AnchorPromptId, AnchorEventDraft[]>>;
+  anchorWizardDismissed?: boolean;
+  partnerRequests?: PartnerRequestRef[];
+}
+
+export interface PartnerRequestRef {
+  id: string;
+  code: string;
+  label: string;
+  createdAt: string;
 }
 
 export interface Plan {
@@ -241,8 +305,8 @@ export type Action =
   | { type: 'PUBLISH_PLAN'; payload: { planId: string; publicId: string; timestamp: string } }
   | { type: 'UNPUBLISH_PLAN'; payload: { planId: string; timestamp: string } }
   | { type: 'REGENERATE_PUBLIC_ID'; payload: { planId: string; newPublicId: string; timestamp: string } }
-  | { type: 'ASSIGN_BLOCK_TEMPLATE'; payload: { planId: string; blockId: string; templateId: string; timestamp: string } }
-  | { type: 'ASSIGN_MULTIPLE_BLOCKS_TEMPLATE'; payload: { planId: string; blockIds: string[]; templateId: string; timestamp: string } };
+  | { type: 'ASSIGN_BLOCK_TEMPLATE'; payload: { planId: string; blockId: string; templateId: string | null; timestamp: string } }
+  | { type: 'ASSIGN_MULTIPLE_BLOCKS_TEMPLATE'; payload: { planId: string; blockIds: string[]; templateId: string | null; timestamp: string } };
 
 export function minutesToTimeString(minutes: number): string {
   const hours = Math.floor(minutes / 60);

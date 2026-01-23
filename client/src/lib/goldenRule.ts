@@ -2,6 +2,7 @@ import {
   Plan, 
   BlockTemplate, 
   GOLDEN_RULE_BUCKETS,
+  GoldenRuleBucket,
   GoldenRuleBucketId,
 } from '@/state/types';
 
@@ -13,6 +14,8 @@ export interface BucketTotal {
   difference: number;
   status: 'under' | 'on-target' | 'over';
   met: boolean;
+  isFlexible?: boolean;
+  adjustment?: number;
 }
 
 export interface GoldenRuleSummary {
@@ -26,8 +29,9 @@ export function calculateGoldenRuleTotals(
   templates: BlockTemplate[]
 ): BucketTotal[] {
   const totals: Record<string, number> = {};
+  const buckets = GOLDEN_RULE_BUCKETS as ReadonlyArray<GoldenRuleBucket>;
   
-  for (const bucket of GOLDEN_RULE_BUCKETS) {
+  for (const bucket of buckets) {
     totals[bucket.id] = 0;
   }
   
@@ -47,12 +51,20 @@ export function calculateGoldenRuleTotals(
     }
   }
   
-  return GOLDEN_RULE_BUCKETS.map(bucket => {
+  const adjustments = plan.settings.bucketAdjustments || {};
+
+  return buckets.map(bucket => {
     const scheduled = totals[bucket.id];
-    const difference = scheduled - bucket.budgetMinutes;
+    const isFlexible = !!bucket.isFlexible;
+    const adjustment = isFlexible ? 0 : (adjustments[bucket.id] || 0);
+    const adjustedBudget = Math.max(0, bucket.budgetMinutes + adjustment);
+    const budget = isFlexible ? scheduled : adjustedBudget;
+    const difference = isFlexible ? 0 : scheduled - adjustedBudget;
     
     let status: 'under' | 'on-target' | 'over';
-    if (difference < -15) {
+    if (isFlexible) {
+      status = 'on-target';
+    } else if (difference < -15) {
       status = 'under';
     } else if (difference > 15) {
       status = 'over';
@@ -64,10 +76,12 @@ export function calculateGoldenRuleTotals(
       id: bucket.id,
       label: bucket.label, 
       scheduled, 
-      budget: bucket.budgetMinutes, 
+      budget, 
       difference, 
       status,
-      met: scheduled >= bucket.budgetMinutes,
+      met: isFlexible ? false : scheduled >= adjustedBudget,
+      isFlexible,
+      adjustment,
     };
   });
 }

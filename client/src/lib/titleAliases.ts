@@ -1,4 +1,4 @@
-import { GoldenRuleBucketId, GOLDEN_RULE_BUCKETS } from '@/state/types';
+import { BlockTemplate, GoldenRuleBucketId } from '@/state/types';
 
 export interface TitleAlias {
   rawTitle: string;
@@ -145,6 +145,7 @@ const BUCKET_ID_TO_TEMPLATE_ID: Record<GoldenRuleBucketId, string> = {
   'PORTFOLIO': 'portfolio',
   'CAREER_PLAN': 'career_plan',
   'APP_PREP': 'app_prep',
+  'MATH': 'math',
   'ACE_INSTRUCTION': 'ace_instruction',
   'ACES': 'aces',
   'SHOP_INTRO': 'shop_intro',
@@ -168,6 +169,45 @@ const BUCKET_ID_TO_TEMPLATE_ID: Record<GoldenRuleBucketId, string> = {
   'PHYSICAL_FITNESS': 'physical_fitness',
   'NUTRITION': 'nutrition',
 };
+
+const TEMPLATE_KEY_TO_BUCKET_ID = Object.entries(BUCKET_ID_TO_TEMPLATE_ID).reduce((acc, [bucketId, templateKey]) => {
+  acc[templateKey] = bucketId as GoldenRuleBucketId;
+  return acc;
+}, {} as Record<string, GoldenRuleBucketId>);
+
+function normalizeAliasKey(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function resolveAliasTemplateId(
+  aliasTemplateId: string,
+  aliasTitle: string,
+  templates: BlockTemplate[]
+): string | null {
+  const direct = templates.find(t => t.id === aliasTemplateId);
+  if (direct) return direct.id;
+
+  const bucketId = TEMPLATE_KEY_TO_BUCKET_ID[normalizeAliasKey(aliasTemplateId)];
+  if (bucketId) {
+    const bucketTemplate = templates.find(t => t.goldenRuleBucketId === bucketId && t.countsTowardGoldenRule);
+    if (bucketTemplate) return bucketTemplate.id;
+  }
+
+  const normalizedTitle = normalizeAliasKey(aliasTitle);
+  const titleExact = templates.find(t => normalizeAliasKey(t.title) === normalizedTitle);
+  if (titleExact) return titleExact.id;
+
+  const titleContains = templates.find(t => {
+    const templateTitle = normalizeAliasKey(t.title);
+    return templateTitle.includes(normalizedTitle) || normalizedTitle.includes(templateTitle);
+  });
+
+  return titleContains?.id ?? null;
+}
 
 export function loadTitleAliases(): TitleAliasConfig {
   try {
@@ -211,27 +251,25 @@ export function removeTitleAlias(rawTitle: string): void {
 
 export function matchTitleToTemplateViaAlias(
   title: string,
-  templateIds: string[]
+  templates: BlockTemplate[]
 ): { templateId: string | null; matchType: 'exact' | 'alias' | 'contains' | 'none'; aliasUsed?: string } {
   const config = loadTitleAliases();
   const normalizedTitle = title.toLowerCase().trim();
   
   for (const alias of config.aliases) {
     const normalizedAlias = alias.rawTitle.toLowerCase().trim();
+    const resolvedTemplateId = resolveAliasTemplateId(alias.templateId, alias.rawTitle, templates);
+    if (!resolvedTemplateId) continue;
     
     if (alias.matchType === 'exact' || alias.matchType === 'alias') {
       if (normalizedTitle === normalizedAlias) {
-        if (templateIds.includes(alias.templateId)) {
-          return { templateId: alias.templateId, matchType: alias.matchType, aliasUsed: alias.rawTitle };
-        }
+        return { templateId: resolvedTemplateId, matchType: alias.matchType, aliasUsed: alias.rawTitle };
       }
     }
     
     if (alias.matchType === 'contains') {
       if (normalizedTitle.includes(normalizedAlias)) {
-        if (templateIds.includes(alias.templateId)) {
-          return { templateId: alias.templateId, matchType: 'contains', aliasUsed: alias.rawTitle };
-        }
+        return { templateId: resolvedTemplateId, matchType: 'contains', aliasUsed: alias.rawTitle };
       }
     }
   }
@@ -239,10 +277,10 @@ export function matchTitleToTemplateViaAlias(
   for (const alias of config.aliases) {
     if (alias.matchType === 'alias') {
       const normalizedAlias = alias.rawTitle.toLowerCase().trim();
+      const resolvedTemplateId = resolveAliasTemplateId(alias.templateId, alias.rawTitle, templates);
+      if (!resolvedTemplateId) continue;
       if (normalizedTitle.includes(normalizedAlias) || normalizedAlias.includes(normalizedTitle)) {
-        if (templateIds.includes(alias.templateId)) {
-          return { templateId: alias.templateId, matchType: 'alias', aliasUsed: alias.rawTitle };
-        }
+        return { templateId: resolvedTemplateId, matchType: 'alias', aliasUsed: alias.rawTitle };
       }
     }
   }

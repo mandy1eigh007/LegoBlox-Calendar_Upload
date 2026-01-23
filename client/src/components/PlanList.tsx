@@ -1,18 +1,40 @@
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { useStore } from '@/state/store';
-import { Plan, PlanSettings, DEFAULT_RESOURCES, AppState, PlacedBlock, Day, DAYS, GOLDEN_RULE_BUCKETS, SchedulerMode } from '@/state/types';
+import { Plan, PlanSettings, DEFAULT_RESOURCES, AppState, PlacedBlock, Day, DAYS, GOLDEN_RULE_BUCKETS, SchedulerMode, AnchorPromptId } from '@/state/types';
 import { Modal, ConfirmModal } from './Modal';
 import { createDefaultPlanSettings } from '@/lib/storage';
+import { ANCHOR_PROMPTS, createAnchorSelections, createEmptyAnchorChecklist, buildAnchorDateDraft, buildAnchorWeeklyDraft, buildBlocksFromDraft, AnchorScheduleSelection } from '@/lib/anchorPrompts';
+import { getWeekDayFromDate } from '@/lib/dateMapping';
 import { v4 as uuidv4 } from 'uuid';
 import { validateAppState } from '@/state/validators';
 import { processImageWithOCR, OCREvent } from '@/lib/ocr';
-import { parseICSWithDateRange, convertICSEventsToBlocks, ICSEventWithDate } from '@/lib/csv';
+import { parseICSWithDateRange, convertICSEventsToBlocks, ICSEventWithDate, importCSVToBlocks, getCSVHeaders, CSVDraftEvent } from '@/lib/csv';
 import { resolveTemplateForImportedTitle, TemplateCandidate, getBucketLabel } from '@/lib/templateMatcher';
+import { minutesToTimeDisplay } from '@/lib/time';
 import { Loader2, AlertTriangle } from 'lucide-react';
 
 type DateRangeMode = 'all' | 'range' | 'week';
 type ImportTarget = 'new' | 'existing';
+type OCRDraft = OCREvent & {
+  confirmed: boolean;
+  titleInput: string;
+  dayInput: Day | null;
+  startMinutesInput: number | null;
+  endMinutesInput: number | null;
+};
+type CsvColumnMapping = {
+  week: number;
+  day: number;
+  startTime: number;
+  endTime: number;
+  title: number;
+  location: number;
+  notes: number;
+};
+type CsvMappingPreset = { name: string; mapping: CsvColumnMapping; headers?: string[] };
+
+const CSV_PRESET_STORAGE_KEY = 'homeCsvMappingPresets';
 
 export function PlanList() {
   const { state, dispatch } = useStore();
@@ -29,12 +51,18 @@ export function PlanList() {
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const [ocrProcessing, setOCRProcessing] = useState(false);
   const [ocrProgress, setOCRProgress] = useState(0);
-  const [ocrEvents, setOCREvents] = useState<OCREvent[]>([]);
+  const [ocrDrafts, setOCRDrafts] = useState<OCRDraft[]>([]);
   const [ocrPlanName, setOCRPlanName] = useState('');
   const [ocrRawText, setOCRRawText] = useState('');
+  const [ocrConfirmError, setOcrConfirmError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [manualEvents, setManualEvents] = useState<Array<{id: string; title: string; day: Day; startMinutes: number; durationMinutes: number}>>([]);
+  const [anchorChecklist, setAnchorChecklist] = useState<Record<AnchorPromptId, boolean>>(createEmptyAnchorChecklist());
+  const [anchorSelections, setAnchorSelections] = useState<Record<AnchorPromptId, AnchorScheduleSelection>>(
+    createAnchorSelections(390)
+  );
+  const [createPlanError, setCreatePlanError] = useState<string | null>(null);
   const [icsImportPlanName, setIcsImportPlanName] = useState('');
   const [pendingICSEvents, setPendingICSEvents] = useState<ICSEventWithDate[]>([]);
   const [icsMinDate, setIcsMinDate] = useState<Date | null>(null);
@@ -57,20 +85,163 @@ export function PlanList() {
   const csvInputRef = useRef<HTMLInputElement>(null);
   const [icsTemplateAssignments, setIcsTemplateAssignments] = useState<Record<string, string | null>>({});
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+  const [csvContent, setCSVContent] = useState<string | null>(null);
+  const [csvHeaders, setCSVHeaders] = useState<string[]>([]);
+  const [csvMapping, setCSVMapping] = useState<CsvColumnMapping>({
+    week: 1,
+    day: 2,
+    startTime: 3,
+    endTime: 4,
+    title: 5,
+    location: 8,
+    notes: 9,
+  });
+  const [csvDrafts, setCSVDrafts] = useState<CSVDraftEvent[]>([]);
+  const [csvPlanName, setCsvPlanName] = useState('');
+  const [lockCsvEvents, setLockCsvEvents] = useState(true);
+  const [lockIcsEvents, setLockIcsEvents] = useState(true);
+  const [csvPresets, setCsvPresets] = useState<CsvMappingPreset[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const stored = localStorage.getItem(CSV_PRESET_STORAGE_KEY);
+      return stored ? (JSON.parse(stored) as CsvMappingPreset[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [selectedCsvPreset, setSelectedCsvPreset] = useState('');
+  const [csvPresetName, setCsvPresetName] = useState('');
+  const [csvPresetNotice, setCsvPresetNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(CSV_PRESET_STORAGE_KEY, JSON.stringify(csvPresets));
+    } catch {}
+  }, [csvPresets]);
+
+  useEffect(() => {
+    if (!showCreate) return;
+    setAnchorChecklist(createEmptyAnchorChecklist());
+    setAnchorSelections(createAnchorSelections(formData.dayStartMinutes, formData.startDate, formData.activeDays, formData.weeks));
+    setCreatePlanError(null);
+  }, [showCreate, formData.dayStartMinutes, formData.startDate, formData.activeDays, formData.weeks]);
+
+  const normalizeCsvHeaders = (headers: string[]) => headers.map(h => h.trim().toLowerCase());
+  const headersMatch = (a: string[], b: string[]) => a.length === b.length && a.every((h, i) => h === b[i]);
+
+  const timeOptions = useMemo(() => {
+    const options: number[] = [];
+    for (let m = 390; m <= 930; m += 15) {
+      options.push(m);
+    }
+    return options;
+  }, []);
+
+  const normalizeOcrMinutes = (value: number | null): number | null => {
+    if (value === null || Number.isNaN(value)) return null;
+    const rounded = Math.round(value / 15) * 15;
+    if (rounded < 390 || rounded > 930) return null;
+    return rounded;
+  };
+
+  const updateOcrDraft = (id: string, updates: Partial<OCRDraft>) => {
+    setOCRDrafts(prev => prev.map(draft => {
+      if (draft.id !== id) return draft;
+      const next = { ...draft, ...updates };
+      if (!isDraftValid(next)) {
+        next.confirmed = false;
+      }
+      return next;
+    }));
+  };
+
+  const isDraftValid = (draft: OCRDraft): boolean => {
+    if (!draft.titleInput.trim()) return false;
+    if (!draft.dayInput) return false;
+    if (draft.startMinutesInput === null || draft.endMinutesInput === null) return false;
+    return draft.endMinutesInput > draft.startMinutesInput;
+  };
 
   const handleCreate = () => {
     if (!formData.name.trim()) return;
+    setCreatePlanError(null);
+
+    const anchorSchedule: PlanSettings['anchorSchedule'] = {};
+    const anchorBlocks: PlacedBlock[] = [];
+    const nextAnchorChecklist = { ...anchorChecklist };
+    const warnings: string[] = [];
+
+    for (const prompt of ANCHOR_PROMPTS) {
+      const selection = anchorSelections[prompt.id];
+      if (!selection || !selection.enabled) {
+        nextAnchorChecklist[prompt.id] = false;
+        continue;
+      }
+
+      nextAnchorChecklist[prompt.id] = true;
+      if (selection.mode === 'weekly' && selection.weekly) {
+        const weeklyDraft = buildAnchorWeeklyDraft(prompt, selection.weekly);
+        anchorSchedule[prompt.id] = [weeklyDraft];
+        if (selection.weekly.createNow) {
+          const result = buildBlocksFromDraft(
+            weeklyDraft,
+            state.templates,
+            formData.startDate,
+            formData.activeDays,
+            formData.weeks
+          );
+          if (result.warnings.length > 0) {
+            warnings.push(`${prompt.defaultTitle}: ${result.warnings.join(' ')}`);
+          }
+          anchorBlocks.push(...result.blocks);
+        }
+      } else {
+        const rows = selection.rows.filter(row => row.date);
+        const drafts = rows.map(row => buildAnchorDateDraft(prompt, row));
+        anchorSchedule[prompt.id] = drafts;
+
+        for (const draft of drafts) {
+          const row = selection.rows.find(r => r.id === draft.id);
+          if (!row?.createNow) continue;
+          const result = buildBlocksFromDraft(
+            draft,
+            state.templates,
+            formData.startDate,
+            formData.activeDays,
+            formData.weeks
+          );
+          if (result.warnings.length > 0) {
+            warnings.push(`${prompt.defaultTitle}: ${result.warnings.join(' ')}`);
+            continue;
+          }
+          anchorBlocks.push(...result.blocks);
+        }
+      }
+    }
+
+    if (warnings.length > 0) {
+      setCreatePlanError(warnings.join(' '));
+      return;
+    }
     
     const plan: Plan = {
       id: uuidv4(),
-      settings: { ...formData },
-      blocks: [],
+      settings: { 
+        ...formData, 
+        anchorChecklist: nextAnchorChecklist,
+        anchorSchedule,
+        anchorWizardDismissed: false,
+      },
+      blocks: anchorBlocks,
       recurrenceSeries: [],
     };
     
     dispatch({ type: 'ADD_PLAN', payload: plan });
     setShowCreate(false);
     setFormData(createDefaultPlanSettings());
+    setAnchorChecklist(createEmptyAnchorChecklist());
+    setAnchorSelections(createAnchorSelections(formData.dayStartMinutes, formData.startDate, formData.activeDays, formData.weeks));
     navigate(`/plan/${plan.id}`);
   };
 
@@ -121,15 +292,25 @@ export function PlanList() {
     setOCRProcessing(true);
     setOCRProgress(0);
     setImportError(null);
+    setOcrConfirmError(null);
 
     try {
       const { events, rawText } = await processImageWithOCR(file, setOCRProgress);
-      setOCREvents(events);
+      const drafts: OCRDraft[] = events.map(event => ({
+        ...event,
+        confirmed: false,
+        titleInput: event.title || 'Untitled',
+        dayInput: event.day,
+        startMinutesInput: normalizeOcrMinutes(event.startMinutes),
+        endMinutesInput: normalizeOcrMinutes(event.endMinutes),
+      }));
+      setOCRDrafts(drafts);
       setOCRRawText(rawText);
       setOCRPlanName(`Imported from ${file.name.replace(/\.[^/.]+$/, '')}`);
       
       if (events.length === 0) {
         setImportError('No schedule events detected. Screenshot import works best with clear text. For Google Calendar, try exporting as ICS instead (Calendar Settings → Export).');
+        setOCRDrafts([]);
       }
     } catch (err) {
       setImportError('Failed to process image. Please try again.');
@@ -143,40 +324,39 @@ export function PlanList() {
   };
 
   const handleCreatePlanFromOCR = () => {
-    if (!ocrPlanName.trim() || ocrEvents.length === 0) return;
+    if (!ocrPlanName.trim() || ocrDrafts.length === 0) return;
+
+    const confirmedDrafts = ocrDrafts.filter(draft => draft.confirmed && isDraftValid(draft));
+    if (confirmedDrafts.length === 0) {
+      setOcrConfirmError('Confirm at least one event with a valid title, day, start time, and end time.');
+      return;
+    }
 
     const blocks: PlacedBlock[] = [];
-    for (const event of ocrEvents) {
-      const hasValidTime = event.startMinutes !== null && event.endMinutes !== null && event.day;
-      const startMinutes = hasValidTime 
-        ? Math.max(390, Math.min(event.startMinutes!, 915))
-        : 390;
-      let durationMinutes = hasValidTime 
-        ? (event.endMinutes! - event.startMinutes!)
-        : 30;
+    for (const draft of confirmedDrafts) {
+      const startMinutes = draft.startMinutesInput!;
+      const endMinutes = draft.endMinutesInput!;
+      let durationMinutes = endMinutes - startMinutes;
       durationMinutes = Math.max(15, Math.ceil(durationMinutes / 15) * 15);
-      
-      if (startMinutes + durationMinutes > 930) {
-        durationMinutes = 930 - startMinutes;
-      }
-      
-      const matchResult = resolveTemplateForImportedTitle(event.title, state.templates);
+
+      const matchResult = resolveTemplateForImportedTitle(draft.titleInput, state.templates);
       const matchedTemplate = matchResult.templateId ? state.templates.find(t => t.id === matchResult.templateId) : null;
-      
+
       blocks.push({
         id: uuidv4(),
         templateId: matchResult.templateId,
         week: 1,
-        day: event.day || 'Monday',
+        day: draft.dayInput || 'Monday',
         startMinutes,
         durationMinutes,
-        titleOverride: event.title,
+        titleOverride: draft.titleInput,
         location: '',
-        notes: hasValidTime ? `Imported via OCR: ${event.rawText}` : `Draft block from OCR - adjust time as needed: ${event.rawText}`,
+        notes: `OCR confirmed: ${draft.rawText}`,
         countsTowardGoldenRule: matchedTemplate ? matchedTemplate.countsTowardGoldenRule : false,
         goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
         recurrenceSeriesId: null,
         isRecurrenceException: false,
+        isLocked: false,
       });
     }
 
@@ -188,8 +368,10 @@ export function PlanList() {
     };
     
     dispatch({ type: 'ADD_PLAN', payload: plan });
-    setOCREvents([]);
+    setOCRDrafts([]);
     setOCRPlanName('');
+    setOCRRawText('');
+    setOcrConfirmError(null);
     navigate(`/plan/${plan.id}`);
   };
 
@@ -225,6 +407,192 @@ export function PlanList() {
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleCSVImport = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const headers = getCSVHeaders(content);
+        if (headers.length === 0) {
+          setImportError('CSV file must include a header row.');
+          setImportSuccess(null);
+          return;
+        }
+
+        const mapping = {
+          week: 1,
+          day: 2,
+          startTime: 3,
+          endTime: 4,
+          title: 5,
+          location: 8,
+          notes: 9,
+        };
+
+        headers.forEach((h, i) => {
+          const lowerH = h.toLowerCase();
+          if (lowerH.includes('week')) mapping.week = i;
+          else if (lowerH.includes('day')) mapping.day = i;
+          else if (lowerH.includes('start')) mapping.startTime = i;
+          else if (lowerH.includes('end')) mapping.endTime = i;
+          else if (lowerH.includes('title') || lowerH.includes('name') || lowerH.includes('event')) mapping.title = i;
+          else if (lowerH.includes('location') || lowerH.includes('room')) mapping.location = i;
+          else if (lowerH.includes('note') || lowerH.includes('description')) mapping.notes = i;
+        });
+
+        const normalizedHeaders = normalizeCsvHeaders(headers);
+        const matchingPreset = csvPresets.find(preset => preset.headers && headersMatch(preset.headers, normalizedHeaders));
+        const appliedMapping = matchingPreset ? matchingPreset.mapping : mapping;
+
+        setCSVContent(content);
+        setCSVHeaders(headers);
+        setCSVMapping(appliedMapping);
+        setCsvPlanName(`Imported from ${file.name.replace(/\.[^/.]+$/, '')}`);
+        setCSVDrafts([]);
+        setSelectedCsvPreset(matchingPreset ? matchingPreset.name : '');
+        setCsvPresetName('');
+        setCsvPresetNotice(
+          matchingPreset
+            ? `Auto-applied mapping preset "${matchingPreset.name}" based on matching headers.`
+            : null
+        );
+        setLockCsvEvents(true);
+        setImportError(null);
+        setImportSuccess(null);
+      } catch (err) {
+        setImportError('Failed to parse CSV file.');
+        setImportSuccess(null);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleCSVPreview = () => {
+    if (!csvContent) return;
+    const { drafts, errors } = importCSVToBlocks(csvContent, csvMapping);
+    if (errors.length > 0) {
+      setImportError(errors.join('; '));
+      return;
+    }
+    if (drafts.length === 0) {
+      setImportError('No events found in CSV file.');
+      return;
+    }
+    setCSVDrafts(drafts);
+    setImportError(null);
+  };
+
+  const handleApplyCSVDrafts = () => {
+    if (csvDrafts.length === 0) return;
+    if (!csvPlanName.trim()) {
+      setImportError('Plan name is required.');
+      return;
+    }
+
+    const maxWeek = Math.max(...csvDrafts.map(d => d.week), 1);
+    const blocks: PlacedBlock[] = csvDrafts.map(draft => {
+      const matchContext = [draft.notes, draft.location].filter(Boolean).join(' ');
+      const match = resolveTemplateForImportedTitle(draft.title, state.templates, matchContext);
+      const matchedTemplate = match.templateId ? state.templates.find(t => t.id === match.templateId) : null;
+      const warningNote = draft.needsReview && draft.warning ? `CSV Import Warning: ${draft.warning}` : '';
+      const notes = [draft.notes, warningNote].filter(Boolean).join('\n');
+      return {
+        id: uuidv4(),
+        templateId: match.templateId,
+        week: draft.week,
+        day: draft.day,
+        startMinutes: draft.startMinutes,
+        durationMinutes: draft.durationMinutes,
+        titleOverride: draft.title,
+        location: draft.location,
+        notes,
+        countsTowardGoldenRule: matchedTemplate ? matchedTemplate.countsTowardGoldenRule : false,
+        goldenRuleBucketId: matchedTemplate ? matchedTemplate.goldenRuleBucketId : null,
+        recurrenceSeriesId: null,
+        isRecurrenceException: false,
+        isLocked: lockCsvEvents,
+        isAfterHours: false,
+      };
+    });
+
+    const defaults = createDefaultPlanSettings();
+    const plan: Plan = {
+      id: uuidv4(),
+      settings: { ...defaults, name: csvPlanName.trim(), weeks: Math.max(defaults.weeks, maxWeek) },
+      blocks,
+      recurrenceSeries: [],
+    };
+
+    const unassignedCount = blocks.filter(b => b.templateId === null).length;
+    dispatch({ type: 'ADD_PLAN', payload: plan });
+    setImportError(null);
+    setImportSuccess(
+      unassignedCount > 0
+        ? `Imported ${blocks.length} events (${unassignedCount} unassigned).`
+        : `Imported ${blocks.length} events from CSV.`
+    );
+    setCSVContent(null);
+    setCSVHeaders([]);
+    setCSVDrafts([]);
+    setCsvPlanName('');
+    navigate(`/plan/${plan.id}`);
+  };
+
+  const cancelCSVImport = () => {
+    setCSVContent(null);
+    setCSVHeaders([]);
+    setCSVDrafts([]);
+    setCsvPlanName('');
+    setCSVMapping({
+      week: 1,
+      day: 2,
+      startTime: 3,
+      endTime: 4,
+      title: 5,
+      location: 8,
+      notes: 9,
+    });
+    setLockCsvEvents(true);
+    setSelectedCsvPreset('');
+    setCsvPresetName('');
+    setCsvPresetNotice(null);
+    setImportError(null);
+  };
+
+  const handleSelectCsvPreset = (name: string) => {
+    setSelectedCsvPreset(name);
+    const preset = csvPresets.find(p => p.name === name);
+    if (preset) {
+      setCSVMapping(preset.mapping);
+      setCsvPresetNotice(`Applied mapping preset "${preset.name}".`);
+    } else {
+      setCsvPresetNotice(null);
+    }
+  };
+
+  const handleSaveCsvPreset = () => {
+    const name = csvPresetName.trim();
+    if (!name) {
+      setCsvPresetNotice('Enter a name to save this mapping.');
+      return;
+    }
+    const headerSignature = csvHeaders.length > 0 ? normalizeCsvHeaders(csvHeaders) : [];
+    const next: CsvMappingPreset = { name, mapping: { ...csvMapping }, headers: headerSignature };
+    setCsvPresets(prev => {
+      const without = prev.filter(p => p.name !== name);
+      return [...without, next];
+    });
+    setSelectedCsvPreset(name);
+    setCsvPresetNotice('Saved mapping preset.');
+  };
+
+  const handleDeleteCsvPreset = () => {
+    if (!selectedCsvPreset) return;
+    setCsvPresets(prev => prev.filter(p => p.name !== selectedCsvPreset));
+    setSelectedCsvPreset('');
+    setCsvPresetNotice('Deleted mapping preset.');
   };
 
   const handleICSFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -275,10 +643,16 @@ export function PlanList() {
       return block;
     });
     
+    const finalBlocks = blocksWithAssignments.map(block => ({
+      ...block,
+      isLocked: lockIcsEvents,
+      isAfterHours: false,
+    }));
+
     const plan: Plan = {
       id: uuidv4(),
       settings: { ...createDefaultPlanSettings(), name: icsImportPlanName },
-      blocks: blocksWithAssignments,
+      blocks: finalBlocks,
       recurrenceSeries: [],
     };
     
@@ -308,6 +682,7 @@ export function PlanList() {
     setIcsBulkBucketId('');
     setIcsTemplateAssignments({});
     setExpandedEventId(null);
+    setLockIcsEvents(true);
   };
   
   const handlePasteICSParse = () => {
@@ -370,7 +745,8 @@ export function PlanList() {
     }> = {};
     
     for (const event of filteredICSEvents) {
-      const result = resolveTemplateForImportedTitle(event.summary, state.templates);
+      const matchContext = [event.description, event.location].filter(Boolean).join(' ');
+      const result = resolveTemplateForImportedTitle(event.summary, state.templates, matchContext);
       suggestions[event.uid] = {
         match: result,
         candidates: result.candidates,
@@ -474,6 +850,8 @@ export function PlanList() {
 
     if (fileName.endsWith('.ics') || fileName.endsWith('.ical') || fileType === 'text/calendar') {
       handleICSImport(file);
+    } else if (fileName.endsWith('.csv') || fileType === 'text/csv') {
+      handleCSVImport(file);
     } else if (fileName.endsWith('.json') || fileType === 'application/json') {
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -496,7 +874,7 @@ export function PlanList() {
     } else if (fileType.startsWith('image/')) {
       handleOCRFileSelect({ target: { files: [file] } } as unknown as React.ChangeEvent<HTMLInputElement>);
     } else {
-      setImportError(`Unsupported file type. Drag an ICS, JSON, or image file.`);
+      setImportError(`Unsupported file type. Drag an ICS, CSV, JSON, or image file.`);
     }
   };
 
@@ -566,7 +944,10 @@ export function PlanList() {
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) {
-                  navigate('/plan/new?csv=1');
+                  handleCSVImport(file);
+                }
+                if (csvInputRef.current) {
+                  csvInputRef.current.value = '';
                 }
               }}
               className="hidden"
@@ -707,7 +1088,15 @@ export function PlanList() {
         </div>
       </div>
 
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create New Plan">
+      <Modal
+        open={showCreate}
+        onClose={() => {
+          setShowCreate(false);
+          setAnchorChecklist(createEmptyAnchorChecklist());
+          setAnchorSelections(createAnchorSelections(formData.dayStartMinutes, formData.startDate, formData.activeDays, formData.weeks));
+        }}
+        title="Create New Plan"
+      >
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-foreground mb-1">Plan Name *</label>
@@ -732,6 +1121,58 @@ export function PlanList() {
               className="w-full px-3 py-2 bg-input border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               data-testid="plan-weeks-input"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">Cohort Start Date</label>
+            <input
+              type="date"
+              value={formData.startDate || ''}
+              onChange={e => setFormData({ ...formData, startDate: e.target.value })}
+              className="w-full px-3 py-2 bg-input border border-border rounded-lg text-foreground"
+              data-testid="plan-start-date-input"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-foreground">Active Days</label>
+            <div className="flex flex-wrap gap-2">
+              {DAYS.map(day => (
+                <label key={day} className="flex items-center gap-2 text-xs text-foreground border border-border rounded-lg px-2 py-1">
+                  <input
+                    type="checkbox"
+                    checked={formData.activeDays?.includes(day)}
+                    onChange={e => {
+                      const activeDays = new Set(formData.activeDays || DAYS);
+                      if (e.target.checked) {
+                        activeDays.add(day);
+                      } else {
+                        activeDays.delete(day);
+                      }
+                      const nextDays = Array.from(activeDays);
+                      setFormData({ ...formData, activeDays: nextDays.length > 0 ? nextDays : [day] });
+                    }}
+                  />
+                  {day.slice(0, 3)}
+                </label>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, activeDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday'] })}
+                className="text-xs px-2 py-1 border border-border rounded-lg text-foreground hover:bg-secondary/50"
+              >
+                Mon–Thu
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, activeDays: ['Tuesday', 'Wednesday', 'Thursday', 'Friday'] })}
+                className="text-xs px-2 py-1 border border-border rounded-lg text-foreground hover:bg-secondary/50"
+              >
+                Tue–Fri
+              </button>
+            </div>
           </div>
           
           <div>
@@ -765,6 +1206,348 @@ export function PlanList() {
               </button>
             </div>
           </div>
+
+          <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-2">
+            <div>
+              <p className="text-sm font-medium text-foreground">Anchor schedule prompts</p>
+              <p className="text-xs text-muted-foreground">
+                These items depend on partner schedules. Check anything already scheduled so you remember to lock them in first.
+              </p>
+            </div>
+            <div className="space-y-2">
+              {ANCHOR_PROMPTS.map(prompt => (
+                <div key={prompt.id} className="rounded border border-border bg-background/40 p-2">
+                  <label className="flex items-center gap-2 text-sm text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={anchorChecklist[prompt.id]}
+                      onChange={e => {
+                        const next = { ...anchorChecklist, [prompt.id]: e.target.checked };
+                        setAnchorChecklist(next);
+                        const existingSelection = anchorSelections[prompt.id];
+                        setAnchorSelections({
+                          ...anchorSelections,
+                          [prompt.id]: {
+                            ...existingSelection,
+                            enabled: e.target.checked,
+                            rows: existingSelection.rows.map(row => ({
+                              ...row,
+                              createNow: e.target.checked ? row.createNow : false,
+                            })),
+                            weekly: existingSelection.weekly
+                              ? {
+                                  ...existingSelection.weekly,
+                                  createNow: e.target.checked ? existingSelection.weekly.createNow : false,
+                                }
+                              : undefined,
+                          },
+                        });
+                      }}
+                    />
+                    {prompt.label}
+                  </label>
+                  {anchorChecklist[prompt.id] && (
+                    <div className="mt-2 space-y-3">
+                      {prompt.supportsWeekly && (
+                        <div className="flex gap-2 text-xs">
+                          <button
+                            type="button"
+                            onClick={() => setAnchorSelections({
+                              ...anchorSelections,
+                              [prompt.id]: { ...anchorSelections[prompt.id], mode: 'weekly' },
+                            })}
+                            className={`px-2 py-1 rounded border ${
+                              anchorSelections[prompt.id].mode === 'weekly'
+                                ? 'border-accent text-accent'
+                                : 'border-border text-muted-foreground'
+                            }`}
+                          >
+                            Weekly schedule
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAnchorSelections({
+                              ...anchorSelections,
+                              [prompt.id]: { ...anchorSelections[prompt.id], mode: 'dates' },
+                            })}
+                            className={`px-2 py-1 rounded border ${
+                              anchorSelections[prompt.id].mode === 'dates'
+                                ? 'border-accent text-accent'
+                                : 'border-border text-muted-foreground'
+                            }`}
+                          >
+                            Specific dates
+                          </button>
+                        </div>
+                      )}
+
+                      {anchorSelections[prompt.id].mode === 'weekly' && prompt.supportsWeekly && anchorSelections[prompt.id].weekly && (
+                        <div className="border border-border rounded-lg p-2 space-y-2 text-xs">
+                          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <input
+                              type="checkbox"
+                              checked={anchorSelections[prompt.id].weekly?.createNow}
+                              onChange={e => setAnchorSelections({
+                                ...anchorSelections,
+                                [prompt.id]: {
+                                  ...anchorSelections[prompt.id],
+                                  weekly: anchorSelections[prompt.id].weekly
+                                    ? { ...anchorSelections[prompt.id].weekly!, createNow: e.target.checked }
+                                    : undefined,
+                                },
+                              })}
+                            />
+                            Create locked events now
+                          </label>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-muted-foreground mb-1">Start week</label>
+                              <input
+                                type="number"
+                                min={1}
+                                max={formData.weeks}
+                                value={anchorSelections[prompt.id].weekly?.startWeek || 1}
+                                onChange={e => setAnchorSelections({
+                                  ...anchorSelections,
+                                  [prompt.id]: {
+                                    ...anchorSelections[prompt.id],
+                                    weekly: anchorSelections[prompt.id].weekly
+                                      ? { ...anchorSelections[prompt.id].weekly!, startWeek: parseInt(e.target.value) || 1 }
+                                      : undefined,
+                                  },
+                                })}
+                                className="w-full px-2 py-1 border rounded bg-input"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-muted-foreground mb-1">End week</label>
+                              <input
+                                type="number"
+                                min={1}
+                                max={formData.weeks}
+                                value={anchorSelections[prompt.id].weekly?.endWeek || formData.weeks}
+                                onChange={e => setAnchorSelections({
+                                  ...anchorSelections,
+                                  [prompt.id]: {
+                                    ...anchorSelections[prompt.id],
+                                    weekly: anchorSelections[prompt.id].weekly
+                                      ? { ...anchorSelections[prompt.id].weekly!, endWeek: parseInt(e.target.value) || formData.weeks }
+                                      : undefined,
+                                  },
+                                })}
+                                className="w-full px-2 py-1 border rounded bg-input"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-muted-foreground mb-1">Start Time</label>
+                              <select
+                                value={anchorSelections[prompt.id].weekly?.startMinutes}
+                                onChange={e => setAnchorSelections({
+                                  ...anchorSelections,
+                                  [prompt.id]: {
+                                    ...anchorSelections[prompt.id],
+                                    weekly: anchorSelections[prompt.id].weekly
+                                      ? { ...anchorSelections[prompt.id].weekly!, startMinutes: parseInt(e.target.value) }
+                                      : undefined,
+                                  },
+                                })}
+                                className="w-full px-2 py-1 border rounded bg-input"
+                              >
+                                {timeOptions.map(m => (
+                                  <option key={m} value={m}>{minutesToTimeDisplay(m)}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-muted-foreground mb-1">Duration (min)</label>
+                              <input
+                                type="number"
+                                min={15}
+                                step={15}
+                                value={anchorSelections[prompt.id].weekly?.durationMinutes || 60}
+                                onChange={e => setAnchorSelections({
+                                  ...anchorSelections,
+                                  [prompt.id]: {
+                                    ...anchorSelections[prompt.id],
+                                    weekly: anchorSelections[prompt.id].weekly
+                                      ? { ...anchorSelections[prompt.id].weekly!, durationMinutes: parseInt(e.target.value) || 60 }
+                                      : undefined,
+                                  },
+                                })}
+                                className="w-full px-2 py-1 border rounded bg-input"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-muted-foreground mb-1">Days</label>
+                            <div className="flex flex-wrap gap-2">
+                              {(formData.activeDays || DAYS).map(day => (
+                                <label key={day} className="flex items-center gap-1 text-xs">
+                                  <input
+                                    type="checkbox"
+                                    checked={anchorSelections[prompt.id].weekly?.days.includes(day)}
+                                    onChange={e => {
+                                      const nextDays = new Set(anchorSelections[prompt.id].weekly?.days || []);
+                                      if (e.target.checked) {
+                                        nextDays.add(day);
+                                      } else {
+                                        nextDays.delete(day);
+                                      }
+                                      setAnchorSelections({
+                                        ...anchorSelections,
+                                        [prompt.id]: {
+                                          ...anchorSelections[prompt.id],
+                                          weekly: anchorSelections[prompt.id].weekly
+                                            ? { ...anchorSelections[prompt.id].weekly!, days: Array.from(nextDays) }
+                                            : undefined,
+                                        },
+                                      });
+                                    }}
+                                  />
+                                  {day.slice(0, 3)}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {anchorSelections[prompt.id].mode === 'dates' && (
+                        <div className="space-y-2">
+                          {anchorSelections[prompt.id]?.rows.map(row => {
+                            const placement = row.date ? getWeekDayFromDate(row.date, formData.startDate) : null;
+                            const showWarning = placement?.isWeekend ||
+                              (placement && formData.activeDays && formData.activeDays.length > 0 && !formData.activeDays.includes(placement.day));
+                            return (
+                              <div key={row.id} className="border border-border rounded-lg p-2 space-y-2 text-xs">
+                                <div className="flex items-center justify-between">
+                                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <input
+                                      type="checkbox"
+                                      checked={row.createNow}
+                                      onChange={e => setAnchorSelections({
+                                        ...anchorSelections,
+                                        [prompt.id]: {
+                                          ...anchorSelections[prompt.id],
+                                          rows: anchorSelections[prompt.id].rows.map(r => r.id === row.id ? { ...r, createNow: e.target.checked } : r),
+                                        },
+                                      })}
+                                    />
+                                    Create locked event now
+                                  </label>
+                                  {anchorSelections[prompt.id].rows.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setAnchorSelections({
+                                        ...anchorSelections,
+                                        [prompt.id]: {
+                                          ...anchorSelections[prompt.id],
+                                          rows: anchorSelections[prompt.id].rows.filter(r => r.id !== row.id),
+                                        },
+                                      })}
+                                      className="text-xs text-red-400"
+                                    >
+                                      Remove
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                  <div>
+                                    <label className="block text-muted-foreground mb-1">Date</label>
+                                    <input
+                                      type="date"
+                                      value={row.date}
+                                      onChange={e => setAnchorSelections({
+                                        ...anchorSelections,
+                                        [prompt.id]: {
+                                          ...anchorSelections[prompt.id],
+                                          rows: anchorSelections[prompt.id].rows.map(r => r.id === row.id ? { ...r, date: e.target.value } : r),
+                                        },
+                                      })}
+                                      className="w-full px-2 py-1 border rounded bg-input"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-muted-foreground mb-1">Start Time</label>
+                                    <select
+                                      value={row.startMinutes}
+                                      onChange={e => setAnchorSelections({
+                                        ...anchorSelections,
+                                        [prompt.id]: {
+                                          ...anchorSelections[prompt.id],
+                                          rows: anchorSelections[prompt.id].rows.map(r => r.id === row.id ? { ...r, startMinutes: parseInt(e.target.value) } : r),
+                                        },
+                                      })}
+                                      className="w-full px-2 py-1 border rounded bg-input"
+                                    >
+                                      {timeOptions.map(m => (
+                                        <option key={m} value={m}>{minutesToTimeDisplay(m)}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-muted-foreground mb-1">Duration (min)</label>
+                                    <input
+                                      type="number"
+                                      min={15}
+                                      step={15}
+                                      value={row.durationMinutes}
+                                      onChange={e => setAnchorSelections({
+                                        ...anchorSelections,
+                                        [prompt.id]: {
+                                          ...anchorSelections[prompt.id],
+                                          rows: anchorSelections[prompt.id].rows.map(r => r.id === row.id ? { ...r, durationMinutes: parseInt(e.target.value) || 60 } : r),
+                                        },
+                                      })}
+                                      className="w-full px-2 py-1 border rounded bg-input"
+                                    />
+                                  </div>
+                                  <div className="text-muted-foreground">
+                                    {placement ? `Week ${placement.week}, ${placement.day.slice(0, 3)}` : 'Select a date'}
+                                    {showWarning && (
+                                      <p className="text-amber-500">Outside active class days</p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          <button
+                            type="button"
+                            onClick={() => setAnchorSelections({
+                              ...anchorSelections,
+                              [prompt.id]: {
+                                ...anchorSelections[prompt.id],
+                                rows: [
+                                  ...anchorSelections[prompt.id].rows,
+                                  {
+                                    id: uuidv4(),
+                                    date: formData.startDate || '',
+                                    startMinutes: formData.dayStartMinutes,
+                                    durationMinutes: prompt.defaultDurationMinutes ?? 60,
+                                    createNow: true,
+                                  },
+                                ],
+                              },
+                            })}
+                            className="text-xs text-accent underline"
+                          >
+                            Add another date
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {createPlanError && (
+            <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded p-2">
+              {createPlanError}
+            </div>
+          )}
 
           <div className="flex justify-end gap-3 pt-4">
             <button
@@ -812,14 +1595,17 @@ export function PlanList() {
         </Modal>
       )}
 
-      {ocrEvents.length > 0 && !ocrProcessing && (
-        <Modal open={true} onClose={() => { setOCREvents([]); setOCRPlanName(''); setOCRRawText(''); }} title="Screenshot Import Results">
+      {ocrDrafts.length > 0 && !ocrProcessing && (
+        <Modal
+          open={true}
+          onClose={() => { setOCRDrafts([]); setOCRPlanName(''); setOCRRawText(''); setOcrConfirmError(null); }}
+          title="Screenshot Import Results"
+        >
           <div className="space-y-4">
             <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm">
               <p className="font-medium text-amber-800 mb-1">OCR Has Limitations</p>
               <p className="text-amber-700">
-                Screenshot scanning cannot reliably detect times from calendar grids. Detected titles are shown below.
-                You can create draft blocks (titles only) and manually assign times in the schedule editor.
+                Screenshot scanning is unreliable. You must confirm the title and time for each event before scheduling.
               </p>
               <div className="text-amber-600 text-xs mt-2 space-y-1">
                 <p><strong>Better option:</strong> Export your calendar as ICS file instead:</p>
@@ -840,36 +1626,116 @@ export function PlanList() {
               />
             </div>
             
-            <div>
-              <p className="text-sm text-gray-600 mb-2">
-                {ocrEvents.length} text items detected:
-              </p>
-              <div className="max-h-36 overflow-auto border rounded text-xs">
-                <table className="w-full">
-                  <thead className="bg-gray-50 sticky top-0">
-                    <tr>
-                      <th className="p-2 text-left">Detected Text (Title)</th>
-                      <th className="p-2 text-left">Suggested Time</th>
-                      <th className="p-2 text-left">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ocrEvents.map(event => (
-                      <tr key={event.id}>
-                        <td className="p-2 truncate max-w-[150px]" title={event.title}>{event.title}</td>
-                        <td className="p-2 text-gray-500">{event.startTime || '?'} - {event.endTime || '?'}</td>
-                        <td className="p-2">
-                          {event.startMinutes !== null ? (
-                            <span className="text-green-600">Has time</span>
-                          ) : (
-                            <span className="text-amber-600">Set manually</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            <div className="flex items-center justify-between text-xs text-gray-600">
+              <span>{ocrDrafts.length} items detected</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setOCRDrafts(prev => prev.map(d => isDraftValid(d) ? { ...d, confirmed: true } : d))}
+                  className="text-blue-600 hover:underline"
+                >
+                  Confirm all valid
+                </button>
+                <button
+                  onClick={() => setOCRDrafts(prev => prev.map(d => ({ ...d, confirmed: false })))}
+                  className="text-blue-600 hover:underline"
+                >
+                  Clear all
+                </button>
               </div>
+            </div>
+
+            <div className="max-h-64 overflow-auto border rounded text-xs">
+              <table className="w-full">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="p-2 text-left">Confirm</th>
+                    <th className="p-2 text-left">Day</th>
+                    <th className="p-2 text-left">Start</th>
+                    <th className="p-2 text-left">End</th>
+                    <th className="p-2 text-left">Title</th>
+                    <th className="p-2 text-left">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ocrDrafts.map(draft => {
+                    const valid = isDraftValid(draft);
+                    const status = !draft.titleInput.trim()
+                      ? 'Needs title'
+                      : !draft.dayInput
+                        ? 'Needs day'
+                        : draft.startMinutesInput === null || draft.endMinutesInput === null || draft.endMinutesInput <= draft.startMinutesInput
+                          ? 'Needs time'
+                          : draft.confirmed ? 'Confirmed' : 'Ready';
+                    return (
+                      <tr key={draft.id} className={valid ? '' : 'bg-red-50 text-gray-500'}>
+                        <td className="p-2">
+                          <input
+                            type="checkbox"
+                            checked={draft.confirmed}
+                            disabled={!valid}
+                            onChange={(e) => updateOcrDraft(draft.id, { confirmed: e.target.checked })}
+                          />
+                        </td>
+                        <td className="p-2">
+                          <select
+                            value={draft.dayInput || ''}
+                            onChange={(e) => updateOcrDraft(draft.id, { dayInput: e.target.value as Day })}
+                            className="border rounded px-1 py-0.5"
+                          >
+                            <option value="">Day...</option>
+                            {DAYS.map(day => (
+                              <option key={day} value={day}>{day}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-2">
+                          <select
+                            value={draft.startMinutesInput ?? ''}
+                            onChange={(e) => {
+                              const nextStart = e.target.value ? parseInt(e.target.value, 10) : null;
+                              let nextEnd = draft.endMinutesInput;
+                              if (nextStart !== null && (nextEnd === null || nextEnd <= nextStart)) {
+                                const candidate = nextStart + 60;
+                                nextEnd = candidate <= 930 ? candidate : nextStart + 15;
+                              }
+                              updateOcrDraft(draft.id, { startMinutesInput: nextStart, endMinutesInput: nextEnd });
+                            }}
+                            className="border rounded px-1 py-0.5"
+                          >
+                            <option value="">Start...</option>
+                            {timeOptions.slice(0, -1).map(m => (
+                              <option key={m} value={m}>{minutesToTimeDisplay(m)}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-2">
+                          <select
+                            value={draft.endMinutesInput ?? ''}
+                            onChange={(e) => {
+                              const nextEnd = e.target.value ? parseInt(e.target.value, 10) : null;
+                              updateOcrDraft(draft.id, { endMinutesInput: nextEnd });
+                            }}
+                            className="border rounded px-1 py-0.5"
+                          >
+                            <option value="">End...</option>
+                            {timeOptions.slice(1).map(m => (
+                              <option key={m} value={m}>{minutesToTimeDisplay(m)}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-2">
+                          <input
+                            value={draft.titleInput}
+                            onChange={(e) => updateOcrDraft(draft.id, { titleInput: e.target.value })}
+                            className="border rounded px-1 py-0.5 w-full"
+                          />
+                        </td>
+                        <td className="p-2">{status}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
             
             <details className="text-xs">
@@ -879,9 +1745,13 @@ export function PlanList() {
               </pre>
             </details>
 
+            {ocrConfirmError && (
+              <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{ocrConfirmError}</p>
+            )}
+
             <div className="flex justify-end gap-3 pt-2">
               <button
-                onClick={() => { setOCREvents([]); setOCRPlanName(''); setOCRRawText(''); }}
+                onClick={() => { setOCRDrafts([]); setOCRPlanName(''); setOCRRawText(''); setOcrConfirmError(null); }}
                 className="px-4 py-2 text-sm border rounded hover:bg-gray-50"
               >
                 Cancel
@@ -892,12 +1762,207 @@ export function PlanList() {
                 className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
                 data-testid="create-plan-from-ocr"
               >
-                Create Draft Plan
+                Create Plan from Confirmed Events
               </button>
             </div>
             <p className="text-xs text-gray-500 text-center">
-              Blocks without detected times will be placed at 6:30 AM. Edit times in the schedule view.
+              Only confirmed events will be scheduled. Unconfirmed items stay in this review list.
             </p>
+          </div>
+        </Modal>
+      )}
+
+      {csvDrafts.length > 0 && (
+        <Modal open={true} onClose={cancelCSVImport} title="Review CSV Import">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Plan Name *</label>
+              <input
+                type="text"
+                value={csvPlanName}
+                onChange={e => setCsvPlanName(e.target.value)}
+                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g. Imported Schedule"
+                data-testid="csv-plan-name-input"
+              />
+            </div>
+
+            <p className="text-sm text-gray-600">
+              {csvDrafts.length} events detected. Review and click Create Plan to import.
+            </p>
+
+            <div className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={lockCsvEvents}
+                onChange={e => setLockCsvEvents(e.target.checked)}
+              />
+              <span>Lock imported events (prevents drag/resize until unlocked)</span>
+            </div>
+            
+            <div className="max-h-64 overflow-auto border rounded">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="p-2 text-left">Week</th>
+                    <th className="p-2 text-left">Day</th>
+                    <th className="p-2 text-left">Time</th>
+                    <th className="p-2 text-left">Title</th>
+                    <th className="p-2 text-left">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {csvDrafts.map(draft => (
+                    <tr key={draft.id} className={draft.needsReview ? 'bg-yellow-50' : ''}>
+                      <td className="p-2">{draft.week}</td>
+                      <td className="p-2">{draft.day}</td>
+                      <td className="p-2">{minutesToTimeDisplay(draft.startMinutes)} - {minutesToTimeDisplay(draft.startMinutes + draft.durationMinutes)}</td>
+                      <td className="p-2 truncate max-w-[150px]">{draft.title}</td>
+                      <td className="p-2">
+                        {draft.needsReview ? (
+                          <span className="text-yellow-700">{draft.warning}</span>
+                        ) : (
+                          <span className="text-green-600">OK</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            
+            {importError && (
+              <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{importError}</p>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={cancelCSVImport}
+                className="flex-1 px-4 py-2 text-sm border rounded hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApplyCSVDrafts}
+                className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                data-testid="apply-csv-import"
+              >
+                Create Plan
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {csvContent && csvDrafts.length === 0 && (
+        <Modal open={true} onClose={cancelCSVImport} title="Map CSV Columns">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Plan Name *</label>
+              <input
+                type="text"
+                value={csvPlanName}
+                onChange={e => setCsvPlanName(e.target.value)}
+                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g. Imported Schedule"
+              />
+            </div>
+
+            <p className="text-sm text-gray-600">
+              Map your CSV columns to the schedule fields:
+            </p>
+
+            <div className="border rounded p-3 space-y-2 text-sm">
+              <p className="text-xs text-gray-500">Saved column mappings</p>
+              <div className="flex gap-2 items-center">
+                <select
+                  value={selectedCsvPreset}
+                  onChange={(e) => handleSelectCsvPreset(e.target.value)}
+                  className="flex-1 px-2 py-1 border rounded text-xs"
+                >
+                  <option value="">Select saved mapping...</option>
+                  {csvPresets.map(preset => (
+                    <option key={preset.name} value={preset.name}>{preset.name}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleDeleteCsvPreset}
+                  disabled={!selectedCsvPreset}
+                  className="px-2 py-1 text-xs border rounded disabled:opacity-50"
+                >
+                  Delete
+                </button>
+              </div>
+              <div className="flex gap-2 items-center">
+                <input
+                  value={csvPresetName}
+                  onChange={(e) => setCsvPresetName(e.target.value)}
+                  placeholder="Save as..."
+                  className="flex-1 px-2 py-1 border rounded text-xs"
+                />
+                <button
+                  onClick={handleSaveCsvPreset}
+                  className="px-2 py-1 text-xs bg-blue-600 text-white rounded"
+                >
+                  Save
+                </button>
+              </div>
+              {csvPresetNotice && (
+                <p className="text-xs text-gray-500">{csvPresetNotice}</p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              {(['week', 'day', 'startTime', 'endTime', 'title', 'location', 'notes'] as const).map(field => (
+                <div key={field}>
+                  <label className="block text-xs font-medium mb-1 capitalize">
+                    {field.replace(/([A-Z])/g, ' $1').trim()}
+                    {field === 'title' && ' *'}
+                  </label>
+                  <select
+                    value={csvMapping[field]}
+                    onChange={e => setCSVMapping({ ...csvMapping, [field]: parseInt(e.target.value, 10) })}
+                    className="w-full px-2 py-1 border rounded text-xs"
+                  >
+                    {field === 'location' || field === 'notes' ? (
+                      <option value={-1}>-- Not mapped --</option>
+                    ) : null}
+                    {csvHeaders.map((h, i) => (
+                      <option key={i} value={i}>{h || `Column ${i + 1}`}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={lockCsvEvents}
+                onChange={e => setLockCsvEvents(e.target.checked)}
+              />
+              <span>Lock imported events (prevents drag/resize until unlocked)</span>
+            </div>
+
+            {importError && (
+              <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{importError}</p>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={cancelCSVImport}
+                className="flex-1 px-4 py-2 text-sm border rounded hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCSVPreview}
+                className="flex-1 px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                data-testid="preview-csv-button"
+              >
+                Preview Import
+              </button>
+            </div>
           </div>
         </Modal>
       )}
@@ -1020,6 +2085,19 @@ export function PlanList() {
                   data-testid="ics-include-outside-hours"
                 />
                 Include events outside 6:30 AM - 3:30 PM ({outsideHoursCount} events)
+              </label>
+            </div>
+
+            <div className="flex items-center gap-4 text-sm">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={lockIcsEvents}
+                  onChange={e => setLockIcsEvents(e.target.checked)}
+                  className="rounded"
+                  data-testid="ics-lock-events"
+                />
+                Lock imported events (prevents drag/resize until unlocked)
               </label>
             </div>
             

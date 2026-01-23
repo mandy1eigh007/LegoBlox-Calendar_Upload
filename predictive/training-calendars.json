@@ -1,19 +1,352 @@
 {
   "calendars": [
     {
-      "name": "PACE TUK 1",
-      "programWeeks": 12,
-      "daysOfWeek": ["Tue","Wed","Thu","Fri"],
+      "name": "PACE Pierce Co",
+      "programWeeks": 1,
+      "daysOfWeek": [
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri"
+      ],
       "dayStart": "06:30",
       "dayEnd": "15:30",
       "events": [
         {
-          "title": "OSHA 10 Day 1",
-          "start": "2025-01-20T06:30:00",
-          "end": "2025-01-20T11:30:00",
+          "title": "PACE 126 Math",
+          "start": "2025-05-22T08:00:00.000Z",
+          "end": "2025-05-22T10:00:00.000Z",
+          "location": "Microsoft Teams Meeting",
+          "description": "\n_____________________________________________________________",
+          "templateId": "Math"
+        },
+        {
+          "title": "OSHA 10 Day 2 - PACE Pierce Co",
+          "start": "2025-05-21T08:00:00.000Z",
+          "end": "2025-05-21T14:30:00.000Z",
+          "description": " \n\n",
+          "templateId": "OSHA 10"
+        },
+        {
+          "title": "OSHA 10 Day 1 - PACE Pierce Co",
+          "start": "2025-05-20T08:00:00.000Z",
+          "end": "2025-05-20T14:30:00.000Z",
+          "description": " \n\n",
+          "templateId": "OSHA 10"
+        }
+      ]
+    },
+    {
+      "name": "PACE TUK 2",
+      "programWeeks": 9,
+      "daysOfWeek": [
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri"
+      ],
+      "dayStart": "06:30",
+      "dayEnd": "15:30",
+      "events": [
+        {
+          "title": "ACE's",
+          "start": "2024-08-28T11:00:00.000Z",
+          "end": "2024-08-28T12:30:00.000Z",
+          "description": "Reminder",
+          "templateId": "ACEs"
+        },
+        {
+          "title": "Qualstar",
+          "start": "2024-08-28T08:00:00.000Z",
+          "end": "2024-08-28T10:30:00.000Z",
           "location": "Classroom 1",
-          "description": "",
-          "templateId": "OSHA_10"
+          "description": "Reminder",
+          "templateId": "Financial Education"
+        },
+        {
+          "title": "Forklift Certification",
+          "start": "2024-08-29T08:00:00.000Z",
+          "end": "2024-08-29T10:30:00.000Z",
+          "location": "Classroom 1",
+          "description": "Reminder",
+          "templateId": "Forklift Certification"
+        },
+        {
+          "title": "Math ",
+          "start": "2024-07-31T12:30:00.000Z",
+          "end": "2024-07-31T14:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        },
+        {
+          "title": "Math ",
+          "start": "2024-08-01T12:30:00.000Z",
+          "end": "2024-08-01T14:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        },
+        {
+          "title": "Math ",
+          "start": "2024-08-07T12:30:00.000Z",
+          "end": "2024-08-07T14:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        },
+        {
+          "title": "Math ",
+          "start": "2024-08-08T12:30:00.000Z",
+          "end": "2024-08-08T14:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        },
+        {
+          "title": "Math ",
+          "start": "2024-08-14T12:30:00.000Z",
+          "end": "2024-08-14T14:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        },
+        {
+          "title": "Math ",
+          "start": "2024-08-15T12:30:00.000Z",
+          "end": "2024-08-15T14:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        },
+        {
+          "title": "Math ",
+          "start": "2024-08-21T12:30:00.000Z",
+          "end": "2024-08-21T14:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        },
+        {
+          "title": "Math ",
+          "start": "2024-08-22T12:30:00.000Z",
+          "end": "2024-08-22T14:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        },
+        {
+          "title": "Math ",
+          "start": "2024-08-28T12:30:00.000Z",
+          "end": "2024-08-28T14:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        },
+        {
+          "title": "Math ",
+          "start": "2024-08-29T12:30:00.000Z",
+          "end": "2024-08-29T14:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        },
+        {
+          "title": "Math ",
+          "start": "2024-09-04T12:30:00.000Z",
+          "end": "2024-09-04T14:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        },
+        {
+          "title": "Math ",
+          "start": "2024-09-05T12:30:00.000Z",
+          "end": "2024-09-05T14:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        },
+        {
+          "title": "Math ",
+          "start": "2024-09-11T12:30:00.000Z",
+          "end": "2024-09-11T14:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        },
+        {
+          "title": "Math ",
+          "start": "2024-09-12T12:30:00.000Z",
+          "end": "2024-09-12T14:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        },
+        {
+          "title": "Math ",
+          "start": "2024-09-18T12:30:00.000Z",
+          "end": "2024-09-18T14:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        },
+        {
+          "title": "Math ",
+          "start": "2024-09-19T12:30:00.000Z",
+          "end": "2024-09-19T14:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        },
+        {
+          "title": "Math ",
+          "start": "2024-09-25T12:30:00.000Z",
+          "end": "2024-09-25T14:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        },
+        {
+          "title": "Math ",
+          "start": "2024-09-26T12:30:00.000Z",
+          "end": "2024-09-26T14:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        }
+      ]
+    },
+    {
+      "name": "PACE TUK 3",
+      "programWeeks": 1,
+      "daysOfWeek": [
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri"
+      ],
+      "dayStart": "06:30",
+      "dayEnd": "15:30",
+      "events": [
+        {
+          "title": "Resumes Part 1",
+          "start": "2024-09-25T08:00:00.000Z",
+          "end": "2024-09-25T09:00:00.000Z",
+          "location": "Classroom 1",
+          "description": "Reminder",
+          "templateId": "Resumes"
+        },
+        {
+          "title": "Math",
+          "start": "2024-09-25T09:30:00.000Z",
+          "end": "2024-09-25T10:30:00.000Z",
+          "location": "Classroom 2",
+          "description": "Reminder",
+          "templateId": "Math"
+        }
+      ]
+    },
+    {
+      "name": "TRP TUK 1",
+      "programWeeks": 2,
+      "daysOfWeek": [
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri"
+      ],
+      "dayStart": "06:30",
+      "dayEnd": "15:30",
+      "events": [
+        {
+          "title": "Intro to Resumes Pt. 1",
+          "start": "2024-10-01T09:00:00.000Z",
+          "end": "2024-10-01T10:30:00.000Z",
+          "location": "Classroom 1",
+          "description": "Reminder",
+          "templateId": "Resumes"
+        },
+        {
+          "title": "Elevator Pitch Work Time",
+          "start": "2024-10-01T07:30:00.000Z",
+          "end": "2024-10-01T09:00:00.000Z",
+          "location": "Classroom 1",
+          "description": "Reminder",
+          "templateId": "Elevator Pitch"
+        },
+        {
+          "title": "Flaggers Cert - Confirmed TRP 125",
+          "start": "2024-09-30T08:00:00.000Z",
+          "end": "2024-09-30T15:30:00.000Z",
+          "location": "Classroom 1",
+          "description": "Reminder",
+          "templateId": "Flagger Certification"
+        },
+        {
+          "title": "Intro to Elevator Pitch",
+          "start": "2024-09-25T12:30:00.000Z",
+          "end": "2024-09-25T13:30:00.000Z",
+          "location": "Classroom 1",
+          "description": "Reminder",
+          "templateId": "Elevator Pitch"
+        },
+        {
+          "title": "Career Plan Pt. 1",
+          "start": "2024-09-25T11:30:00.000Z",
+          "end": "2024-09-25T12:30:00.000Z",
+          "location": "Classroom 1",
+          "description": "Reminder",
+          "templateId": "Individual Career Plan"
+        },
+        {
+          "title": "Intro to Resumes Pt. 2",
+          "start": "2024-09-24T09:00:00.000Z",
+          "end": "2024-09-24T10:00:00.000Z",
+          "location": "Classroom 1",
+          "description": "Reminder",
+          "templateId": "Resumes"
+        }
+      ]
+    },
+    {
+      "name": "TRP TUK 2",
+      "programWeeks": 1,
+      "daysOfWeek": [
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri"
+      ],
+      "dayStart": "06:30",
+      "dayEnd": "15:30",
+      "events": [
+        {
+          "title": "TRP 127 Math",
+          "start": "2025-05-22T08:00:00.000Z",
+          "end": "2025-05-22T10:00:00.000Z",
+          "location": "Microsoft Teams Meeting",
+          "description": "\n_____________________________________________________________",
+          "templateId": "Math"
+        },
+        {
+          "title": "OSHA 10 Day 2 - TRP Tacoma",
+          "start": "2025-05-21T08:00:00.000Z",
+          "end": "2025-05-21T14:30:00.000Z",
+          "description": " \n\n",
+          "templateId": "OSHA 10"
+        },
+        {
+          "title": "OSHA 10 Day 1 - TRP Tacoma",
+          "start": "2025-05-20T08:00:00.000Z",
+          "end": "2025-05-20T14:30:00.000Z",
+          "description": " \n\n",
+          "templateId": "OSHA 10"
         }
       ]
     }

@@ -22,6 +22,7 @@ export interface SchedulerConfig {
   maxBlockDuration: number;
   distributeAcrossWeeks: boolean;
   hardDates?: { week: number; day: Day }[];
+  activeDays?: Day[];
 }
 
 export interface SuggestedBlock extends PlacedBlock {
@@ -59,8 +60,9 @@ function getAvailableSlots(
   const slots: TimeSlot[] = [];
   const existingBlocks = plan.blocks.filter(b => b.week === week);
   const hardDates = config.hardDates || [];
+  const activeDays = config.activeDays && config.activeDays.length > 0 ? config.activeDays : DAYS;
   
-  for (const day of DAYS) {
+  for (const day of activeDays) {
     // Skip hard dates - don't schedule on these days
     const isHardDate = hardDates.some(hd => hd.week === week && hd.day === day);
     if (isHardDate) continue;
@@ -163,6 +165,7 @@ function calculateBucketDeficits(
   const deficits: { bucketId: GoldenRuleBucketId; label: string; deficit: number; perWeek: number }[] = [];
   
   for (const total of totals) {
+    if (total.isFlexible) continue;
     if (total.difference < -15) {
       const deficit = Math.abs(total.difference);
       deficits.push({
@@ -206,6 +209,7 @@ function placeBlockInSlot(
     recurrenceSeriesId: null,
     isRecurrenceException: false,
     resource: template.defaultResource,
+    isLocked: false,
     isNew: true,
     bucketLabel,
     confidence: 0.5,
@@ -305,21 +309,25 @@ export function generateScheduleSuggestions(
     const existingTotals = calculateGoldenRuleTotals(plan, templates);
     const existing = existingTotals.find(t => t.id === bucket.id);
     const scheduled = existing?.scheduled || 0;
+    const isFlexible = !!existing?.isFlexible;
+    const adjustedBudget = existing?.budget ?? bucket.budgetMinutes;
     const suggested = suggestions
       .filter(s => s.goldenRuleBucketId === bucket.id)
       .reduce((sum, s) => sum + s.durationMinutes, 0);
+    const effectiveBudget = isFlexible ? scheduled + suggested : adjustedBudget;
     
     return {
       bucketId: bucket.id,
       label: bucket.label,
-      needed: bucket.budgetMinutes,
+      needed: effectiveBudget,
       scheduled: scheduled + suggested,
-      gap: bucket.budgetMinutes - (scheduled + suggested),
+      gap: isFlexible ? 0 : adjustedBudget - (scheduled + suggested),
     };
   });
   
   const totalMinutes = suggestions.reduce((sum, s) => sum + s.durationMinutes, 0);
-  const totalSlots = cfg.totalWeeks * DAYS.length * ((cfg.dayEndMinutes - cfg.dayStartMinutes) / cfg.slotMinutes);
+  const activeDays = cfg.activeDays && cfg.activeDays.length > 0 ? cfg.activeDays : DAYS;
+  const totalSlots = cfg.totalWeeks * activeDays.length * ((cfg.dayEndMinutes - cfg.dayStartMinutes) / cfg.slotMinutes);
   const filledSlots = suggestions.reduce((sum, s) => sum + (s.durationMinutes / cfg.slotMinutes), 0);
   
   return {
@@ -348,5 +356,6 @@ export function generateWeekSuggestions(
     dayEndMinutes: settings.dayEndMinutes,
     slotMinutes: settings.slotMinutes,
     distributeAcrossWeeks: false,
+    activeDays: settings.activeDays,
   });
 }

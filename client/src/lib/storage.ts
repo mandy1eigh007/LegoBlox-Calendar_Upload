@@ -1,6 +1,7 @@
-import { AppState, DEFAULT_RESOURCES } from '@/state/types';
+import { AppState, DEFAULT_RESOURCES, DAYS, AnchorEventDraft, AnchorPromptId, Day } from '@/state/types';
 import { createSeedTemplates } from './seedTemplates';
 import { DAY_START_DEFAULT, DAY_END_DEFAULT } from './time';
+import { getDateForWeekDay } from './dateMapping';
 
 const STORAGE_KEY = 'cohort_schedule_builder_v2';
 
@@ -18,9 +19,15 @@ export function createInitialState(): AppState {
 }
 
 export function createDefaultPlanSettings() {
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
   return {
     name: '',
     weeks: 9,
+    startDate: `${yyyy}-${mm}-${dd}`,
+    activeDays: [...DAYS],
     dayStartMinutes: DAY_START_DEFAULT,
     dayEndMinutes: DAY_END_DEFAULT,
     slotMinutes: 15 as const,
@@ -28,6 +35,11 @@ export function createDefaultPlanSettings() {
     allowOverlaps: true,
     showNotesOnPrint: true,
     schedulerMode: 'manual' as const,
+    bucketAdjustments: {},
+    anchorChecklist: {},
+    anchorSchedule: {},
+    anchorWizardDismissed: false,
+    partnerRequests: [],
   };
 }
 
@@ -60,6 +72,7 @@ function migrateV1ToV2(oldState: unknown): AppState | null {
         goldenRuleBucketId: (template.goldenRuleKey as string) || null,
         defaultLocation: '',
         defaultNotes: '',
+        isArchived: false,
       };
     });
     
@@ -98,6 +111,7 @@ function migrateV1ToV2(oldState: unknown): AppState | null {
           goldenRuleBucketId: null,
           recurrenceSeriesId: null,
           isRecurrenceException: false,
+          isLocked: false,
         };
       });
       
@@ -106,6 +120,8 @@ function migrateV1ToV2(oldState: unknown): AppState | null {
         settings: {
           name: oldSettings.name as string,
           weeks: (oldSettings.weeks as number) || 9,
+          startDate: undefined,
+          activeDays: [...DAYS],
           dayStartMinutes,
           dayEndMinutes,
           slotMinutes: 15 as const,
@@ -113,6 +129,11 @@ function migrateV1ToV2(oldState: unknown): AppState | null {
           allowOverlaps: true,
           showNotesOnPrint: true,
           schedulerMode: 'manual' as const,
+          bucketAdjustments: {},
+          anchorChecklist: {},
+          anchorSchedule: {},
+          anchorWizardDismissed: false,
+          partnerRequests: [],
         },
         blocks: newBlocks,
         recurrenceSeries: [],
@@ -158,6 +179,96 @@ export function loadState(): { state: AppState; error?: string } {
     for (const plan of parsed.plans) {
       if (!plan.settings.schedulerMode) {
         plan.settings.schedulerMode = 'manual';
+      }
+      if (!plan.settings.bucketAdjustments) {
+        plan.settings.bucketAdjustments = {};
+      }
+      if (!plan.settings.anchorChecklist) {
+        plan.settings.anchorChecklist = {};
+      }
+      if (!plan.settings.anchorSchedule) {
+        plan.settings.anchorSchedule = {};
+      }
+      if (plan.settings.anchorWizardDismissed === undefined) {
+        plan.settings.anchorWizardDismissed = false;
+      }
+      if (plan.settings.anchorSchedule) {
+        const anchorSchedule = plan.settings.anchorSchedule as Partial<Record<AnchorPromptId, AnchorEventDraft[] | AnchorEventDraft>>;
+        for (const [key, value] of Object.entries(anchorSchedule)) {
+          if (!value) continue;
+          if (Array.isArray(value)) {
+            for (const entry of value) {
+              if (!('type' in entry)) {
+                (entry as AnchorEventDraft).type = 'date';
+              }
+              if ((entry as any).type === 'date' && !(entry as any).date && (entry as any).week && (entry as any).day) {
+                const date = plan.settings.startDate
+                  ? getDateForWeekDay(plan.settings.startDate, (entry as any).week, (entry as any).day) || plan.settings.startDate
+                  : plan.settings.startDate || '';
+                (entry as any).date = date;
+              }
+              if ((entry as any).isAfterHours === undefined) {
+                (entry as any).isAfterHours = false;
+              }
+            }
+            continue;
+          }
+          const legacy = value as { week?: number; day?: Day; startMinutes?: number; durationMinutes?: number; title?: string; countsTowardGoldenRule?: boolean; isLocked?: boolean; created?: boolean };
+          const date = plan.settings.startDate && legacy.week && legacy.day
+            ? getDateForWeekDay(plan.settings.startDate, legacy.week, legacy.day) || plan.settings.startDate
+            : plan.settings.startDate || '';
+          anchorSchedule[key as AnchorPromptId] = [
+            {
+              type: 'date',
+              id: `legacy_${Date.now().toString(36)}`,
+              date: date || '',
+              startMinutes: legacy.startMinutes ?? plan.settings.dayStartMinutes,
+              durationMinutes: legacy.durationMinutes ?? 60,
+              title: legacy.title || '',
+              countsTowardGoldenRule: !!legacy.countsTowardGoldenRule,
+              isLocked: legacy.isLocked ?? true,
+              isAfterHours: false,
+              created: legacy.created,
+            },
+          ];
+        }
+      }
+      if (!plan.settings.partnerRequests) {
+        plan.settings.partnerRequests = [];
+      }
+      if (!plan.settings.startDate) {
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        plan.settings.startDate = `${yyyy}-${mm}-${dd}`;
+      }
+      if (!plan.settings.activeDays || plan.settings.activeDays.length === 0) {
+        plan.settings.activeDays = [...DAYS];
+      }
+      for (const block of plan.blocks) {
+        if (block.isLocked === undefined) {
+          block.isLocked = false;
+        }
+        if (block.isAfterHours === undefined) {
+          block.isAfterHours = false;
+        }
+      }
+    }
+    
+    for (const template of parsed.templates) {
+      if (template.isArchived === undefined) {
+        template.isArchived = false;
+      }
+    }
+
+    const mathTemplateExists = parsed.templates.some((template: { goldenRuleBucketId?: string | null; title?: string }) =>
+      template.goldenRuleBucketId === 'MATH' || (template.title || '').toLowerCase() === 'math'
+    );
+    if (!mathTemplateExists) {
+      const seedMath = createSeedTemplates().find(template => template.goldenRuleBucketId === 'MATH');
+      if (seedMath) {
+        parsed.templates.push(seedMath);
       }
     }
     

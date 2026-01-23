@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
 import { ScheduleSuggestionPanel } from '../ScheduleSuggestionPanel';
+import { createEmptyProbabilityTable, saveProbabilityTable } from '@/lib/probabilityLearning';
 
 // Minimal mock plan and templates
 const mockPlan: any = {
@@ -17,6 +18,12 @@ const mockTemplates: any[] = [
 
 describe('ScheduleSuggestionPanel', () => {
   beforeEach(() => {
+    const table = createEmptyProbabilityTable();
+    table.totalEvents = 30;
+    table.templateCounts.set('T_OSHA', 30);
+    table.entries.set('w1_Monday_morning', new Map([['T_OSHA', 30]]));
+    table.totalsByContext.set('w1_Monday_morning', 30);
+    saveProbabilityTable(table);
     // mock fetch for models and solver
     globalThis.fetch = vi.fn((input: any) => {
       const url = typeof input === 'string' ? input : input.url;
@@ -31,6 +38,7 @@ describe('ScheduleSuggestionPanel', () => {
   });
 
   afterEach(() => {
+    localStorage.clear();
     vi.restoreAllMocks();
   });
 
@@ -48,6 +56,8 @@ describe('ScheduleSuggestionPanel', () => {
     );
 
     // click the generate button
+    const scopeWeek = await screen.findByTestId('scope-week');
+    fireEvent.click(scopeWeek);
     const btn = await screen.findByTestId('generate-suggestions');
     fireEvent.click(btn);
 

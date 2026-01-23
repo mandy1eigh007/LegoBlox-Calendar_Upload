@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '@/state/store';
-import { Plan, PlanSettings, DEFAULT_RESOURCES, SchedulerMode } from '@/state/types';
+import { Plan, PlanSettings, DEFAULT_RESOURCES, SchedulerMode, DAYS } from '@/state/types';
 import { Modal } from './Modal';
 import { minutesToTimeDisplay, DAY_START_DEFAULT, DAY_END_DEFAULT, SLOT_HEIGHT_PX, SLOT_MINUTES } from '@/lib/time';
 
@@ -78,6 +78,58 @@ export function PlanEditor({ plan, open, onClose, onToggleDiagnostics, showDiagn
             className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             data-testid="edit-plan-weeks-input"
           />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1">Cohort Start Date</label>
+          <input
+            type="date"
+            value={formData.startDate || ''}
+            onChange={e => setFormData({ ...formData, startDate: e.target.value })}
+            className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            data-testid="edit-plan-start-date"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-2">Active Days</label>
+          <div className="flex flex-wrap gap-2">
+            {DAYS.map(day => (
+              <label key={day} className="flex items-center gap-2 text-xs px-2 py-1 border rounded">
+                <input
+                  type="checkbox"
+                  checked={formData.activeDays?.includes(day)}
+                  onChange={e => {
+                    const activeDays = new Set(formData.activeDays || DAYS);
+                    if (e.target.checked) {
+                      activeDays.add(day);
+                    } else {
+                      activeDays.delete(day);
+                    }
+                    const nextDays = Array.from(activeDays);
+                    setFormData({ ...formData, activeDays: nextDays.length > 0 ? nextDays : [day] });
+                  }}
+                />
+                {day.slice(0, 3)}
+              </label>
+            ))}
+          </div>
+          <div className="flex gap-2 mt-2">
+            <button
+              type="button"
+              onClick={() => setFormData({ ...formData, activeDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday'] })}
+              className="px-2 py-1 text-xs border rounded hover:bg-gray-50"
+            >
+              Mon–Thu
+            </button>
+            <button
+              type="button"
+              onClick={() => setFormData({ ...formData, activeDays: ['Tuesday', 'Wednesday', 'Thursday', 'Friday'] })}
+              className="px-2 py-1 text-xs border rounded hover:bg-gray-50"
+            >
+              Tue–Fri
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">

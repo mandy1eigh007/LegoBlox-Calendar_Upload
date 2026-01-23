@@ -74,9 +74,10 @@ export function CompareMode({ currentPlanId, currentWeek, onClose }: CompareMode
           if (overlaps) {
             const overlapStart = Math.max(a.block.startMinutes, b.block.startMinutes);
             const overlapEnd = Math.min(aEnd, bEnd);
+            const aResource = a.block.resource || a.block.location;
             
             const existingConflict = result.find(
-              c => c.resource === a.block.location && 
+              c => c.resource === aResource && 
                    c.day === a.block.day && 
                    c.startMinutes === overlapStart &&
                    c.endMinutes === overlapEnd
@@ -91,7 +92,6 @@ export function CompareMode({ currentPlanId, currentWeek, onClose }: CompareMode
             } else {
               const template1 = state.templates.find(t => t.id === a.block.templateId);
               const template2 = state.templates.find(t => t.id === b.block.templateId);
-              const aResource = a.block.resource || a.block.location;
               
               result.push({
                 resource: aResource,

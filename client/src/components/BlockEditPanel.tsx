@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { PlacedBlock, BlockTemplate, Plan, GOLDEN_RULE_BUCKETS, GoldenRuleBucketId, ApplyScope, DAYS, Day, RecurrenceType, RecurrencePattern, RecurrenceSeries, CATEGORIES, Category, DEFAULT_RESOURCES } from '@/state/types';
 import { formatDuration, minutesToTimeDisplay, getEndMinutes } from '@/lib/time';
 import { ConfirmModal, Modal } from './Modal';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { createRecurringBlocks } from '@/lib/recurrence';
+import { findTimeConflicts } from '@/lib/collision';
 
 interface BlockEditPanelProps {
   block: PlacedBlock;
-  template: BlockTemplate | undefined;
+  templates: BlockTemplate[];
   plan: Plan;
   onUpdate: (block: PlacedBlock, scope?: ApplyScope) => void;
   onDelete: (scope?: ApplyScope) => void;
@@ -14,9 +16,11 @@ interface BlockEditPanelProps {
   onClose: () => void;
   onCreateRecurrence?: (blocks: PlacedBlock[], series?: RecurrenceSeries) => void;
   onUpdateRecurrence?: (seriesId: string, blocks: PlacedBlock[], series: RecurrenceSeries) => void;
+  onEditTemplate?: (templateId: string) => void;
 }
 
 const DURATION_OPTIONS = Array.from({ length: 36 }, (_, i) => (i + 1) * 15);
+const UNASSIGNED_TEMPLATE_ID = '__UNASSIGNED__';
 
 function generateTimeOptions(startMinutes: number, endMinutes: number): number[] {
   const options: number[] = [];
@@ -26,7 +30,8 @@ function generateTimeOptions(startMinutes: number, endMinutes: number): number[]
   return options;
 }
 
-export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDuplicate, onClose, onCreateRecurrence, onUpdateRecurrence }: BlockEditPanelProps) {
+export function BlockEditPanel({ block, templates, plan, onUpdate, onDelete, onDuplicate, onClose, onCreateRecurrence, onUpdateRecurrence, onEditTemplate }: BlockEditPanelProps) {
+  const [templateId, setTemplateId] = useState(block.templateId || '');
   const [titleOverride, setTitleOverride] = useState(block.titleOverride);
   const [startMinutes, setStartMinutes] = useState(block.startMinutes);
   const [durationMinutes, setDurationMinutes] = useState(block.durationMinutes);
@@ -35,7 +40,7 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
   const [countsTowardGoldenRule, setCountsTowardGoldenRule] = useState(block.countsTowardGoldenRule);
   const [goldenRuleBucketId, setGoldenRuleBucketId] = useState<GoldenRuleBucketId | ''>(block.goldenRuleBucketId || '');
   const [resource, setResource] = useState(block.resource || '');
-  const [category, setCategory] = useState<Category | ''>(block.category || template?.category || '');
+  const [category, setCategory] = useState<Category | ''>(block.category || '');
   const [partnerOrg, setPartnerOrg] = useState(block.partnerOrg || '');
   const [partnerContact, setPartnerContact] = useState(block.partnerContact || '');
   const [partnerEmail, setPartnerEmail] = useState(block.partnerEmail || '');
@@ -43,6 +48,8 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
   const [partnerAddress, setPartnerAddress] = useState(block.partnerAddress || '');
   const [partnerPPE, setPartnerPPE] = useState(block.partnerPPE || '');
   const [partnerParking, setPartnerParking] = useState(block.partnerParking || '');
+  const [isLocked, setIsLocked] = useState(!!block.isLocked);
+  const [isAfterHours, setIsAfterHours] = useState(!!block.isAfterHours);
   const [showPartnerInfo, setShowPartnerInfo] = useState(Boolean(block.partnerOrg || block.partnerContact));
   
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -58,6 +65,7 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
     : null;
 
   useEffect(() => {
+    setTemplateId(block.templateId || '');
     setTitleOverride(block.titleOverride);
     setStartMinutes(block.startMinutes);
     setDurationMinutes(block.durationMinutes);
@@ -66,7 +74,7 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
     setCountsTowardGoldenRule(block.countsTowardGoldenRule);
     setGoldenRuleBucketId(block.goldenRuleBucketId || '');
     setResource(block.resource || '');
-    setCategory(block.category || template?.category || '');
+    setCategory(block.category || '');
     setPartnerOrg(block.partnerOrg || '');
     setPartnerContact(block.partnerContact || '');
     setPartnerEmail(block.partnerEmail || '');
@@ -74,10 +82,60 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
     setPartnerAddress(block.partnerAddress || '');
     setPartnerPPE(block.partnerPPE || '');
     setPartnerParking(block.partnerParking || '');
+    setIsLocked(!!block.isLocked);
+    setIsAfterHours(!!block.isAfterHours);
     setShowPartnerInfo(Boolean(block.partnerOrg || block.partnerContact));
     setRecurrenceDays([block.day]);
     setRecurrenceStartWeek(block.week);
-  }, [block, template]);
+  }, [block]);
+
+  const currentTemplate = templateId ? templates.find(t => t.id === templateId) : null;
+  const isOrphanedTemplate = !!templateId && !currentTemplate;
+  const templateTitle = currentTemplate?.title || 'Unassigned';
+  const templateCategory = currentTemplate?.category || '';
+
+  useEffect(() => {
+    if (!block.category && templateCategory) {
+      setCategory(templateCategory);
+    }
+  }, [block.category, templateCategory]);
+
+  const availableTemplates = useMemo(
+    () => templates.filter(t => t.id !== 'UNASSIGNED'),
+    [templates]
+  );
+
+  const handleTemplateAssignment = (value: string) => {
+    const resolvedValue = value === UNASSIGNED_TEMPLATE_ID ? '' : value;
+    if (!resolvedValue) {
+      setTemplateId('');
+      setCountsTowardGoldenRule(false);
+      setGoldenRuleBucketId('');
+      setCategory('');
+      return;
+    }
+
+    const nextTemplate = templates.find(t => t.id === resolvedValue);
+    setTemplateId(resolvedValue);
+    if (nextTemplate) {
+      setCountsTowardGoldenRule(nextTemplate.countsTowardGoldenRule);
+      setGoldenRuleBucketId(nextTemplate.goldenRuleBucketId || '');
+      setCategory(nextTemplate.category);
+    }
+  };
+
+  const conflicts = useMemo(() => {
+    const resourceKey = resource || location || undefined;
+    return findTimeConflicts(
+      plan.blocks,
+      block.week,
+      block.day,
+      startMinutes,
+      durationMinutes,
+      block.id,
+      resourceKey
+    );
+  }, [plan.blocks, block.week, block.day, startMinutes, durationMinutes, block.id, resource, location]);
 
   const openRecurrenceModal = () => {
     if (existingSeries) {
@@ -113,6 +171,7 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
   const handleSave = (scope?: ApplyScope) => {
     onUpdate({
       ...block,
+      templateId: templateId || null,
       titleOverride,
       startMinutes,
       durationMinutes,
@@ -129,10 +188,13 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
       partnerAddress: partnerAddress || undefined,
       partnerPPE: partnerPPE || undefined,
       partnerParking: partnerParking || undefined,
+      isLocked,
+      isAfterHours,
     }, scope);
   };
   
   const adjustDuration = (delta: number) => {
+    if (isLocked) return;
     const newDuration = Math.max(15, Math.min(durationMinutes + delta, 540));
     setDurationMinutes(newDuration);
   };
@@ -166,6 +228,8 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
       goldenRuleBucketId: countsTowardGoldenRule && goldenRuleBucketId ? goldenRuleBucketId : null,
       resource: resource || undefined,
       category: category || undefined,
+      isLocked,
+      isAfterHours,
     };
 
     if (existingSeries && onUpdateRecurrence) {
@@ -180,7 +244,7 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
     onClose();
   };
 
-  const title = template?.title || 'Unknown Block';
+  const title = templateTitle;
   const timeOptions = generateTimeOptions(plan.settings.dayStartMinutes, plan.settings.dayEndMinutes);
   const isRecurring = !!block.recurrenceSeriesId;
 
@@ -201,10 +265,56 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
         <div className="space-y-4">
           <div>
             <p className="text-sm text-muted-foreground">Template</p>
-            <p className="font-medium text-foreground">{title}</p>
-            {template && (
-              <p className="text-xs text-muted-foreground">{template.category}</p>
-            )}
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="font-medium text-foreground">{title}</p>
+                {templateCategory && (
+                  <p className="text-xs text-muted-foreground">{templateCategory}</p>
+                )}
+              </div>
+              <button
+                onClick={() => currentTemplate && onEditTemplate?.(currentTemplate.id)}
+                disabled={!currentTemplate}
+                className="px-2 py-1 text-xs border rounded hover:bg-secondary/50 disabled:opacity-50"
+                data-testid="edit-template-from-block"
+              >
+                Edit Template
+              </button>
+            </div>
+            <div className="mt-2">
+              <label className="block text-xs text-muted-foreground mb-1">Template Assignment</label>
+              <Select
+                value={templateId || UNASSIGNED_TEMPLATE_ID}
+                onValueChange={handleTemplateAssignment}
+              >
+                <SelectTrigger
+                  className="w-full bg-input text-foreground border-border text-base h-10"
+                  data-testid="block-template-select"
+                >
+                  <SelectValue placeholder="Unassigned" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[60vh] w-[min(520px,92vw)]">
+                  <SelectItem value={UNASSIGNED_TEMPLATE_ID} className="text-base py-2">
+                    Unassigned
+                  </SelectItem>
+                  {isOrphanedTemplate && (
+                    <SelectItem value={templateId} disabled className="text-base py-2">
+                      Missing template
+                    </SelectItem>
+                  )}
+                  {availableTemplates.map(t => (
+                    <SelectItem key={t.id} value={t.id} disabled={t.isArchived} className="text-base py-2">
+                      {t.title}{t.isArchived ? ' (archived)' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {currentTemplate?.isArchived && (
+                <p className="text-[11px] text-amber-600 mt-1">
+                  This template is archived. Assign a different template for new blocks.
+                </p>
+              )}
+            </div>
           </div>
 
           <div>
@@ -233,8 +343,9 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
               <select
                 value={startMinutes}
                 onChange={e => setStartMinutes(parseInt(e.target.value))}
-                className="w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
                 data-testid="block-start-time-select"
+                disabled={isLocked}
               >
                 {timeOptions.map(m => (
                   <option key={m} value={m}>{minutesToTimeDisplay(m)}</option>
@@ -246,8 +357,9 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
               <select
                 value={durationMinutes}
                 onChange={e => setDurationMinutes(parseInt(e.target.value))}
-                className="w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
                 data-testid="block-duration-select"
+                disabled={isLocked}
               >
                 {DURATION_OPTIONS.map(dur => (
                   <option key={dur} value={dur}>{formatDuration(dur)}</option>
@@ -259,7 +371,7 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
           <div className="flex items-center gap-2">
             <button
               onClick={() => adjustDuration(-15)}
-              disabled={durationMinutes <= 15}
+              disabled={durationMinutes <= 15 || isLocked}
               className="px-3 py-1 text-sm border rounded hover:bg-gray-50 disabled:opacity-50"
               data-testid="duration-minus-15"
             >
@@ -268,13 +380,51 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
             <span className="text-sm text-gray-600 flex-1 text-center">{formatDuration(durationMinutes)}</span>
             <button
               onClick={() => adjustDuration(15)}
-              disabled={durationMinutes >= 540}
+              disabled={durationMinutes >= 540 || isLocked}
               className="px-3 py-1 text-sm border rounded hover:bg-gray-50 disabled:opacity-50"
               data-testid="duration-plus-15"
             >
               +15 min
             </button>
           </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              id="lock-placement"
+              type="checkbox"
+              checked={isLocked}
+              onChange={(e) => setIsLocked(e.target.checked)}
+              className="rounded"
+              data-testid="lock-placement-toggle"
+            />
+            <label htmlFor="lock-placement" className="text-sm text-foreground">
+              Lock placement (partner scheduled)
+            </label>
+          </div>
+          {isLocked && (
+            <p className="text-xs text-amber-600">
+              Locked blocks cannot be dragged or resized. Unlock to change time or duration.
+            </p>
+          )}
+
+          <div className="flex items-center gap-2">
+            <input
+              id="after-hours"
+              type="checkbox"
+              checked={isAfterHours}
+              onChange={(e) => setIsAfterHours(e.target.checked)}
+              className="rounded"
+              data-testid="after-hours-toggle"
+            />
+            <label htmlFor="after-hours" className="text-sm text-foreground">
+              After-hours (note on calendar)
+            </label>
+          </div>
+          {isAfterHours && (
+            <p className="text-xs text-muted-foreground">
+              Marks this event as after-hours without extending the schedule grid.
+            </p>
+          )}
           
           <div>
             <label className="block text-sm font-medium mb-1">Category</label>
@@ -334,6 +484,28 @@ export function BlockEditPanel({ block, template, plan, onUpdate, onDelete, onDu
               data-testid="block-notes-input"
             />
           </div>
+
+          {conflicts.length > 0 && (
+            <div className="border border-red-200 bg-red-50 rounded p-3 text-xs">
+              <p className="font-medium text-red-700 mb-1">Conflicts detected</p>
+              <ul className="space-y-1 text-red-600">
+                {conflicts.slice(0, 5).map(conflict => {
+                  const conflictTemplate = templates.find(t => t.id === conflict.templateId);
+                  const conflictTitle = conflict.titleOverride || conflictTemplate?.title || 'Untitled';
+                  const conflictStart = minutesToTimeDisplay(conflict.startMinutes);
+                  const conflictEnd = minutesToTimeDisplay(getEndMinutes(conflict.startMinutes, conflict.durationMinutes));
+                  return (
+                    <li key={conflict.id}>
+                      {conflictTitle} · {conflict.day} · {conflictStart}–{conflictEnd}
+                    </li>
+                  );
+                })}
+                {conflicts.length > 5 && (
+                  <li>+ {conflicts.length - 5} more conflicts</li>
+                )}
+              </ul>
+            </div>
+          )}
 
           <div className="border-t pt-3">
             <button

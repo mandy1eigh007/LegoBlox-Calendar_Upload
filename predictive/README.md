@@ -51,3 +51,14 @@ Next dev tasks
 Try it locally
 - Drop ICS files or `training-calendars.json` into `predictive/` and run the ingestion script (TBD)
 
+ICS ingestion (recommended)
+1) Place .ics files under `attached_assets/`
+2) Run: `npm run predictive:ics`
+   - Generates `predictive/training-calendars.json`
+   - Skips all-day placeholders (Week X, Lunch, etc.) and events outside 06:30–15:30
+3) Run: `npm run predictive:ingest`
+4) Run: `npm run predictive:build-model`
+
+This produces `predictive/normalized-events.json` and `predictive/template-models.json`,
+which the server uses for probability-driven placement.
+

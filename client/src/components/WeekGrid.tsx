@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { useDraggable } from '@dnd-kit/core';
 import { Plan, PlacedBlock, BlockTemplate, Day, DAYS } from '@/state/types';
@@ -23,9 +23,9 @@ interface WeekGridProps {
 
 interface DayColumnProps {
   day: Day;
-  plan: Plan;
+  dayBlocks: PlacedBlock[];
   currentWeek: number;
-  templates: BlockTemplate[];
+  templatesById: Record<string, BlockTemplate>;
   timeSlots: number[];
   dayStartMinutes: number;
   dayEndMinutes: number;
@@ -59,6 +59,7 @@ function DraggablePlacedBlock({
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `block-${block.id}`,
     data: { type: 'placed-block', block },
+    disabled: !!block.isLocked,
   });
 
   const [isResizing, setIsResizing] = useState(false);
@@ -69,6 +70,7 @@ function DraggablePlacedBlock({
   const blockHeight = durationToPixelHeight(block.durationMinutes);
   
   const isUnassigned = block.templateId === null;
+  const isLocked = !!block.isLocked;
   const title = block.titleOverride || template?.title || 'Unknown';
   const colorHex = isUnassigned ? '#9CA3AF' : (template?.colorHex || '#6B7280');
 
@@ -130,10 +132,16 @@ function DraggablePlacedBlock({
           e.stopPropagation();
           onDoubleClick?.();
         }}
-        className="px-2 py-1 cursor-grab active:cursor-grabbing h-full"
+        className={`px-2 py-1 h-full ${isLocked ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'}`}
       >
         {isUnassigned && (
           <p className="text-xs font-bold bg-white/30 px-1 rounded mb-0.5 inline-block">Unassigned</p>
+        )}
+        {isLocked && (
+          <p className="text-[10px] font-semibold bg-black/30 px-1 rounded mb-0.5 inline-block">Locked</p>
+        )}
+        {block.isAfterHours && (
+          <p className="text-[10px] font-semibold bg-black/30 px-1 rounded mb-0.5 inline-block">After hours</p>
         )}
         <p className="text-xs font-medium truncate">{title}</p>
         {blockHeight > 30 && (
@@ -146,20 +154,22 @@ function DraggablePlacedBlock({
         )}
       </div>
       
-      <div
-        onMouseDown={handleResizeStart}
-        className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize bg-black/20 hover:bg-black/40 transition-colors"
-        title="Drag to resize"
-      />
+      {!isLocked && (
+        <div
+          onMouseDown={handleResizeStart}
+          className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize bg-black/20 hover:bg-black/40 transition-colors"
+          title="Drag to resize"
+        />
+      )}
     </div>
   );
 }
 
 function DayColumn({ 
   day, 
-  plan, 
+  dayBlocks,
   currentWeek, 
-  templates, 
+  templatesById,
   timeSlots,
   dayStartMinutes,
   dayEndMinutes,
@@ -172,8 +182,6 @@ function DayColumn({
     id: `day-${day}`,
     data: { day },
   });
-
-  const dayBlocks = plan.blocks.filter(b => b.week === currentWeek && b.day === day);
 
   return (
     <div 
@@ -190,7 +198,7 @@ function DayColumn({
       ))}
       
       {dayBlocks.map(block => {
-        const template = templates.find(t => t.id === block.templateId);
+        const template = block.templateId ? templatesById[block.templateId] : undefined;
         const conflicts = findTimeConflicts(
           dayBlocks,
           currentWeek,
@@ -199,8 +207,9 @@ function DayColumn({
           block.durationMinutes,
           block.id
         );
-        const hasConflict = conflicts.length > 0 && !!block.location && 
-          conflicts.some(c => c.location === block.location);
+        const blockResource = block.resource || block.location;
+        const hasConflict = conflicts.length > 0 && !!blockResource &&
+          conflicts.some(c => (c.resource || c.location) === blockResource);
         
         return (
           <DraggablePlacedBlock
@@ -223,12 +232,48 @@ function DayColumn({
 
 export function WeekGrid({ plan, currentWeek, templates, onBlockClick, onBlockDoubleClick, onBlockResize, selectedBlockId }: WeekGridProps) {
   const { settings } = plan;
-  const timeSlots: number[] = [];
-  for (let m = settings.dayStartMinutes; m < settings.dayEndMinutes; m += 15) {
-    timeSlots.push(m);
-  }
+  const timeSlots = useMemo(() => {
+    const slots: number[] = [];
+    const slotMinutes = settings.slotMinutes || 15;
+    for (let m = settings.dayStartMinutes; m < settings.dayEndMinutes; m += slotMinutes) {
+      slots.push(m);
+    }
+    return slots;
+  }, [settings.dayStartMinutes, settings.dayEndMinutes, settings.slotMinutes]);
 
-  const enabledDays = DAYS.filter(() => true);
+  const templatesById = useMemo(() => {
+    return templates.reduce((acc, template) => {
+      acc[template.id] = template;
+      return acc;
+    }, {} as Record<string, BlockTemplate>);
+  }, [templates]);
+
+  const blocksByDay = useMemo(() => {
+    const grouped = DAYS.reduce((acc, day) => {
+      acc[day] = [];
+      return acc;
+    }, {} as Record<Day, PlacedBlock[]>);
+
+    for (const block of plan.blocks) {
+      if (block.week !== currentWeek) continue;
+      grouped[block.day].push(block);
+    }
+
+    return grouped;
+  }, [plan.blocks, currentWeek]);
+
+  const activeDays = settings.activeDays && settings.activeDays.length > 0 ? settings.activeDays : DAYS;
+  const daysWithBlocks = useMemo(() => {
+    const set = new Set<Day>();
+    for (const block of plan.blocks) {
+      if (block.week === currentWeek) {
+        set.add(block.day);
+      }
+    }
+    return set;
+  }, [plan.blocks, currentWeek]);
+
+  const enabledDays = DAYS.filter(day => activeDays.includes(day) || daysWithBlocks.has(day));
 
   return (
     <div className="flex-1 overflow-auto bg-white" data-testid="week-grid">
@@ -263,9 +308,9 @@ export function WeekGrid({ plan, currentWeek, templates, onBlockClick, onBlockDo
           <DayColumn
             key={day}
             day={day}
-            plan={plan}
+            dayBlocks={blocksByDay[day]}
             currentWeek={currentWeek}
-            templates={templates}
+            templatesById={templatesById}
             timeSlots={timeSlots}
             dayStartMinutes={settings.dayStartMinutes}
             dayEndMinutes={settings.dayEndMinutes}
