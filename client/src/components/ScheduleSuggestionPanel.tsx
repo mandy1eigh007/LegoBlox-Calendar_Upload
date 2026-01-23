@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plan, BlockTemplate, Day, DAYS, HardDate } from '@/state/types';
 import { generateScheduleSuggestions, SchedulerResult, SuggestedBlock } from '@/lib/predictiveScheduler';
-import { buildProbabilityTableFromEvents, fetchTraining, persistTraining, serializeProbabilityTable, TrainingEvent, TrainingPayload } from '@/lib/probabilityLearning';
+import { buildProbabilityTableFromEvents, fetchSeedCalendars, fetchTraining, persistTraining, serializeProbabilityTable, TrainingEvent, TrainingPayload } from '@/lib/probabilityLearning';
 import { resolveTemplateForImportedTitle } from '@/lib/templateMatcher';
 import { calculateGoldenRuleTotals } from '@/lib/goldenRule';
 import { minutesToTimeDisplay } from '@/lib/time';
@@ -70,6 +70,7 @@ export function ScheduleSuggestionPanel({
   });
   const [trainingPayload, setTrainingPayload] = useState<TrainingPayload | null>(null);
   const [trainingLoading, setTrainingLoading] = useState(false);
+  const [seedLoaded, setSeedLoaded] = useState(false);
   const fallbackTraining = plan.trainingExamples || [];
   const unmatchedTrainingEvents = plan.unmatchedTrainingEvents || [];
   const trainingEvents = trainingPayload?.events ?? fallbackTraining;
@@ -112,6 +113,7 @@ export function ScheduleSuggestionPanel({
     ].slice(0, 10),
     [unmatchedEvents, unmatchedTrainingEvents]
   );
+  const unmatchedTitlesCount = unmatchedEvents.length + unmatchedTrainingEvents.length;
   const isFromScratch = generationMode === 'scratch';
   const planForCalc = useMemo(
     () => (isFromScratch ? { ...plan, blocks: [] } : plan),
@@ -151,25 +153,43 @@ export function ScheduleSuggestionPanel({
     if (!open) return;
     let active = true;
     setTrainingLoading(true);
-    fetchTraining(plan.id).then(payload => {
+    fetchTraining(plan.id).then(async payload => {
       if (!active) return;
+      setSeedLoaded(false);
       if (!payload) {
         setTrainingPayload(null);
         setTrainingLoading(false);
         return;
       }
-      const { mapped, updated } = remapTrainingEvents(payload.events || []);
+      let nextPayload = payload;
+      const totalEvents = payload.probabilityTable?.totalEvents || 0;
+      let usedSeed = false;
+      if (totalEvents === 0 || (payload.events || []).length === 0) {
+        const seedEvents = await fetchSeedCalendars();
+        if (seedEvents.length > 0) {
+          const { mapped } = remapTrainingEvents(seedEvents);
+          const rebuilt = buildProbabilityTableFromEvents(mapped);
+          nextPayload = {
+            probabilityTable: serializeProbabilityTable(rebuilt),
+            events: mapped,
+          };
+          await persistTraining(plan.id, nextPayload);
+          usedSeed = true;
+        }
+      }
+      if (!active) return;
+      const { mapped, updated } = remapTrainingEvents(nextPayload.events || []);
       if (updated) {
         const rebuilt = buildProbabilityTableFromEvents(mapped);
-        const nextPayload: TrainingPayload = {
+        nextPayload = {
           probabilityTable: serializeProbabilityTable(rebuilt),
           events: mapped,
         };
         void persistTraining(plan.id, nextPayload);
-        setTrainingPayload(nextPayload);
-      } else {
-        setTrainingPayload(payload);
       }
+      const hasSeedEvents = (nextPayload.events || []).some(event => event.source === 'seed');
+      setSeedLoaded(usedSeed || hasSeedEvents);
+      setTrainingPayload(nextPayload);
       setTrainingLoading(false);
     });
     return () => {
@@ -438,9 +458,11 @@ export function ScheduleSuggestionPanel({
             <div className="rounded-lg border border-border bg-secondary/20 p-3 space-y-2">
               <div className="text-sm font-medium text-foreground">Training Debug</div>
               <div className="text-xs text-muted-foreground space-y-1">
+                <div>Seed loaded: {seedLoaded ? 'true' : 'false'}</div>
                 <div>Training events: {trainingEventsCount}</div>
                 <div>Training templates: {trainingTemplatesCount}</div>
-                <div>Matched / Unmatched: {matchedEvents.length} / {unmatchedEvents.length + unmatchedTrainingEvents.length}</div>
+                <div>Matched / Unmatched: {matchedEvents.length} / {unmatchedTitlesCount}</div>
+                <div>Unmatched titles: {unmatchedTitlesCount}</div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div>

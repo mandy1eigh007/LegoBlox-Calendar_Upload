@@ -112,6 +112,20 @@ export async function registerRoutes(
     }
   });
 
+  app.get('/api/predictive/seed-calendars', async (_req, res) => {
+    try {
+      const seedPath = path.resolve(process.cwd(), 'predictive', 'seed', 'training-calendars.generated.json');
+      if (!fs.existsSync(seedPath)) {
+        return res.status(404).json({ message: 'seed calendars not found' });
+      }
+      const raw = fs.readFileSync(seedPath, 'utf8');
+      const parsed = JSON.parse(raw);
+      res.json(parsed);
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || 'seed calendars error' });
+    }
+  });
+
   app.get('/api/predictive/training/:planId', async (req, res) => {
     try {
       const planId = req.params.planId;

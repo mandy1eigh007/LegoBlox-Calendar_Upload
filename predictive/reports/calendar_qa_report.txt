@@ -1,0 +1,43 @@
+Calendar QA Report (generated from uploaded .ics files)
+
+- TRP TUK 2: included 3 events; unique titles 3; date range 2025-05-20 to 2025-05-22
+  Skipped (counts by reason): {'all_day_or_date_only': 8}
+  Scheduled minutes by templateId:
+    - OSHA 10: 780 min (golden rule budget 600 min)
+    - Math: 120 min (golden rule budget 0 min)
+  Duration warnings:
+    - OSHA 10 block 'OSHA 10 Day 1 - TRP Tacoma' is 390 min (often scheduled as ~300 min instruction/day; may include lunch/breaks).
+    - OSHA 10 block 'OSHA 10 Day 2 - TRP Tacoma' is 390 min (often scheduled as ~300 min instruction/day; may include lunch/breaks).
+
+- TRP TUK 1: included 6 events; unique titles 6; date range 2024-09-24 to 2024-10-01
+  Skipped (counts by reason): {'skip_title_pattern': 1}
+  Scheduled minutes by templateId:
+    - Flagger Certification: 450 min (golden rule budget 480 min)
+    - Resumes: 150 min (golden rule budget 240 min)
+    - Elevator Pitch: 150 min (golden rule budget 120 min)
+    - Individual Career Plan: 60 min (golden rule budget 180 min)
+
+- PACE TUK 3: included 2 events; unique titles 2; date range 2024-09-25 to 2024-09-25
+  Skipped (counts by reason): {'skip_title_pattern': 33}
+  Scheduled minutes by templateId:
+    - Resumes: 60 min (golden rule budget 240 min)
+    - Math: 60 min (golden rule budget 0 min)
+
+- PACE TUK 2: included 14 events; unique titles 4; date range 2024-07-31 to 2024-09-12
+  Skipped (counts by reason): {'all_day_or_date_only': 2}
+  Scheduled minutes by templateId:
+    - Math: 1500 min (golden rule budget 0 min)
+    - Financial Education: 150 min (golden rule budget 180 min)
+    - Forklift Certification: 150 min (golden rule budget 480 min)
+    - ACEs: 90 min (golden rule budget 2160 min)
+  Duration warnings:
+    - Forklift block 'Forklift Certification' is 150 min (golden rule bucket is 480 min; calendar may be partial or split across events).
+
+- PACE Pierce Co: included 3 events; unique titles 3; date range 2025-05-20 to 2025-05-22
+  Skipped (counts by reason): {'all_day_or_date_only': 8}
+  Scheduled minutes by templateId:
+    - OSHA 10: 780 min (golden rule budget 600 min)
+    - Math: 120 min (golden rule budget 0 min)
+  Duration warnings:
+    - OSHA 10 block 'OSHA 10 Day 1 - PACE Pierce Co' is 390 min (often scheduled as ~300 min instruction/day; may include lunch/breaks).
+    - OSHA 10 block 'OSHA 10 Day 2 - PACE Pierce Co' is 390 min (often scheduled as ~300 min instruction/day; may include lunch/breaks).

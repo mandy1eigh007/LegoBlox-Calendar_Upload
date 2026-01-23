@@ -48,6 +48,22 @@ export type TrainingPayload = {
   events: TrainingEvent[];
 };
 
+type SeedCalendar = {
+  name: string;
+  programWeeks?: number;
+  daysOfWeek?: string[];
+  dayStart?: string;
+  dayEnd?: string;
+  events: Array<{
+    title: string;
+    start: string;
+    end: string;
+    location?: string | null;
+    description?: string | null;
+    templateId?: string;
+  }>;
+};
+
 const STORAGE_KEY = 'cohort-schedule-probability-table';
 const TRAINING_CACHE_PREFIX = 'cohort-schedule-training-cache';
 const ALPHA = 1;
@@ -136,6 +152,77 @@ function saveTrainingCache(planId: string, payload: TrainingPayload): void {
     localStorage.setItem(getTrainingCacheKey(planId), JSON.stringify(payload));
   } catch {
     // ignore cache failures
+  }
+}
+
+function getMonday(date: Date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function getDayFromIndex(idx: number): Day | null {
+  if (idx < 0 || idx > 4) return null;
+  return DAYS[idx] || null;
+}
+
+function convertSeedCalendarsToEvents(seed: { calendars?: SeedCalendar[] }): TrainingEvent[] {
+  if (!seed || !Array.isArray(seed.calendars)) return [];
+  const events: TrainingEvent[] = [];
+
+  for (const calendar of seed.calendars) {
+    if (!calendar.events || calendar.events.length === 0) continue;
+    const sorted = [...calendar.events].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+    const minDate = new Date(sorted[0].start);
+    const mondayRef = getMonday(minDate);
+
+    for (const event of calendar.events) {
+      if (!event.start || !event.end) continue;
+      const start = new Date(event.start);
+      const end = new Date(event.end);
+      const startDateOnly = new Date(start);
+      startDateOnly.setHours(0, 0, 0, 0);
+
+      const diffDays = Math.floor((startDateOnly.getTime() - mondayRef.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays < 0) continue;
+      const weekIndex = Math.floor(diffDays / 7) + 1;
+      const dayIndex = diffDays % 7;
+      const dayOfWeek = getDayFromIndex(dayIndex);
+      if (!dayOfWeek) continue;
+
+      const useUTC = event.start.endsWith('Z');
+      const startHour = useUTC ? start.getUTCHours() : start.getHours();
+      const startMinute = useUTC ? start.getUTCMinutes() : start.getMinutes();
+      const startMinutes = startHour * 60 + startMinute;
+      const durationMinutes = Math.max(15, Math.round((end.getTime() - start.getTime()) / (1000 * 60) / 15) * 15);
+      const templateId = (event.templateId || event.title || '').trim() || null;
+
+      events.push({
+        templateId,
+        weekIndex,
+        dayOfWeek,
+        startMinutes,
+        durationMinutes,
+        source: 'seed',
+        title: event.title,
+      });
+    }
+  }
+
+  return events;
+}
+
+export async function fetchSeedCalendars(): Promise<TrainingEvent[]> {
+  try {
+    const res = await fetch('/api/predictive/seed-calendars');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const payload = await res.json();
+    return convertSeedCalendarsToEvents(payload);
+  } catch {
+    return [];
   }
 }
 

@@ -3,7 +3,8 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 const DATA_DIR = path.resolve(process.cwd(), 'server', 'data', 'predictive');
-const SEED_PATH = path.resolve(process.cwd(), 'predictive', 'training-calendars.json');
+const SEED_PATH = path.resolve(process.cwd(), 'predictive', 'seed', 'training-calendars.generated.json');
+const FALLBACK_SEED_PATH = path.resolve(process.cwd(), 'predictive', 'training-calendars.json');
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as const;
 type Day = typeof DAYS[number];
@@ -188,8 +189,9 @@ function buildProbabilityTable(events: TrainingEvent[]): SerializedProbabilityTa
 
 export async function initializeTraining(planId: string): Promise<TrainingPayload> {
   let calendars: SeedCalendar[] = [];
-  if (existsSync(SEED_PATH)) {
-    const raw = await fs.readFile(SEED_PATH, 'utf8');
+  const seedPath = existsSync(SEED_PATH) ? SEED_PATH : FALLBACK_SEED_PATH;
+  if (existsSync(seedPath)) {
+    const raw = await fs.readFile(seedPath, 'utf8');
     const parsed = JSON.parse(raw);
     if (parsed?.calendars && Array.isArray(parsed.calendars)) {
       calendars = parsed.calendars as SeedCalendar[];
