@@ -117,7 +117,9 @@ export function PlanList() {
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem(CSV_PRESET_STORAGE_KEY, JSON.stringify(csvPresets));
-    } catch {}
+    } catch {
+      // localStorage may be unavailable, ignore
+    }
   }, [csvPresets]);
 
   useEffect(() => {

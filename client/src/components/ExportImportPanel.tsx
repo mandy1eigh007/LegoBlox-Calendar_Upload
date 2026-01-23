@@ -46,7 +46,9 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
         if (saved) {
           return JSON.parse(saved);
         }
-      } catch {}
+      } catch {
+        // localStorage may be unavailable, use defaults
+      }
     }
     return {
       week: 1,
@@ -64,7 +66,9 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
     if (typeof window !== 'undefined') {
       try {
         localStorage.setItem('csvMapping', JSON.stringify(csvMapping));
-      } catch {}
+      } catch {
+        // localStorage may be unavailable, ignore
+      }
     }
   }, [csvMapping]);
 
