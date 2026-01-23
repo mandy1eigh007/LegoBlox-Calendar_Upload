@@ -24,6 +24,7 @@ export interface SchedulerConfig {
   distributeAcrossWeeks: boolean;
   hardDates?: { week: number; day: Day }[];
   activeDays?: Day[];
+  trainingEvents?: TrainingExample[];
 }
 
 export interface SuggestedBlock extends PlacedBlock {
@@ -186,7 +187,7 @@ function scoreSlotForTemplate(
   return { score: 0.25, reason: 'No training match. Using budget-only heuristic.' };
 }
 
-export function trainFromExistingPlans(plans: Plan[]): { trained: number; events: number } {
+export async function trainFromExistingPlans(plans: Plan[]): Promise<{ trained: number; events: number }> {
   let totalEvents = 0;
   
   for (const plan of plans) {
@@ -196,7 +197,7 @@ export function trainFromExistingPlans(plans: Plan[]): { trained: number; events
     }
   }
   
-  const stats = getProbabilityTableStats(loadProbabilityTable());
+  const stats = getProbabilityTableStats(await loadProbabilityTable());
   return { trained: plans.length, events: stats.totalEvents };
 }
 
@@ -301,7 +302,7 @@ export function generateScheduleSuggestions(
   const cfg: SchedulerConfig = { ...DEFAULT_CONFIG, ...config };
   const suggestions: SuggestedBlock[] = [];
   const conflicts: string[] = [];
-  const trainingExamples = plan.trainingExamples || [];
+  const trainingExamples = cfg.trainingEvents || plan.trainingExamples || [];
   const trainingPriors = buildTrainingPriors(trainingExamples);
   const hasTraining = trainingPriors.size > 0;
   

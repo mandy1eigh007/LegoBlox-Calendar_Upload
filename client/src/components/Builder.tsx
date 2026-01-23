@@ -15,7 +15,7 @@ import { PartnersPanel } from './PartnersPanel';
 import { ConfirmModal } from './Modal';
 import { ScheduleSuggestionPanel } from './ScheduleSuggestionPanel';
 import { SuggestedBlock } from '@/lib/predictiveScheduler';
-import { getProbabilityTableStats, loadProbabilityTable, trainFromBlocks } from '@/lib/probabilityLearning';
+import { persistTrainingEvents } from '@/lib/probabilityLearning';
 import { UnassignedReviewPanel } from './UnassignedReviewPanel';
 import { TemplateReassignDialog } from './TemplateReassignDialog';
 import { ComparePlans } from './ComparePlans';
@@ -109,16 +109,7 @@ export function Builder() {
     }
   }, [plan]);
 
-  useEffect(() => {
-    if (!plan || !showSuggestions || plan.settings.schedulerMode !== 'predictive') return;
-    const stats = getProbabilityTableStats(loadProbabilityTable());
-    if (stats.totalEvents > 0) return;
-    const plansWithData = state.plans.filter(p => p.blocks.some(b => b.templateId));
-    if (plansWithData.length === 0) return;
-    for (const sourcePlan of plansWithData) {
-      trainFromBlocks(sourcePlan.blocks, sourcePlan.settings.name);
-    }
-  }, [plan, showSuggestions, state.plans]);
+  // Training is now persisted via server-backed storage (see persistTrainingEvents).
 
   if (!plan) {
     return (
@@ -309,7 +300,8 @@ export function Builder() {
     
     dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updatedBlock } });
     if (plan.settings.schedulerMode === 'predictive') {
-      trainFromBlocks([updatedBlock], `${plan.settings.name}:adjust`);
+      const trainingData = buildTrainingDataFromBlocks([updatedBlock], 'adjust');
+      void persistTrainingEvents(plan.id, trainingData.examples);
     }
   };
 
@@ -339,7 +331,8 @@ export function Builder() {
     const updatedBlock: PlacedBlock = { ...block, durationMinutes: newDuration };
     dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updatedBlock } });
     if (plan.settings.schedulerMode === 'predictive') {
-      trainFromBlocks([updatedBlock], `${plan.settings.name}:resize`);
+      const trainingData = buildTrainingDataFromBlocks([updatedBlock], 'resize');
+      void persistTrainingEvents(plan.id, trainingData.examples);
     }
   };
 
@@ -377,7 +370,8 @@ export function Builder() {
     
     dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updatedBlock, scope } });
     if (plan.settings.schedulerMode === 'predictive') {
-      trainFromBlocks([updatedBlock], `${plan.settings.name}:edit`);
+      const trainingData = buildTrainingDataFromBlocks([updatedBlock], 'edit');
+      void persistTrainingEvents(plan.id, trainingData.examples);
     }
     setSelectedBlockId(null);
   };
@@ -477,7 +471,7 @@ export function Builder() {
       payload: { planId: plan.id, examples: trainingData.examples, unmatched: trainingData.unmatched },
     });
     if (plan.settings.schedulerMode === 'predictive') {
-      trainFromBlocks(acceptedBlocks, `${plan.settings.name}:accepted`);
+      void persistTrainingEvents(plan.id, trainingData.examples);
     }
   };
 

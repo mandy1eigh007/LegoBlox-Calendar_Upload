@@ -5,6 +5,7 @@ import { ScheduleSuggestionPanel } from '../ScheduleSuggestionPanel';
 
 // Minimal mock plan and templates
 const mockPlan: any = {
+  id: 'plan-1',
   settings: { name: 'Test Plan', weeks: 9, dayStartMinutes: 390, dayEndMinutes: 930, slotMinutes: 15, hardDates: [] },
   blocks: [],
   isPublished: false,
@@ -24,6 +25,24 @@ describe('ScheduleSuggestionPanel', () => {
     // mock fetch for models and solver
     globalThis.fetch = vi.fn((input: any) => {
       const url = typeof input === 'string' ? input : input.url;
+      if (url.includes('/api/predictive/training/')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            probabilityTable: {
+              entries: { w1_Monday_morning: { T_OSHA: 1 } },
+              totalsByContext: { w1_Monday_morning: 1 },
+              templateCounts: { T_OSHA: 1 },
+              totalEvents: 1,
+              version: 1,
+              trainedFrom: ['seed'],
+            },
+            events: [
+              { templateId: 'T_OSHA', weekIndex: 1, dayOfWeek: 'Monday', startMinutes: 390, durationMinutes: 300, source: 'seed' },
+            ],
+          })
+        } as any);
+      }
       if (url.endsWith('/api/predictive/models')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ models: [{ templateId: 'T_OSHA', topSlots: [{ slotIndex: 0, probability: 0.8, count: 10 }] }] }) } as any);
       }

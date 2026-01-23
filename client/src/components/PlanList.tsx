@@ -11,6 +11,7 @@ import { validateAppState } from '@/state/validators';
 import { processImageWithOCR, OCREvent } from '@/lib/ocr';
 import { parseICSWithDateRange, convertICSEventsToBlocks, ICSEventWithDate, importCSVToBlocks, getCSVHeaders, CSVDraftEvent } from '@/lib/csv';
 import { resolveTemplateForImportedTitle, TemplateCandidate, getBucketLabel } from '@/lib/templateMatcher';
+import { persistTrainingEvents } from '@/lib/probabilityLearning';
 import { buildTrainingDataFromBlocks } from '@/lib/trainingData';
 import { minutesToTimeDisplay } from '@/lib/time';
 import { Loader2, AlertTriangle } from 'lucide-react';
@@ -363,16 +364,18 @@ export function PlanList() {
       });
     }
 
+    const trainingData = buildTrainingDataFromBlocks(blocks, 'import:ocr');
     const plan: Plan = {
       id: uuidv4(),
       settings: { ...createDefaultPlanSettings(), name: ocrPlanName },
       blocks,
       recurrenceSeries: [],
-      trainingExamples: [],
-      unmatchedTrainingEvents: [],
+      trainingExamples: trainingData.examples,
+      unmatchedTrainingEvents: trainingData.unmatched,
     };
     
     dispatch({ type: 'ADD_PLAN', payload: plan });
+    void persistTrainingEvents(plan.id, trainingData.examples);
     setOCRDrafts([]);
     setOCRPlanName('');
     setOCRRawText('');
@@ -535,6 +538,7 @@ export function PlanList() {
 
     const unassignedCount = blocks.filter(b => b.templateId === null).length;
     dispatch({ type: 'ADD_PLAN', payload: plan });
+    void persistTrainingEvents(plan.id, trainingData.examples);
     setImportError(null);
     setImportSuccess(
       unassignedCount > 0
@@ -668,6 +672,7 @@ export function PlanList() {
     };
     
     dispatch({ type: 'ADD_PLAN', payload: plan });
+    void persistTrainingEvents(plan.id, trainingData.examples);
     clearICSImport();
     setImportSuccess(`Created plan with ${included} events!`);
     navigate(`/plan/${plan.id}`);

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plan, BlockTemplate, Day, DAYS, HardDate } from '@/state/types';
 import { generateScheduleSuggestions, SchedulerResult, SuggestedBlock } from '@/lib/predictiveScheduler';
+import { buildProbabilityTableFromEvents, fetchTraining, persistTraining, serializeProbabilityTable, TrainingEvent, TrainingPayload } from '@/lib/probabilityLearning';
+import { resolveTemplateForImportedTitle } from '@/lib/templateMatcher';
 import { calculateGoldenRuleTotals } from '@/lib/goldenRule';
 import { minutesToTimeDisplay } from '@/lib/time';
 import { ConfirmModal, Modal } from './Modal';
@@ -66,13 +68,23 @@ export function ScheduleSuggestionPanel({
     day: 'Monday',
     description: ''
   });
-  const trainingExamples = plan.trainingExamples || [];
+  const [trainingPayload, setTrainingPayload] = useState<TrainingPayload | null>(null);
+  const [trainingLoading, setTrainingLoading] = useState(false);
+  const fallbackTraining = plan.trainingExamples || [];
   const unmatchedTrainingEvents = plan.unmatchedTrainingEvents || [];
-  const trainingEventsCount = trainingExamples.length + unmatchedTrainingEvents.length;
-  const trainingTemplatesCount = new Set(trainingExamples.map(example => example.templateId)).size;
-  const noTrainingMatch = trainingTemplatesCount === 0;
-  const limitedTraining = trainingEventsCount > 0 && trainingEventsCount < MIN_TRAINING_EVENTS;
-  const importMatchedEvents = trainingExamples.filter(example => example.source?.startsWith('import')).length;
+  const trainingEvents = trainingPayload?.events ?? fallbackTraining;
+  const matchedEvents = trainingEvents.filter(
+    (event): event is TrainingEvent & { templateId: string } => !!event.templateId
+  );
+  const unmatchedEvents = trainingPayload
+    ? trainingEvents.filter(event => !event.templateId)
+    : [];
+  const trainingEventsCount = matchedEvents.length + unmatchedEvents.length + unmatchedTrainingEvents.length;
+  const trainingTemplatesCount = new Set(matchedEvents.map(example => example.templateId)).size;
+  const trainingReady = trainingPayload !== null || fallbackTraining.length > 0 || unmatchedTrainingEvents.length > 0;
+  const noTrainingMatch = trainingReady && trainingTemplatesCount === 0;
+  const limitedTraining = trainingReady && trainingEventsCount > 0 && trainingEventsCount < MIN_TRAINING_EVENTS;
+  const importMatchedEvents = matchedEvents.filter(example => example.source?.startsWith('import')).length;
   const importUnmatchedEvents = unmatchedTrainingEvents.filter(event => event.source?.startsWith('import')).length;
   const importTotalEvents = importMatchedEvents + importUnmatchedEvents;
   const importMatchRate = importTotalEvents > 0
@@ -80,7 +92,8 @@ export function ScheduleSuggestionPanel({
     : null;
   const topTemplates = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const example of trainingExamples) {
+    for (const example of matchedEvents) {
+      if (!example.templateId) continue;
       counts.set(example.templateId, (counts.get(example.templateId) || 0) + 1);
     }
     return Array.from(counts.entries())
@@ -91,10 +104,13 @@ export function ScheduleSuggestionPanel({
         count,
         title: templates.find(t => t.id === templateId)?.title || templateId,
       }));
-  }, [trainingExamples, templates]);
+  }, [matchedEvents, templates]);
   const unmatchedTitles = useMemo(
-    () => unmatchedTrainingEvents.map(event => event.title).filter(Boolean).slice(0, 10),
-    [unmatchedTrainingEvents]
+    () => [
+      ...unmatchedEvents.map(event => event.title || '').filter(Boolean),
+      ...unmatchedTrainingEvents.map(event => event.title).filter(Boolean),
+    ].slice(0, 10),
+    [unmatchedEvents, unmatchedTrainingEvents]
   );
   const isFromScratch = generationMode === 'scratch';
   const planForCalc = useMemo(
@@ -115,6 +131,51 @@ export function ScheduleSuggestionPanel({
     const nextMode = plan.blocks.length > 0 && !hasDeficitsInitial ? 'scratch' : 'fill';
     setGenerationMode(nextMode);
   }, [open, plan.id, plan.blocks.length, templates]);
+
+  const remapTrainingEvents = (events: TrainingEvent[]) => {
+    let updated = false;
+    const mapped = events.map(event => {
+      if (!event.templateId) return event;
+      if (templates.some(t => t.id === event.templateId)) return event;
+      const match = resolveTemplateForImportedTitle(event.title || event.templateId, templates);
+      if (match.templateId) {
+        updated = true;
+        return { ...event, templateId: match.templateId };
+      }
+      return event;
+    });
+    return { mapped, updated };
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    setTrainingLoading(true);
+    fetchTraining(plan.id).then(payload => {
+      if (!active) return;
+      if (!payload) {
+        setTrainingPayload(null);
+        setTrainingLoading(false);
+        return;
+      }
+      const { mapped, updated } = remapTrainingEvents(payload.events || []);
+      if (updated) {
+        const rebuilt = buildProbabilityTableFromEvents(mapped);
+        const nextPayload: TrainingPayload = {
+          probabilityTable: serializeProbabilityTable(rebuilt),
+          events: mapped,
+        };
+        void persistTraining(plan.id, nextPayload);
+        setTrainingPayload(nextPayload);
+      } else {
+        setTrainingPayload(payload);
+      }
+      setTrainingLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [open, plan.id, templates]);
 
   const normalizeKey = (value: string) =>
     value.toLowerCase().replace(/[\u0300-\u036f]/g, '').replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -148,6 +209,7 @@ export function ScheduleSuggestionPanel({
         distributeAcrossWeeks: scope === 'all',
         hardDates: hardDates.map(hd => ({ week: hd.week, day: hd.day })),
         activeDays: plan.settings.activeDays,
+        trainingEvents: matchedEvents,
       });
 
       if (noTrainingMatch) {
@@ -348,11 +410,17 @@ export function ScheduleSuggestionPanel({
             </div>
             <div className={`rounded-lg border p-3 ${noTrainingMatch ? 'bg-amber-900/20 border-amber-500/40' : 'bg-secondary/40 border-border'}`}>
               <div className="text-sm text-foreground">
-                Training data: {trainingEventsCount} events across {trainingTemplatesCount} templates.
-                {importMatchRate !== null && (
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    Match rate (import): {importMatchRate}%
-                  </span>
+                {trainingLoading && !trainingReady ? (
+                  <span>Loading training from server...</span>
+                ) : (
+                  <>
+                    Training: {trainingEventsCount} events, {trainingTemplatesCount} templates.
+                    {importMatchRate !== null && (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        Match rate (import): {importMatchRate}%
+                      </span>
+                    )}
+                  </>
                 )}
               </div>
               {noTrainingMatch && (
@@ -372,7 +440,7 @@ export function ScheduleSuggestionPanel({
               <div className="text-xs text-muted-foreground space-y-1">
                 <div>Training events: {trainingEventsCount}</div>
                 <div>Training templates: {trainingTemplatesCount}</div>
-                <div>Matched / Unmatched (import): {importMatchedEvents} / {importUnmatchedEvents}</div>
+                <div>Matched / Unmatched: {matchedEvents.length} / {unmatchedEvents.length + unmatchedTrainingEvents.length}</div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div>

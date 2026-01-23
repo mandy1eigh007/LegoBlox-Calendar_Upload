@@ -12,6 +12,7 @@ import { loadTitleAliases, importAliasCSV, exportAliasCSV, TitleAlias } from '@/
 import { loadResources, importResourceCSV, exportResourceCSV } from '@/lib/resources';
 import { loadHardEvents, importHardEventsCSV, exportHardEventsCSV } from '@/lib/hardEvents';
 import { resolveTemplateForImportedTitle } from '@/lib/templateMatcher';
+import { persistTrainingEvents } from '@/lib/probabilityLearning';
 import { buildTrainingDataFromBlocks } from '@/lib/trainingData';
 
 interface ExportImportPanelProps {
@@ -352,6 +353,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
       type: 'ADD_TRAINING_DATA',
       payload: { planId: plan.id, examples: trainingData.examples, unmatched: trainingData.unmatched },
     });
+    void persistTrainingEvents(plan.id, trainingData.examples);
 
     setImportSuccess(`Imported ${included} events${skipped > 0 ? ` (${skipped} skipped)` : ''}.`);
     setIcsPreview(null);
@@ -441,6 +443,7 @@ export function ExportImportPanel({ plan, open, onClose }: ExportImportPanelProp
       type: 'ADD_TRAINING_DATA',
       payload: { planId: plan.id, examples: trainingData.examples, unmatched: trainingData.unmatched },
     });
+    void persistTrainingEvents(plan.id, trainingData.examples);
     
     setCSVDrafts([]);
     setCSVContent(null);
