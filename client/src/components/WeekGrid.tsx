@@ -274,52 +274,59 @@ export function WeekGrid({ plan, currentWeek, templates, onBlockClick, onBlockDo
   }, [plan.blocks, currentWeek]);
 
   const enabledDays = DAYS.filter(day => activeDays.includes(day) || daysWithBlocks.has(day));
+  const minGridWidth = Math.max(900, 80 + enabledDays.length * 140);
 
   return (
-    <div className="flex-1 overflow-auto bg-white" data-testid="week-grid">
-      <div className="sticky top-0 z-10 bg-white border-b">
+    <div
+      className="flex-1 overflow-auto bg-white"
+      data-testid="week-grid"
+      style={{ WebkitOverflowScrolling: 'touch' }}
+    >
+      <div style={{ minWidth: minGridWidth }}>
+        <div className="sticky top-0 z-10 bg-white border-b">
+          <div className="flex">
+            <div className="w-20 flex-shrink-0 border-r bg-gray-50 sticky left-0 z-30" />
+            {enabledDays.map(day => (
+              <div
+                key={day}
+                className="flex-1 px-2 py-2 text-center text-sm font-medium border-r last:border-r-0 bg-gray-50"
+              >
+                {day}
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div className="flex">
-          <div className="w-20 flex-shrink-0 border-r bg-gray-50" />
+          <div className="w-20 flex-shrink-0 border-r bg-gray-50 sticky left-0 z-20">
+            {timeSlots.map((minutes, idx) => (
+              <div
+                key={minutes}
+                className={`text-xs text-gray-500 text-right pr-2 border-b ${idx % 2 === 0 ? 'border-gray-200' : 'border-gray-100'}`}
+                style={{ height: SLOT_HEIGHT_PX, lineHeight: `${SLOT_HEIGHT_PX}px` }}
+              >
+                {idx % 2 === 0 ? minutesToTimeDisplay(minutes) : ''}
+              </div>
+            ))}
+          </div>
+
           {enabledDays.map(day => (
-            <div
+            <DayColumn
               key={day}
-              className="flex-1 px-2 py-2 text-center text-sm font-medium border-r last:border-r-0 bg-gray-50"
-            >
-              {day}
-            </div>
+              day={day}
+              dayBlocks={blocksByDay[day]}
+              currentWeek={currentWeek}
+              templatesById={templatesById}
+              timeSlots={timeSlots}
+              dayStartMinutes={settings.dayStartMinutes}
+              dayEndMinutes={settings.dayEndMinutes}
+              onBlockClick={onBlockClick}
+              onBlockDoubleClick={onBlockDoubleClick}
+              onBlockResize={onBlockResize}
+              selectedBlockId={selectedBlockId}
+            />
           ))}
         </div>
-      </div>
-
-      <div className="flex">
-        <div className="w-20 flex-shrink-0 border-r bg-gray-50">
-          {timeSlots.map((minutes, idx) => (
-            <div
-              key={minutes}
-              className={`text-xs text-gray-500 text-right pr-2 border-b ${idx % 2 === 0 ? 'border-gray-200' : 'border-gray-100'}`}
-              style={{ height: SLOT_HEIGHT_PX, lineHeight: `${SLOT_HEIGHT_PX}px` }}
-            >
-              {idx % 2 === 0 ? minutesToTimeDisplay(minutes) : ''}
-            </div>
-          ))}
-        </div>
-
-        {enabledDays.map(day => (
-          <DayColumn
-            key={day}
-            day={day}
-            dayBlocks={blocksByDay[day]}
-            currentWeek={currentWeek}
-            templatesById={templatesById}
-            timeSlots={timeSlots}
-            dayStartMinutes={settings.dayStartMinutes}
-            dayEndMinutes={settings.dayEndMinutes}
-            onBlockClick={onBlockClick}
-            onBlockDoubleClick={onBlockDoubleClick}
-            onBlockResize={onBlockResize}
-            selectedBlockId={selectedBlockId}
-          />
-        ))}
       </div>
     </div>
   );

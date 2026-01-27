@@ -72,6 +72,8 @@ const COMMON_SYNONYMS: Record<string, string[]> = {
 function normalizeText(text: string): string {
   return text
     .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^\w\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();

@@ -11,6 +11,8 @@ import { validateAppState } from '@/state/validators';
 import { processImageWithOCR, OCREvent } from '@/lib/ocr';
 import { parseICSWithDateRange, convertICSEventsToBlocks, ICSEventWithDate, importCSVToBlocks, getCSVHeaders, CSVDraftEvent } from '@/lib/csv';
 import { resolveTemplateForImportedTitle, TemplateCandidate, getBucketLabel } from '@/lib/templateMatcher';
+import { persistTrainingEvents } from '@/lib/probabilityLearning';
+import { buildTrainingDataFromBlocks } from '@/lib/trainingData';
 import { minutesToTimeDisplay } from '@/lib/time';
 import { Loader2, AlertTriangle } from 'lucide-react';
 
@@ -235,6 +237,8 @@ export function PlanList() {
       },
       blocks: anchorBlocks,
       recurrenceSeries: [],
+      trainingExamples: [],
+      unmatchedTrainingEvents: [],
     };
     
     dispatch({ type: 'ADD_PLAN', payload: plan });
@@ -360,14 +364,18 @@ export function PlanList() {
       });
     }
 
+    const trainingData = buildTrainingDataFromBlocks(blocks, 'import:ocr');
     const plan: Plan = {
       id: uuidv4(),
       settings: { ...createDefaultPlanSettings(), name: ocrPlanName },
       blocks,
       recurrenceSeries: [],
+      trainingExamples: trainingData.examples,
+      unmatchedTrainingEvents: trainingData.unmatched,
     };
     
     dispatch({ type: 'ADD_PLAN', payload: plan });
+    void persistTrainingEvents(plan.id, trainingData.examples);
     setOCRDrafts([]);
     setOCRPlanName('');
     setOCRRawText('');
@@ -518,15 +526,19 @@ export function PlanList() {
     });
 
     const defaults = createDefaultPlanSettings();
+    const trainingData = buildTrainingDataFromBlocks(blocks, 'import:csv');
     const plan: Plan = {
       id: uuidv4(),
       settings: { ...defaults, name: csvPlanName.trim(), weeks: Math.max(defaults.weeks, maxWeek) },
       blocks,
       recurrenceSeries: [],
+      trainingExamples: trainingData.examples,
+      unmatchedTrainingEvents: trainingData.unmatched,
     };
 
     const unassignedCount = blocks.filter(b => b.templateId === null).length;
     dispatch({ type: 'ADD_PLAN', payload: plan });
+    void persistTrainingEvents(plan.id, trainingData.examples);
     setImportError(null);
     setImportSuccess(
       unassignedCount > 0
@@ -649,14 +661,18 @@ export function PlanList() {
       isAfterHours: false,
     }));
 
+    const trainingData = buildTrainingDataFromBlocks(finalBlocks, 'import:ics');
     const plan: Plan = {
       id: uuidv4(),
       settings: { ...createDefaultPlanSettings(), name: icsImportPlanName },
       blocks: finalBlocks,
       recurrenceSeries: [],
+      trainingExamples: trainingData.examples,
+      unmatchedTrainingEvents: trainingData.unmatched,
     };
     
     dispatch({ type: 'ADD_PLAN', payload: plan });
+    void persistTrainingEvents(plan.id, trainingData.examples);
     clearICSImport();
     setImportSuccess(`Created plan with ${included} events!`);
     navigate(`/plan/${plan.id}`);

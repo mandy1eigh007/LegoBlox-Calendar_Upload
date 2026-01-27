@@ -35,7 +35,7 @@ export function PrintView({ plan, currentWeek: initialWeek, templates, onClose }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-white overflow-auto">
+    <div className="fixed inset-0 z-50 bg-white overflow-auto print-schedule">
       <div className="no-print sticky top-0 bg-white border-b p-4 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <h2 className="font-semibold">{plan.settings.name} - Week {currentWeek}</h2>
@@ -74,8 +74,8 @@ export function PrintView({ plan, currentWeek: initialWeek, templates, onClose }
           <p className="text-sm text-gray-600">Week {currentWeek}</p>
         </div>
 
-        <div className="border rounded overflow-hidden mb-8">
-          <div className="flex border-b bg-gray-100">
+        <div className="print-grid border rounded overflow-hidden mb-8">
+          <div className="print-grid-header flex border-b bg-gray-100">
             <div className="w-20 flex-shrink-0 p-2 text-sm font-medium border-r">Time</div>
             {DAYS.map(day => (
               <div
@@ -126,20 +126,20 @@ export function PrintView({ plan, currentWeek: initialWeek, templates, onClose }
                     return (
                       <div
                         key={block.id}
-                        className="absolute left-0 right-0 mx-1 rounded border border-gray-400 bg-gray-200 px-1 overflow-hidden"
+                        className="print-block absolute left-0 right-0 mx-1 rounded border border-gray-400 bg-gray-200 px-1 overflow-hidden"
                         style={{
                           top: `${topOffset}px`,
                           height: `${blockHeight - 1}px`,
                         }}
                       >
-                        <p className="text-xs font-medium truncate">{title}</p>
+                        <p className="print-block-title text-xs font-medium truncate">{title}</p>
                         {blockHeight > 25 && (
-                          <p className="text-xs text-gray-600 truncate">
+                          <p className="print-block-time text-xs text-gray-600 truncate">
                             {minutesToTimeDisplay(block.startMinutes)}-{minutesToTimeDisplay(getEndMinutes(block.startMinutes, block.durationMinutes))}
                           </p>
                         )}
                         {blockHeight > 40 && settings.showNotesOnPrint && block.notes && (
-                          <p className="text-xs text-gray-500 truncate">{block.notes}</p>
+                          <p className="print-block-notes text-xs text-gray-500 truncate">{block.notes}</p>
                         )}
                       </div>
                     );
@@ -185,6 +185,18 @@ export function PrintView({ plan, currentWeek: initialWeek, templates, onClose }
           .print-only { display: block !important; }
           body { background: white; }
           @page { size: landscape; margin: 0.5in; }
+
+          .print-schedule { background: white !important; }
+          .print-schedule * { color: #000 !important; }
+          .print-schedule .print-grid,
+          .print-schedule .print-grid * { border-color: #000 !important; }
+          .print-schedule .print-grid-header { background: #fff !important; }
+          .print-schedule .print-block {
+            background: #fff !important;
+            border: 1px solid #000 !important;
+            opacity: 1 !important;
+            filter: none !important;
+          }
         }
         .print-only { display: none; }
       `}</style>

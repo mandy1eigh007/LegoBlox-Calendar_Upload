@@ -55,6 +55,21 @@ function reducer(state: AppState, action: Action): AppState {
           p.id === action.payload.id ? touchPlan(action.payload) : p
         ),
       };
+
+    case 'ADD_TRAINING_DATA': {
+      const { planId, examples = [], unmatched = [] } = action.payload;
+      if (examples.length === 0 && unmatched.length === 0) return state;
+      const updatedAt = new Date().toISOString();
+      return {
+        ...state,
+        plans: state.plans.map(p => {
+          if (p.id !== planId) return p;
+          const trainingExamples = [...(p.trainingExamples || []), ...examples];
+          const unmatchedTrainingEvents = [...(p.unmatchedTrainingEvents || []), ...unmatched];
+          return { ...p, trainingExamples, unmatchedTrainingEvents, updatedAt };
+        }),
+      };
+    }
       
     case 'DELETE_PLAN':
       return {
@@ -321,8 +336,16 @@ function reducer(state: AppState, action: Action): AppState {
       
     case 'IMPORT_STATE': {
       const { state: importedState, mode } = action.payload;
+      const normalizePlan = (plan: AppState['plans'][number]) => ({
+        ...plan,
+        trainingExamples: plan.trainingExamples || [],
+        unmatchedTrainingEvents: plan.unmatchedTrainingEvents || [],
+      });
       if (mode === 'replace') {
-        return importedState;
+        return {
+          ...importedState,
+          plans: importedState.plans.map(normalizePlan),
+        };
       }
       return {
         ...state,
@@ -336,7 +359,7 @@ function reducer(state: AppState, action: Action): AppState {
           ...state.plans,
           ...importedState.plans.filter(
             ip => !state.plans.some(p => p.id === ip.id)
-          ),
+          ).map(normalizePlan),
         ],
       };
     }

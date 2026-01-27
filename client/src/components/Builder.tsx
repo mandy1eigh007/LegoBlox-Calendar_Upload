@@ -15,7 +15,7 @@ import { PartnersPanel } from './PartnersPanel';
 import { ConfirmModal } from './Modal';
 import { ScheduleSuggestionPanel } from './ScheduleSuggestionPanel';
 import { SuggestedBlock } from '@/lib/predictiveScheduler';
-import { getProbabilityTableStats, loadProbabilityTable, trainFromBlocks } from '@/lib/probabilityLearning';
+import { persistTrainingEvents } from '@/lib/probabilityLearning';
 import { UnassignedReviewPanel } from './UnassignedReviewPanel';
 import { TemplateReassignDialog } from './TemplateReassignDialog';
 import { ComparePlans } from './ComparePlans';
@@ -26,6 +26,7 @@ import { PartnerAvailabilityPanel } from './PartnerAvailabilityPanel';
 import { generatePublicId, getStudentUrl } from '@/lib/publish';
 import { findTimeConflicts, findNextAvailableSlot, wouldFitInDay } from '@/lib/collision';
 import { findAlternativeResource } from '@/lib/calendarCompare';
+import { buildTrainingDataFromBlocks } from '@/lib/trainingData';
 import { 
   SLOT_HEIGHT_PX, 
   SLOT_MINUTES,
@@ -108,16 +109,7 @@ export function Builder() {
     }
   }, [plan]);
 
-  useEffect(() => {
-    if (!plan || !showSuggestions || plan.settings.schedulerMode !== 'predictive') return;
-    const stats = getProbabilityTableStats(loadProbabilityTable());
-    if (stats.totalEvents > 0) return;
-    const plansWithData = state.plans.filter(p => p.blocks.some(b => b.templateId));
-    if (plansWithData.length === 0) return;
-    for (const sourcePlan of plansWithData) {
-      trainFromBlocks(sourcePlan.blocks, sourcePlan.settings.name);
-    }
-  }, [plan, showSuggestions, state.plans]);
+  // Training is now persisted via server-backed storage (see persistTrainingEvents).
 
   if (!plan) {
     return (
@@ -308,7 +300,8 @@ export function Builder() {
     
     dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updatedBlock } });
     if (plan.settings.schedulerMode === 'predictive') {
-      trainFromBlocks([updatedBlock], `${plan.settings.name}:adjust`);
+      const trainingData = buildTrainingDataFromBlocks([updatedBlock], 'adjust');
+      void persistTrainingEvents(plan.id, trainingData.examples);
     }
   };
 
@@ -338,7 +331,8 @@ export function Builder() {
     const updatedBlock: PlacedBlock = { ...block, durationMinutes: newDuration };
     dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updatedBlock } });
     if (plan.settings.schedulerMode === 'predictive') {
-      trainFromBlocks([updatedBlock], `${plan.settings.name}:resize`);
+      const trainingData = buildTrainingDataFromBlocks([updatedBlock], 'resize');
+      void persistTrainingEvents(plan.id, trainingData.examples);
     }
   };
 
@@ -376,7 +370,8 @@ export function Builder() {
     
     dispatch({ type: 'UPDATE_BLOCK', payload: { planId: plan.id, block: updatedBlock, scope } });
     if (plan.settings.schedulerMode === 'predictive') {
-      trainFromBlocks([updatedBlock], `${plan.settings.name}:edit`);
+      const trainingData = buildTrainingDataFromBlocks([updatedBlock], 'edit');
+      void persistTrainingEvents(plan.id, trainingData.examples);
     }
     setSelectedBlockId(null);
   };
@@ -470,9 +465,48 @@ export function Builder() {
     for (const block of acceptedBlocks) {
       dispatch({ type: 'ADD_BLOCK', payload: { planId: plan.id, block } });
     }
+    const trainingData = buildTrainingDataFromBlocks(acceptedBlocks, 'accepted');
+    dispatch({
+      type: 'ADD_TRAINING_DATA',
+      payload: { planId: plan.id, examples: trainingData.examples, unmatched: trainingData.unmatched },
+    });
     if (plan.settings.schedulerMode === 'predictive') {
-      trainFromBlocks(acceptedBlocks, `${plan.settings.name}:accepted`);
+      void persistTrainingEvents(plan.id, trainingData.examples);
     }
+  };
+
+  const buildPublishErrorMessage = async (res: Response) => {
+    const statusText = res.statusText ? `: ${res.statusText}` : '';
+    const statusLine = `Publish failed (HTTP ${res.status}${statusText})`;
+    let detail = '';
+    const resClone = res.clone();
+
+    try {
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await res.json();
+        if (typeof data === 'string') {
+          detail = data;
+        } else if (data && typeof data === 'object') {
+          const dataRecord = data as Record<string, unknown>;
+          const candidate = dataRecord.error ?? dataRecord.message ?? dataRecord.detail;
+          detail = typeof candidate === 'string' ? candidate : JSON.stringify(data);
+        }
+      } else {
+        detail = await res.text();
+      }
+    } catch {
+      try {
+        detail = await resClone.text();
+      } catch {
+        detail = '';
+      }
+    }
+
+    const cleanedDetail = detail.replace(/\s+/g, ' ').trim();
+    if (!cleanedDetail) return statusLine;
+    const shortDetail = cleanedDetail.length > 160 ? `${cleanedDetail.slice(0, 160)}...` : cleanedDetail;
+    return `${statusLine}: ${shortDetail}`;
   };
 
   const handlePublish = () => {
@@ -488,12 +522,18 @@ export function Builder() {
             templates: state.templates,
           }),
         });
-        if (!res.ok) throw new Error('publish failed');
+        if (!res.ok) {
+          const message = await buildPublishErrorMessage(res);
+          setErrorMessage(message);
+          return;
+        }
         const json = await res.json();
         const slug = json.slug || publicId;
         dispatch({ type: 'PUBLISH_PLAN', payload: { planId: plan.id, publicId: slug, timestamp } });
       } catch (e) {
-        setErrorMessage('Failed to publish plan to server.');
+        const fallback = e instanceof Error ? e.message : '';
+        const message = fallback ? `Publish failed: ${fallback}` : 'Publish failed: Network error';
+        setErrorMessage(message);
       }
     })();
   };

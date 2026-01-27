@@ -246,6 +246,12 @@ export function loadState(): { state: AppState; error?: string } {
       if (!plan.settings.activeDays || plan.settings.activeDays.length === 0) {
         plan.settings.activeDays = [...DAYS];
       }
+      if (!plan.trainingExamples) {
+        plan.trainingExamples = [];
+      }
+      if (!plan.unmatchedTrainingEvents) {
+        plan.unmatchedTrainingEvents = [];
+      }
       for (const block of plan.blocks) {
         if (block.isLocked === undefined) {
           block.isLocked = false;

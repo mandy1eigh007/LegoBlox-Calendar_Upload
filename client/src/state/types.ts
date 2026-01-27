@@ -198,6 +198,20 @@ export interface PlacedBlock {
   isAfterHours?: boolean;
 }
 
+export interface TrainingExample {
+  templateId: string;
+  weekIndex: number;
+  dayOfWeek: Day;
+  startMinutes: number;
+  durationMinutes: number;
+  source?: string;
+}
+
+export interface UnmatchedTrainingEvent {
+  title: string;
+  source?: string;
+}
+
 export interface RecurrenceSeries {
   id: string;
   templateId: string;
@@ -253,6 +267,8 @@ export interface Plan {
   settings: PlanSettings;
   blocks: PlacedBlock[];
   recurrenceSeries: RecurrenceSeries[];
+  trainingExamples?: TrainingExample[];
+  unmatchedTrainingEvents?: UnmatchedTrainingEvent[];
   isPublished?: boolean;
   publishedAt?: string | null;
   publicId?: string | null;
@@ -284,6 +300,7 @@ export type Action =
   | { type: 'ADD_PLAN'; payload: Plan }
   | { type: 'UPDATE_PLAN'; payload: Plan }
   | { type: 'DELETE_PLAN'; payload: string }
+  | { type: 'ADD_TRAINING_DATA'; payload: { planId: string; examples?: TrainingExample[]; unmatched?: UnmatchedTrainingEvent[] } }
   | { type: 'ADD_BLOCK'; payload: { planId: string; block: PlacedBlock } }
   | { type: 'UPDATE_BLOCK'; payload: { planId: string; block: PlacedBlock; scope?: ApplyScope } }
   | { type: 'DELETE_BLOCK'; payload: { planId: string; blockId: string; scope?: ApplyScope } }

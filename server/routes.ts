@@ -1,7 +1,10 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import fs from "node:fs";
+import path from "node:path";
 import { storage } from "./storage";
 import { suggestSchedule } from "../predictive/solver";
+import { existsTraining, getTraining, initializeTraining, saveTraining } from "./predictiveStore";
 
 type ToPlaceItem = { templateId: string | null; durationMinutes: number; count?: number };
 type PartnerSlot = { id: string; date: string; startMinutes: number; durationMinutes: number; title?: string };
@@ -106,6 +109,57 @@ export async function registerRoutes(
       res.json(parsed);
     } catch (e: any) {
       res.status(500).json({ message: e?.message || 'error' });
+    }
+  });
+
+  app.get('/api/predictive/seed-calendars', async (_req, res) => {
+    try {
+      const seedPath = path.resolve(process.cwd(), 'predictive', 'seed', 'training-calendars.generated.json');
+      if (!fs.existsSync(seedPath)) {
+        return res.status(404).json({ message: 'seed calendars not found' });
+      }
+      const raw = fs.readFileSync(seedPath, 'utf8');
+      const parsed = JSON.parse(raw);
+      res.json(parsed);
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || 'seed calendars error' });
+    }
+  });
+
+  app.get('/api/predictive/training/:planId', async (req, res) => {
+    try {
+      const planId = req.params.planId;
+      if (!planId) {
+        return res.status(400).json({ message: 'missing planId' });
+      }
+      if (await existsTraining(planId)) {
+        const payload = await getTraining(planId);
+        if (payload) return res.json(payload);
+      }
+      const seeded = await initializeTraining(planId);
+      res.json(seeded);
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || 'predictive training error' });
+    }
+  });
+
+  app.post('/api/predictive/training/:planId', async (req, res) => {
+    try {
+      const planId = req.params.planId;
+      if (!planId) {
+        return res.status(400).json({ message: 'missing planId' });
+      }
+      const payload = req.body as { probabilityTable?: unknown; events?: unknown };
+      if (!payload || typeof payload !== 'object') {
+        return res.status(400).json({ message: 'missing payload' });
+      }
+      if (!payload.probabilityTable || !payload.events || !Array.isArray(payload.events)) {
+        return res.status(400).json({ message: 'invalid training payload' });
+      }
+      await saveTraining(planId, payload as any);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || 'predictive training error' });
     }
   });
 
@@ -244,9 +298,8 @@ export async function registerRoutes(
       // slug: prefer provided publicId, fallback to planId
       const slug = plan.publicId || planId;
 
-      const dataDir = './server/data';
-      const filePath = `${dataDir}/published.json`;
-      const fs = require('fs');
+      const dataDir = path.resolve(process.cwd(), 'server', 'data', 'published');
+      const filePath = path.join(dataDir, 'published.json');
       if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
       let store: Record<string, any> = {};
@@ -269,8 +322,8 @@ export async function registerRoutes(
       const body = req.body || {};
       const slug = body.publicId || planId;
 
-      const filePath = './server/data/published.json';
-      const fs = require('fs');
+      const dataDir = path.resolve(process.cwd(), 'server', 'data', 'published');
+      const filePath = path.join(dataDir, 'published.json');
       if (!fs.existsSync(filePath)) return res.json({ removed: false });
 
       let store: Record<string, any> = {};
@@ -291,8 +344,8 @@ export async function registerRoutes(
   app.get('/api/published/:slug', async (req, res) => {
     try {
       const slug = req.params.slug;
-      const filePath = './server/data/published.json';
-      const fs = require('fs');
+      const dataDir = path.resolve(process.cwd(), 'server', 'data', 'published');
+      const filePath = path.join(dataDir, 'published.json');
       if (!fs.existsSync(filePath)) return res.status(404).json({ message: 'not found' });
       const store = JSON.parse(fs.readFileSync(filePath, 'utf8') || '{}');
       if (!store[slug]) return res.status(404).json({ message: 'not found' });
