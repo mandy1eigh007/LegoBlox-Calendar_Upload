@@ -532,8 +532,8 @@ export function Builder() {
         dispatch({ type: 'PUBLISH_PLAN', payload: { planId: plan.id, publicId: slug, timestamp } });
       } catch (e) {
         const fallback = e instanceof Error ? e.message : '';
-        const detail = fallback && fallback !== 'Failed to fetch' ? `: ${fallback}` : '';
-        setErrorMessage(`Publish failed (No response)${detail}`);
+        const message = fallback ? `Publish failed: ${fallback}` : 'Publish failed: Network error';
+        setErrorMessage(message);
       }
     })();
   };

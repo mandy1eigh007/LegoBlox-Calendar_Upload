@@ -298,7 +298,7 @@ export async function registerRoutes(
       // slug: prefer provided publicId, fallback to planId
       const slug = plan.publicId || planId;
 
-      const dataDir = path.resolve(process.cwd(), 'server', 'data');
+      const dataDir = path.resolve(process.cwd(), 'server', 'data', 'published');
       const filePath = path.join(dataDir, 'published.json');
       if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
@@ -322,7 +322,8 @@ export async function registerRoutes(
       const body = req.body || {};
       const slug = body.publicId || planId;
 
-      const filePath = path.resolve(process.cwd(), 'server', 'data', 'published.json');
+      const dataDir = path.resolve(process.cwd(), 'server', 'data', 'published');
+      const filePath = path.join(dataDir, 'published.json');
       if (!fs.existsSync(filePath)) return res.json({ removed: false });
 
       let store: Record<string, any> = {};
@@ -343,7 +344,8 @@ export async function registerRoutes(
   app.get('/api/published/:slug', async (req, res) => {
     try {
       const slug = req.params.slug;
-      const filePath = path.resolve(process.cwd(), 'server', 'data', 'published.json');
+      const dataDir = path.resolve(process.cwd(), 'server', 'data', 'published');
+      const filePath = path.join(dataDir, 'published.json');
       if (!fs.existsSync(filePath)) return res.status(404).json({ message: 'not found' });
       const store = JSON.parse(fs.readFileSync(filePath, 'utf8') || '{}');
       if (!store[slug]) return res.status(404).json({ message: 'not found' });
